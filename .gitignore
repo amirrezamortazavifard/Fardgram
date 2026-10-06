@@ -16,7 +16,9 @@ mhrv-rs
 .env.*
 !.env.example
 /docs/tdlib-feature-selection.md
+.tauri/
 *.key
+*.pub
 *.pfx
 *.p12
 AGENT.md

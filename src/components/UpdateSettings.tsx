@@ -1,5 +1,4 @@
-import { translate } from "../i18n";
-import { CheckCircle2, CloudDownload, LoaderCircle, RefreshCw } from "lucide-react";
+import { CheckCircle2, CloudDownload, ExternalLink, LoaderCircle, RefreshCw, ShieldCheck, AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   appUpdater,
@@ -7,10 +6,12 @@ import {
   type AppUpdateInfo,
   type AppUpdateProgress,
 } from "../release/appUpdater";
+import { openExternalLink } from "../utils/externalLinks";
 
 type UpdateState = "idle" | "checking" | "current" | "available" | "installing" | "error";
 
-const updateChannel = (version: string) => version.includes("-") ? translate("候选通道") : translate("稳定通道");
+const updateChannel = (version: string) =>
+  version.includes("-") ? "Release Candidate (Beta)" : "Stable Channel";
 
 export function UpdateSettings() {
   const [distribution, setDistribution] = useState<AppDistribution>();
@@ -18,6 +19,7 @@ export function UpdateSettings() {
   const [state, setState] = useState<UpdateState>("idle");
   const [update, setUpdate] = useState<AppUpdateInfo>();
   const [progress, setProgress] = useState<AppUpdateProgress>();
+  const [lastChecked, setLastChecked] = useState<string>();
 
   useEffect(() => {
     let active = true;
@@ -29,7 +31,7 @@ export function UpdateSettings() {
     void appUpdater.currentVersion().then((version) => {
       if (active) setCurrentVersion(version);
     }).catch(() => {
-      if (active) setCurrentVersion(translate("未知版本"));
+      if (active) setCurrentVersion("Unknown");
     });
     return () => { active = false; };
   }, []);
@@ -43,6 +45,7 @@ export function UpdateSettings() {
       const next = await appUpdater.check();
       setUpdate(next);
       setState(next ? "available" : "current");
+      setLastChecked(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
     } catch {
       setState("error");
     }
@@ -58,6 +61,15 @@ export function UpdateSettings() {
     }
   };
 
+  const openReleasesPage = () => {
+    void openExternalLink("https://github.com/amirrezamortazavifard/Fardgram/releases");
+  };
+
+  const formatBytes = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return "0 MB";
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   return (
     <div className="settings-detail-scroll update-settings">
       <section className="settings-section" aria-labelledby="update-version-heading">
@@ -65,63 +77,119 @@ export function UpdateSettings() {
           <CloudDownload size={18} strokeWidth={1.8} />
           <div>
             <h4 id="update-version-heading">Fardgram {currentVersion}</h4>
-            <span>{updateChannel(currentVersion)}</span>
+            <span>{updateChannel(currentVersion)} • {distribution === "installed" ? "Installed Edition (Auto-Updates Enabled)" : distribution === "portable" ? "Portable Edition" : "Development Build"}</span>
           </div>
+          {lastChecked && (
+            <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--muted)" }}>
+              Last checked: {lastChecked}
+            </span>
+          )}
         </div>
 
         <div className="update-status" role="status" aria-live="polite">
           {state === "current" ? (
-            <><CheckCircle2 size={18} /><span>{translate("当前已是最新版本")}</span></>
+            <>
+              <CheckCircle2 size={18} color="var(--color-status-success, #10b981)" />
+              <span>You are using the latest version of Fardgram.</span>
+            </>
           ) : state === "available" && update ? (
-            <><CloudDownload size={18} /><span>{translate("可更新至 {{value0}}", { value0: update.version })}</span></>
+            <>
+              <CloudDownload size={18} color="var(--color-accent, #3b82f6)" />
+              <span>A new update is available: <strong>v{update.version}</strong></span>
+            </>
           ) : state === "installing" ? (
-            <><LoaderCircle className="spin" size={18} /><span>{translate("正在安装 {{value0}}", { value0: update?.version })}</span></>
+            <>
+              <LoaderCircle className="spin" size={18} />
+              <span>
+                Downloading update {update?.version ? `v${update.version}` : ""}...{" "}
+                {progress?.downloadedBytes ? `(${formatBytes(progress.downloadedBytes)}${progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : ""})` : ""}
+              </span>
+            </>
           ) : state === "error" ? (
-            <><RefreshCw size={18} /><span>{translate("更新操作失败，请稍后重试")}</span></>
+            <>
+              <AlertCircle size={18} color="var(--color-status-danger, #ef4444)" />
+              <span>Update check failed. Check your internet connection or GitHub access.</span>
+            </>
           ) : distribution === "portable" ? (
-            <span>{translate("便携版通过新版 ZIP 更新")}</span>
+            <span>Portable editions are updated by downloading the latest archive release.</span>
           ) : distribution === "browser" ? (
-            <span>{translate("浏览器预览")}</span>
+            <span>Web preview mode does not support native updates.</span>
           ) : distribution === "unknown" ? (
-            <span>{translate("当前分发方式不支持自动更新")}</span>
+            <span>Current distribution format does not support automatic in-place updates.</span>
           ) : (
-            <span>{supported ? translate("尚未检查") : translate("正在读取版本")}</span>
+            <span>{supported ? "Automatic update check ready." : "Resolving version metadata..."}</span>
           )}
         </div>
 
         {state === "installing" && (
-          <progress
-            className="update-progress"
-            aria-label={translate("更新下载进度")}
-            max={1}
-            value={progress?.fraction}
-          />
+          <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+            <progress
+              className="update-progress"
+              aria-label="Update download progress"
+              max={1}
+              value={progress?.fraction ?? 0}
+              style={{ width: "100%", height: "8px", borderRadius: "4px" }}
+            />
+            {progress?.fraction !== undefined && (
+              <span style={{ fontSize: "11px", color: "var(--muted)", textAlign: "right" }}>
+                {Math.round(progress.fraction * 100)}% completed
+              </span>
+            )}
+          </div>
         )}
 
         {update?.notes && (
-          <div className="update-notes">
-            <strong>{update.version}</strong>
+          <div className="update-notes" style={{ marginTop: "14px" }}>
+            <strong>Release Notes — v{update.version}</strong>
             <p>{update.notes}</p>
           </div>
         )}
 
-        <div className="settings-inline-actions">
+        <div className="settings-inline-actions" style={{ marginTop: "14px" }}>
           <button
             className="dialog-secondary"
             type="button"
             disabled={!supported || state === "checking" || state === "installing"}
             onClick={() => void check()}
           >
-            {state === "checking"
-              ? <LoaderCircle className="spin" size={16} />
-              : <RefreshCw size={16} />}{translate("检查更新")}</button>
+            {state === "checking" ? (
+              <LoaderCircle className="spin" size={16} />
+            ) : (
+              <RefreshCw size={16} />
+            )}
+            Check for Updates
+          </button>
+
           {(state === "available" || (state === "error" && update)) && (
             <button className="dialog-save" type="button" onClick={() => void install()}>
               <CloudDownload size={16} />
-              {state === "error" ? translate("重试安装") : translate("下载并安装")}
+              {state === "error" ? "Retry Installation" : `Install & Relaunch (v${update?.version ?? ""})`}
             </button>
           )}
+
+          <button
+            className="dialog-secondary"
+            type="button"
+            style={{ marginLeft: "auto" }}
+            onClick={openReleasesPage}
+          >
+            <ExternalLink size={14} /> View All Releases on GitHub
+          </button>
         </div>
+      </section>
+
+      {/* Security & Cryptographic Verification Note */}
+      <section className="settings-section" aria-labelledby="updater-security-heading">
+        <div className="settings-section-heading">
+          <ShieldCheck size={18} strokeWidth={1.8} />
+          <div>
+            <h4 id="updater-security-heading">Cryptographic Verification & Integrity</h4>
+            <span>Signed with Minisign Ed25519 public key verification to protect against tampering</span>
+          </div>
+        </div>
+        <p style={{ margin: "8px 0 0", fontSize: "12px", color: "var(--muted)", lineHeight: 1.5 }}>
+          All official Fardgram release packages are cryptographically signed during the automated GitHub Actions build process. The updater strictly validates each payload against the embedded public key before installation.
+        </p>
       </section>
     </div>
   );
