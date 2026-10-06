@@ -14,6 +14,8 @@ pub fn setup(app: &App) -> Result<(), Box<dyn std::error::Error>> {
             }
         })?;
     }
+    #[cfg(not(windows))]
+    let _ = app;
     Ok(())
 }
 

@@ -7,7 +7,10 @@ src-tauri/target/
 
 # Local backups and heavy SDK builds
 .vanilla_client_backup/
-tdlib/
+/tdlib/
+src-tauri/tdlib/
+!scripts/tdlib/
+!scripts/tdlib/**
 mhrv-rs
 
 # Local project notes and credentials
