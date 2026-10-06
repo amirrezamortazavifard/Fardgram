@@ -1,0 +1,48 @@
+import { preferencesStore } from "../store/preferencesStore";
+import { shortcutActionForEvent } from "../shortcuts/shortcuts";
+import { composerFormatShortcut } from "./composerFormatting";
+
+type ShortcutEvent = Pick<
+  KeyboardEvent,
+  "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey"
+> & { code?: string };
+
+const blockedControlKeys = new Set(["p", "r", "s", "u", "w"]);
+const blockedDeveloperToolKeys = new Set(["c", "i", "j"]);
+
+export const isBlockedWebviewShortcut = (event: ShortcutEvent, inComposer = false) => {
+  const key = event.key.toLocaleLowerCase();
+  const controlKey = event.ctrlKey || event.metaKey;
+
+  if (key === "f5" || key === "f12") return true;
+  if (event.shiftKey && key === "escape") return true;
+  if (event.altKey && ["arrowleft", "arrowright", "home"].includes(key)) return true;
+  if (!controlKey) return false;
+  if (inComposer && composerFormatShortcut(event)) return false;
+  if (blockedControlKeys.has(key)) return true;
+  return event.shiftKey && blockedDeveloperToolKeys.has(key);
+};
+
+export const installWebviewGuards = () => {
+  window.addEventListener("keydown", (event) => {
+    if (event.target instanceof Element && event.target.closest('[data-shortcut-recorder="true"][aria-pressed="true"]')) return;
+    if (event.key === "Tab") {
+      // Disable focus traversal in every window, but let explicit app actions
+      // such as mention and command completion receive the key.
+      event.preventDefault();
+      return;
+    }
+    const inComposer = event.target instanceof Element && Boolean(event.target.closest(".composer-input"));
+    if (!isBlockedWebviewShortcut(event, inComposer)) return;
+    const action = shortcutActionForEvent(event, preferencesStore.getState().shortcuts);
+    event.preventDefault();
+    // Suppress browser defaults even when a registered app action cannot run.
+    if (action && (action !== "editLastMessage" || inComposer)) return;
+    event.stopImmediatePropagation();
+  }, { capture: true });
+
+  document.addEventListener("contextmenu", (event) => {
+    if (event.button === 2 && event.ctrlKey && preferencesStore.getState().developerMode) return;
+    event.preventDefault();
+  }, { capture: true });
+};

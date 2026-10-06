@@ -1,0 +1,61 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Fardgram",
+  "version": "0.5.0-rc.5",
+  "identifier": "dev.fardgram.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "title": "Fardgram",
+        "width": 1220,
+        "height": 780,
+        "minWidth": 680,
+        "minHeight": 560,
+        "visible": false,
+        "resizable": true,
+        "decorations": false,
+        "fullscreen": false,
+        "devtools": false,
+        "zoomHotkeysEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost fardgram-asset: http://fardgram-asset.localhost; img-src 'self' asset: http://asset.localhost fardgram-asset: http://fardgram-asset.localhost data: blob:; media-src 'self' asset: http://asset.localhost fardgram-asset: http://fardgram-asset.localhost fardgram-media: http://fardgram-media.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost fardgram-asset: http://fardgram-asset.localhost ws://127.0.0.1:1420; img-src 'self' asset: http://asset.localhost fardgram-asset: http://fardgram-asset.localhost data: blob:; media-src 'self' asset: http://asset.localhost fardgram-asset: http://fardgram-asset.localhost fardgram-media: http://fardgram-media.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      "freezePrototype": true,
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "shortDescription": "A focused third-party Telegram client",
+    "copyright": "Copyright (c) 2026 Fardgram contributors",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "resources": [
+      "resources/sounds/notification.mp3",
+      "tdlib/*",
+      "tdlib/licenses/*"
+    ],
+    "windows": {
+      "allowDowngrades": false,
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

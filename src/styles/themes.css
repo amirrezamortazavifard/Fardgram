@@ -1,0 +1,363 @@
+/*
+ * Theme contract. Component styles consume these semantic roles; only this
+ * file should define a theme's actual palette.
+ */
+:root,
+[data-theme="fardgram-light"] {
+  color-scheme: light;
+  --color-bg-canvas: #dde4ed;
+  --color-bg-surface: #ffffff;
+  --color-bg-surface-hover: #f2f4f7;
+  --color-bg-elevated: #ffffff;
+  --color-bg-control: #f0f2f5;
+  --color-bg-control-hover: #e4e6eb;
+  --color-bg-selected: rgba(0, 132, 255, 0.12);
+  --color-avatar-alias-background: #ffffff;
+  --color-text-primary: #1c1e21;
+  --color-text-secondary: #65676b;
+  --color-text-tertiary: #8e9096;
+  --color-text-disabled: #cbd5e1;
+  --color-text-on-accent: #ffffff;
+  --color-border-subtle: rgba(0, 0, 0, 0.05);
+  --color-border-default: rgba(0, 0, 0, 0.08);
+  --color-border-strong: rgba(0, 0, 0, 0.12);
+  --color-border-focus: #0084ff;
+  --color-accent: #0084ff;
+  --color-accent-strong: #007aff;
+  --color-accent-soft: rgba(0, 132, 255, 0.14);
+  --color-status-success: #31a24c;
+  --color-status-warning: #f59e0b;
+  --color-status-danger: #fa3e3e;
+  --color-status-info: #0084ff;
+  --color-admin: #8b5cf6;
+  --color-admin-soft: rgba(139, 92, 246, 0.15);
+  --color-attention-badge: #fa3e3e;
+  --color-attention-badge-text: #ffffff;
+  --color-reaction-badge: #ffffff;
+  --color-reaction-badge-text: #1c1e21;
+  --color-text-link: #0084ff;
+  --color-text-code: #1c1e21;
+  --color-bg-code: rgba(0, 0, 0, 0.04);
+  --color-message-incoming: #f0f2f5;
+  --color-message-outgoing: #0084ff;
+  /* Preblend to keep floating notices the same tone over messages and media. */
+  --color-message-service: color-mix(in srgb, rgba(255, 255, 255, 0.88) 90%, var(--color-bg-canvas));
+  --color-qr-background: #ffffff;
+  --color-qr-foreground: #111111;
+  --color-bg-media: #0b0f19;
+  --color-on-media: #ffffff;
+  --color-media-backdrop: rgba(11, 15, 25, 0.9);
+  --color-overlay: rgba(15, 23, 42, 0.45);
+  --color-shadow: rgba(0, 0, 0, 0.08);
+  --color-scrollbar-thumb: rgba(0, 0, 0, 0.18);
+  --color-surface-texture: none;
+}
+
+[data-theme="fardgram-dark"] {
+  color-scheme: dark;
+  --color-bg-canvas: #090d16;
+  --color-bg-surface: rgba(15, 22, 35, 0.88);
+  --color-bg-surface-hover: rgba(26, 36, 56, 0.90);
+  --color-bg-elevated: rgba(20, 28, 44, 0.94);
+  --color-bg-control: rgba(26, 36, 56, 0.82);
+  --color-bg-control-hover: rgba(40, 54, 80, 0.88);
+  --color-bg-selected: rgba(0, 132, 255, 0.22);
+  --color-avatar-alias-background: #ffffff;
+  --color-text-primary: #f3f4f6;
+  --color-text-secondary: #94a3b8;
+  --color-text-tertiary: #64748b;
+  --color-text-disabled: #475569;
+  --color-text-on-accent: #ffffff;
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-default: rgba(255, 255, 255, 0.12);
+  --color-border-strong: rgba(255, 255, 255, 0.2);
+  --color-border-focus: #38bdf8;
+  --color-accent: #0084ff;
+  --color-accent-strong: #0284c7;
+  --color-accent-soft: rgba(0, 132, 255, 0.2);
+  --color-status-success: #10b981;
+  --color-status-warning: #f59e0b;
+  --color-status-danger: #ef4444;
+  --color-status-info: #38bdf8;
+  --color-admin: #a855f7;
+  --color-admin-soft: rgba(168, 85, 247, 0.2);
+  --color-attention-badge: #ef4444;
+  --color-attention-badge-text: #ffffff;
+  --color-reaction-badge: rgba(30, 41, 59, 0.92);
+  --color-reaction-badge-text: #f3f4f6;
+  --color-text-link: #38bdf8;
+  --color-text-code: #e2e8f0;
+  --color-bg-code: rgba(15, 23, 42, 0.7);
+  --color-message-incoming: rgba(30, 41, 59, 0.85);
+  --color-message-outgoing: #0084ff;
+  --color-message-service: color-mix(in srgb, rgba(30, 41, 59, 0.85) 90%, var(--color-bg-canvas));
+  --color-qr-background: #ffffff;
+  --color-qr-foreground: #111111;
+  --color-bg-media: #060911;
+  --color-on-media: #ffffff;
+  --color-media-backdrop: rgba(6, 9, 17, 0.92);
+  --color-overlay: rgba(3, 7, 18, 0.65);
+  --color-shadow: rgba(0, 0, 0, 0.45);
+  --color-scrollbar-thumb: rgba(51, 65, 85, 0.6);
+  --color-surface-texture: radial-gradient(ellipse at 15% 10%, rgba(0, 132, 255, 0.16), transparent 50%), radial-gradient(ellipse at 85% 90%, rgba(168, 85, 247, 0.12), transparent 50%), radial-gradient(ellipse at 50% 50%, rgba(17, 24, 39, 0.7), transparent 70%);
+}
+
+[data-theme="fardgram-light"][data-background-style="soft"] {
+  --color-surface-texture: radial-gradient(ellipse at 18% 12%, rgba(63, 114, 155, 0.07), transparent 48%), radial-gradient(ellipse at 82% 88%, rgba(90, 112, 106, 0.05), transparent 52%);
+}
+
+[data-theme="fardgram-dark"][data-background-style="soft"] {
+  --color-surface-texture: radial-gradient(ellipse at 18% 12%, rgba(120, 167, 200, 0.09), transparent 48%), radial-gradient(ellipse at 82% 88%, rgba(127, 175, 145, 0.07), transparent 52%);
+}
+
+/* 1. Midnight Obsidian (OLED Pure Black) */
+[data-theme="fardgram-obsidian"] {
+  color-scheme: dark;
+  --color-bg-canvas: #000000;
+  --color-bg-surface: rgba(10, 10, 14, 0.88);
+  --color-bg-surface-hover: rgba(22, 22, 28, 0.92);
+  --color-bg-elevated: rgba(16, 16, 22, 0.94);
+  --color-bg-control: rgba(18, 18, 24, 0.85);
+  --color-bg-control-hover: rgba(30, 30, 38, 0.90);
+  --color-bg-selected: rgba(0, 242, 254, 0.22);
+  --color-avatar-alias-background: #ffffff;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #94a3b8;
+  --color-text-tertiary: #64748b;
+  --color-text-disabled: #475569;
+  --color-text-on-accent: #000000;
+  --color-border-subtle: rgba(255, 255, 255, 0.07);
+  --color-border-default: rgba(255, 255, 255, 0.12);
+  --color-border-strong: rgba(255, 255, 255, 0.22);
+  --color-border-focus: #00f2fe;
+  --color-accent: #00f2fe;
+  --color-accent-strong: #00c6ff;
+  --color-accent-soft: rgba(0, 242, 254, 0.18);
+  --color-status-success: #10b981;
+  --color-status-warning: #f59e0b;
+  --color-status-danger: #ef4444;
+  --color-status-info: #00f2fe;
+  --color-admin: #a855f7;
+  --color-admin-soft: rgba(168, 85, 247, 0.2);
+  --color-attention-badge: #ef4444;
+  --color-attention-badge-text: #ffffff;
+  --color-reaction-badge: rgba(24, 24, 32, 0.92);
+  --color-reaction-badge-text: #f8fafc;
+  --color-text-link: #00f2fe;
+  --color-text-code: #e2e8f0;
+  --color-bg-code: rgba(15, 23, 42, 0.7);
+  --color-message-incoming: rgba(16, 16, 22, 0.88);
+  --color-message-outgoing: #00c6ff;
+  --color-message-service: color-mix(in srgb, rgba(16, 16, 22, 0.88) 90%, var(--color-bg-canvas));
+  --color-qr-background: #ffffff;
+  --color-qr-foreground: #000000;
+  --color-bg-media: #000000;
+  --color-on-media: #ffffff;
+  --color-media-backdrop: rgba(0, 0, 0, 0.94);
+  --color-overlay: rgba(0, 0, 0, 0.65);
+  --color-shadow: rgba(0, 0, 0, 0.6);
+  --color-scrollbar-thumb: rgba(51, 65, 85, 0.6);
+  --color-surface-texture: radial-gradient(ellipse at 50% 10%, rgba(0, 242, 254, 0.08), transparent 60%);
+}
+
+/* 2. Midnight Velvet (Violet & Plum) */
+[data-theme="fardgram-velvet"] {
+  color-scheme: dark;
+  --color-bg-canvas: #090514;
+  --color-bg-surface: rgba(18, 12, 34, 0.88);
+  --color-bg-surface-hover: rgba(28, 18, 52, 0.92);
+  --color-bg-elevated: rgba(24, 16, 44, 0.94);
+  --color-bg-control: rgba(30, 20, 56, 0.82);
+  --color-bg-control-hover: rgba(45, 30, 80, 0.88);
+  --color-bg-selected: rgba(168, 85, 247, 0.25);
+  --color-avatar-alias-background: #ffffff;
+  --color-text-primary: #faf5ff;
+  --color-text-secondary: #c084fc;
+  --color-text-tertiary: #9333ea;
+  --color-text-disabled: #581c87;
+  --color-text-on-accent: #ffffff;
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-default: rgba(168, 85, 247, 0.2);
+  --color-border-strong: rgba(168, 85, 247, 0.35);
+  --color-border-focus: #c084fc;
+  --color-accent: #a855f7;
+  --color-accent-strong: #9333ea;
+  --color-accent-soft: rgba(168, 85, 247, 0.22);
+  --color-status-success: #10b981;
+  --color-status-warning: #f59e0b;
+  --color-status-danger: #ef4444;
+  --color-status-info: #38bdf8;
+  --color-admin: #ec4899;
+  --color-admin-soft: rgba(236, 72, 153, 0.2);
+  --color-attention-badge: #ec4899;
+  --color-attention-badge-text: #ffffff;
+  --color-reaction-badge: rgba(36, 22, 60, 0.92);
+  --color-reaction-badge-text: #faf5ff;
+  --color-text-link: #c084fc;
+  --color-text-code: #f3e8ff;
+  --color-bg-code: rgba(24, 12, 44, 0.7);
+  --color-message-incoming: rgba(26, 16, 48, 0.88);
+  --color-message-outgoing: #9333ea;
+  --color-message-service: color-mix(in srgb, rgba(26, 16, 48, 0.88) 90%, var(--color-bg-canvas));
+  --color-qr-background: #ffffff;
+  --color-qr-foreground: #111111;
+  --color-bg-media: #090514;
+  --color-on-media: #ffffff;
+  --color-media-backdrop: rgba(9, 5, 20, 0.92);
+  --color-overlay: rgba(9, 5, 20, 0.55);
+  --color-shadow: rgba(0, 0, 0, 0.5);
+  --color-scrollbar-thumb: rgba(168, 85, 247, 0.4);
+  --color-surface-texture: radial-gradient(ellipse at 15% 10%, rgba(168, 85, 247, 0.18), transparent 50%), radial-gradient(ellipse at 85% 90%, rgba(236, 72, 153, 0.12), transparent 50%);
+}
+
+/* 3. Cyberpunk Neon */
+[data-theme="fardgram-cyberpunk"] {
+  color-scheme: dark;
+  --color-bg-canvas: #050a12;
+  --color-bg-surface: rgba(10, 20, 32, 0.88);
+  --color-bg-surface-hover: rgba(16, 32, 52, 0.92);
+  --color-bg-elevated: rgba(14, 26, 42, 0.94);
+  --color-bg-control: rgba(18, 34, 54, 0.82);
+  --color-bg-control-hover: rgba(26, 48, 76, 0.88);
+  --color-bg-selected: rgba(0, 255, 204, 0.22);
+  --color-avatar-alias-background: #ffffff;
+  --color-text-primary: #f0fdfa;
+  --color-text-secondary: #5eead4;
+  --color-text-tertiary: #14b8a6;
+  --color-text-disabled: #0f766e;
+  --color-text-on-accent: #050a12;
+  --color-border-subtle: rgba(0, 255, 204, 0.1);
+  --color-border-default: rgba(0, 255, 204, 0.2);
+  --color-border-strong: rgba(0, 255, 204, 0.35);
+  --color-border-focus: #00ffcc;
+  --color-accent: #00ffcc;
+  --color-accent-strong: #00e6b8;
+  --color-accent-soft: rgba(0, 255, 204, 0.2);
+  --color-status-success: #00ffcc;
+  --color-status-warning: #f59e0b;
+  --color-status-danger: #ff0055;
+  --color-status-info: #00f2fe;
+  --color-admin: #f43f5e;
+  --color-admin-soft: rgba(244, 63, 94, 0.2);
+  --color-attention-badge: #ff0055;
+  --color-attention-badge-text: #ffffff;
+  --color-reaction-badge: rgba(12, 28, 44, 0.92);
+  --color-reaction-badge-text: #f0fdfa;
+  --color-text-link: #00ffcc;
+  --color-text-code: #ccfbf1;
+  --color-bg-code: rgba(6, 16, 26, 0.7);
+  --color-message-incoming: rgba(12, 24, 38, 0.88);
+  --color-message-outgoing: #00e6b8;
+  --color-message-service: color-mix(in srgb, rgba(12, 24, 38, 0.88) 90%, var(--color-bg-canvas));
+  --color-qr-background: #ffffff;
+  --color-qr-foreground: #050a12;
+  --color-bg-media: #050a12;
+  --color-on-media: #ffffff;
+  --color-media-backdrop: rgba(5, 10, 18, 0.92);
+  --color-overlay: rgba(5, 10, 18, 0.6);
+  --color-shadow: rgba(0, 0, 0, 0.55);
+  --color-scrollbar-thumb: rgba(0, 255, 204, 0.3);
+  --color-surface-texture: radial-gradient(ellipse at 20% 15%, rgba(0, 255, 204, 0.14), transparent 50%), radial-gradient(ellipse at 80% 85%, rgba(245, 158, 11, 0.12), transparent 50%);
+}
+
+/* 4. Nordic Emerald */
+[data-theme="fardgram-emerald"] {
+  color-scheme: dark;
+  --color-bg-canvas: #05100b;
+  --color-bg-surface: rgba(10, 26, 18, 0.88);
+  --color-bg-surface-hover: rgba(16, 40, 28, 0.92);
+  --color-bg-elevated: rgba(14, 32, 23, 0.94);
+  --color-bg-control: rgba(18, 42, 30, 0.82);
+  --color-bg-control-hover: rgba(26, 60, 42, 0.88);
+  --color-bg-selected: rgba(16, 185, 129, 0.22);
+  --color-avatar-alias-background: #ffffff;
+  --color-text-primary: #ecfdf5;
+  --color-text-secondary: #6ee7b7;
+  --color-text-tertiary: #10b981;
+  --color-text-disabled: #047857;
+  --color-text-on-accent: #ffffff;
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-default: rgba(16, 185, 129, 0.2);
+  --color-border-strong: rgba(16, 185, 129, 0.35);
+  --color-border-focus: #34d399;
+  --color-accent: #10b981;
+  --color-accent-strong: #059669;
+  --color-accent-soft: rgba(16, 185, 129, 0.2);
+  --color-status-success: #10b981;
+  --color-status-warning: #f59e0b;
+  --color-status-danger: #ef4444;
+  --color-status-info: #38bdf8;
+  --color-admin: #8b5cf6;
+  --color-admin-soft: rgba(139, 92, 246, 0.2);
+  --color-attention-badge: #ef4444;
+  --color-attention-badge-text: #ffffff;
+  --color-reaction-badge: rgba(14, 34, 24, 0.92);
+  --color-reaction-badge-text: #ecfdf5;
+  --color-text-link: #34d399;
+  --color-text-code: #d1fae5;
+  --color-bg-code: rgba(6, 20, 14, 0.7);
+  --color-message-incoming: rgba(12, 30, 21, 0.88);
+  --color-message-outgoing: #059669;
+  --color-message-service: color-mix(in srgb, rgba(12, 30, 21, 0.88) 90%, var(--color-bg-canvas));
+  --color-qr-background: #ffffff;
+  --color-qr-foreground: #05100b;
+  --color-bg-media: #05100b;
+  --color-on-media: #ffffff;
+  --color-media-backdrop: rgba(5, 16, 11, 0.92);
+  --color-overlay: rgba(5, 16, 11, 0.6);
+  --color-shadow: rgba(0, 0, 0, 0.55);
+  --color-scrollbar-thumb: rgba(16, 185, 129, 0.3);
+  --color-surface-texture: radial-gradient(ellipse at 20% 15%, rgba(16, 185, 129, 0.15), transparent 50%), radial-gradient(ellipse at 80% 85%, rgba(6, 78, 59, 0.3), transparent 60%);
+}
+
+@media (forced-colors: active) {
+  :root,
+  [data-theme="fardgram-light"],
+  [data-theme="fardgram-dark"] {
+    color-scheme: normal;
+    --color-bg-canvas: Canvas;
+    --color-bg-surface: Canvas;
+    --color-bg-surface-hover: Canvas;
+    --color-bg-elevated: Canvas;
+    --color-bg-control: Canvas;
+    --color-bg-control-hover: Canvas;
+    --color-bg-selected: Highlight;
+    --color-avatar-alias-background: Canvas;
+    --color-text-primary: CanvasText;
+    --color-text-secondary: CanvasText;
+    --color-text-tertiary: GrayText;
+    --color-text-disabled: GrayText;
+    --color-text-on-accent: HighlightText;
+    --color-border-subtle: CanvasText;
+    --color-border-default: CanvasText;
+    --color-border-strong: CanvasText;
+    --color-border-focus: Highlight;
+    --color-accent: Highlight;
+    --color-accent-strong: Highlight;
+    --color-accent-soft: Canvas;
+    --color-status-success: CanvasText;
+    --color-status-warning: CanvasText;
+    --color-status-danger: CanvasText;
+    --color-status-info: CanvasText;
+    --color-admin: Highlight;
+    --color-admin-soft: Canvas;
+    --color-attention-badge: Highlight;
+    --color-attention-badge-text: HighlightText;
+    --color-reaction-badge: Highlight;
+    --color-reaction-badge-text: HighlightText;
+    --color-text-link: LinkText;
+    --color-text-code: CanvasText;
+    --color-bg-code: Canvas;
+    --color-message-incoming: Canvas;
+    --color-message-outgoing: Canvas;
+    --color-message-service: Canvas;
+    --color-qr-background: Canvas;
+    --color-qr-foreground: CanvasText;
+    --color-bg-media: Canvas;
+    --color-on-media: CanvasText;
+    --color-media-backdrop: Canvas;
+    --color-overlay: Canvas;
+    --color-shadow: transparent;
+    --color-scrollbar-thumb: CanvasText;
+  }
+}

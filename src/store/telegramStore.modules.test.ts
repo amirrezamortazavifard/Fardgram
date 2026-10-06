@@ -1,0 +1,537 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mockSnapshot } from "../telegram/mockData";
+import type { ChatDraft, Message, QueuedOutgoingMessage } from "../telegram/types";
+import { deriveChatManagementCapabilities } from "../telegram/chatManagement";
+import {
+  accountStatePatch,
+  currentAccountRegistration,
+  shouldDiscardUnregisteredAccount,
+} from "./telegramStore.accounts";
+import { cachedSnapshotFrom, migrateCachedSnapshot, recentMessagesForCache } from "./telegramStore.cache";
+import { DraftSyncController } from "./telegramStore.drafts";
+import {
+  channelDiscussionProjection,
+  findIndexedMessage,
+  pendingCachedIdsAfterConfirmation,
+  replaceMessage,
+  upsertMessage,
+  upsertMessages,
+  withEmojiReaction,
+} from "./telegramStore.messages";
+import { messagesWithOutbox, outboxMessageId } from "./telegramStore.outbox";
+import type { TelegramState } from "./telegramStore.types";
+
+const message = (id: string, sentAt = `2026-08-02T08:00:${id.padStart(2, "0")}Z`): Message => ({
+  id,
+  chatId: "chat-product",
+  senderId: "self",
+  outgoing: true,
+  sentAt,
+  delivery: "sent",
+  content: { kind: "text", text: id },
+});
+
+afterEach(() => vi.useRealTimers());
+
+describe("telegram store message state", () => {
+  it("renders restored outbox entries idempotently and marks failed entries retryable", () => {
+    const item: QueuedOutgoingMessage = {
+      id: "queued-1",
+      chatId: "chat-product",
+      text: "send after reconnect",
+      createdAt: "2026-08-02T08:00:00Z",
+      status: "queued",
+    };
+    const restored = messagesWithOutbox(new Map(), [item], "self");
+    const repeated = messagesWithOutbox(restored, [item], "self");
+
+    expect(repeated.get(item.chatId)).toMatchObject([{
+      id: outboxMessageId(item.id),
+      delivery: "sending",
+      content: { kind: "text", text: item.text },
+    }]);
+    expect(messagesWithOutbox(repeated, [{ ...item, status: "failed" }], "self")
+      .get(item.chatId)?.[0]).toMatchObject({ delivery: "failed", canRetry: true });
+  });
+
+  it("merges a history page in one chronological batch", () => {
+    const original = [message("10"), message("12")];
+    const replacement = { ...message("12"), delivery: "read" as const };
+    const result = upsertMessages(original, [replacement, message("11"), message("9")]);
+
+    expect(result.map(({ id }) => id)).toEqual(["9", "10", "11", "12"]);
+    expect(result.at(-1)).toBe(replacement);
+  });
+
+  it("orders numeric Telegram messages deterministically within the same second", () => {
+    const sentAt = "2026-08-02T08:00:00Z";
+    const result = upsertMessages(
+      [message("12", sentAt)],
+      [message("11", sentAt), message("13", sentAt), message("10", sentAt)],
+    );
+
+    expect(result.map(({ id }) => id)).toEqual(["10", "11", "12", "13"]);
+  });
+
+  it("reuses positions without comparing unrelated timestamps for content updates", () => {
+    let timestampReads = 0;
+    const original = Array.from({ length: 1_000 }, (_, index) => {
+      const item = message(String(index + 1), new Date(1_700_000_000_000 + index * 1_000).toISOString());
+      const sentAt = item.sentAt;
+      Object.defineProperty(item, "sentAt", { enumerable: true, get: () => { timestampReads++; return sentAt; } });
+      return item;
+    });
+    let current = original;
+    for (let index = 0; index < 100; index++) {
+      const next = { ...current[index], content: { kind: "text" as const, text: `edited ${index}` } };
+      current = upsertMessage(current, next);
+      expect(findIndexedMessage(current, next.id)).toMatchObject(next);
+    }
+    expect(timestampReads).toBeLessThan(1_000);
+    expect(current[100]).toBe(original[100]);
+    expect(original[0].content).toEqual({ kind: "text", text: "1" });
+    expect(upsertMessages(current, [structuredClone(current[0])])).toBe(current);
+  });
+
+  it("inserts new messages in order and repositions a changed timestamp", () => {
+    const original = [message("1"), message("3"), message("5")];
+    const inserted = upsertMessage(original, message("2"));
+    expect(inserted.map(item => item.id)).toEqual(["1", "2", "3", "5"]);
+    const changed = upsertMessages(inserted, [message("3", "2026-08-02T08:00:00Z"), message("4")]);
+    expect(changed.map(item => item.id)).toEqual(["3", "1", "2", "4", "5"]);
+    expect(findIndexedMessage(changed, "3")).toBe(changed[0]);
+    expect(original.map(item => item.id)).toEqual(["1", "3", "5"]);
+  });
+
+  it("merges repeated updates to one ID with retained and newer-edit protection", () => {
+    const retained = { ...message("1"), isLocallyDeleted: true, locallyDeletedAt: "2026-08-02T09:00:00Z" };
+    const edited = { ...message("2"), editedAt: "2026-08-02T10:00:00Z", renderKey: "pending-2" };
+    const result = upsertMessages([retained, edited], [
+      message("1"),
+      { ...message("2"), delivery: "read" },
+      message("3"),
+      { ...message("3"), content: { kind: "text", text: "final" } },
+    ]);
+    expect(result[0]).toBe(retained);
+    expect(result[1]).toMatchObject({ content: edited.content, editedAt: edited.editedAt, renderKey: "pending-2", delivery: "read" });
+    expect(result[2].content).toEqual({ kind: "text", text: "final" });
+    expect(result).toHaveLength(3);
+  });
+
+  it("atomically replaces a temporary outgoing id while preserving its render identity", () => {
+    const temporary = {
+      ...message("-100", "2026-08-02T08:00:00Z"),
+      delivery: "sending" as const,
+    };
+    const confirmed = {
+      ...message("900", "2026-08-02T08:00:00Z"),
+      content: { kind: "text" as const, text: "confirmed" },
+    };
+    const replaced = replaceMessage([
+      message("800", "2026-08-02T07:59:00Z"),
+      temporary,
+    ], temporary.id, confirmed);
+
+    expect(replaced.map(({ id }) => id)).toEqual(["800", "900"]);
+    expect(replaced.filter(({ content }) =>
+      content.kind === "text" && content.text === "confirmed",
+    )).toHaveLength(1);
+    expect(replaced[1]).toMatchObject({ id: "900", renderKey: "-100", delivery: "sent" });
+    expect(upsertMessage(replaced, { ...confirmed, delivery: "read" }))
+      .toContainEqual(expect.objectContaining({ id: "900", renderKey: "-100", delivery: "read" }));
+  });
+
+  it("upserts in chronological order and applies reversible emoji reactions", () => {
+    const ordered = upsertMessage([message("2")], message("1"));
+    expect(ordered.map(({ id }) => id)).toEqual(["1", "2"]);
+
+    const reacted = withEmojiReaction(ordered[0], "👍", true, "self");
+    expect(reacted.interaction?.reactions).toMatchObject([
+      {
+        type: { kind: "emoji", emoji: "👍" },
+        totalCount: 1,
+        chosen: true,
+        recentSenderIds: ["self"],
+      },
+    ]);
+    expect(withEmojiReaction(reacted, "👍", false, "self").interaction?.reactions).toEqual([]);
+  });
+
+  it("projects a linked channel discussion from the shared message cache", () => {
+    const post: Message = {
+      ...message("100"),
+      chatId: "channel",
+      senderId: "chat:channel",
+      outgoing: false,
+      isChannelPost: true,
+      discussionThread: { chatId: "discussion", messageId: "900" },
+    };
+    const root: Message = {
+      ...message("900"),
+      chatId: "discussion",
+      senderId: "chat:channel",
+      outgoing: false,
+    };
+    const first: Message = {
+      ...message("901", "2026-08-02T08:00:01Z"),
+      chatId: "discussion",
+      outgoing: false,
+      replyTo: { kind: "message", chatId: "discussion", messageId: root.id },
+    };
+    const nested: Message = {
+      ...message("902", "2026-08-02T08:00:02Z"),
+      chatId: "discussion",
+      outgoing: false,
+      topicId: root.id,
+      replyTo: { kind: "message", chatId: "discussion", messageId: first.id },
+    };
+    const messages = new Map([
+      [post.chatId, [post]],
+      [root.chatId, [root, nested, first]],
+    ]);
+
+    expect(channelDiscussionProjection(post, messages)).toMatchObject({
+      root: { id: root.id },
+      comments: [{ id: first.id }, { id: nested.id }],
+      replyChatId: root.chatId,
+      replyMessageId: root.id,
+      cached: true,
+    });
+    expect(upsertMessage([post], {
+      ...post,
+      discussionThread: undefined,
+      content: { kind: "text", text: "updated channel post" },
+    })[0].discussionThread).toEqual(post.discussionThread);
+  });
+
+  it("acknowledges confirmed cache entries without inferring deletion from gaps", () => {
+    const result = pendingCachedIdsAfterConfirmation(
+      new Set(["8", "9", "10", "11"]),
+      new Set(["9", "11"]),
+    );
+
+    expect([...result]).toEqual(["8", "10"]);
+  });
+});
+
+describe("telegram store cache and accounts", () => {
+  it.each([3, 4])("restores the built-in Saved Messages avatar from version %i portable caches", (version) => {
+    const photo = { label: "Me", color: "#aabbcc", imagePath: "C:\\avatars\\self.jpg", fileId: 55, canDownload: true };
+    const snapshot = structuredClone(mockSnapshot);
+    const saved = snapshot.chats.find(chat => chat.kind === "saved")!;
+    saved.avatar = photo;
+    const self = snapshot.users.find(user => user.id === snapshot.currentUserId)!;
+    self.avatar = photo;
+    const restored = migrateCachedSnapshot({ ...snapshot, version, savedAt: new Date().toISOString() }).snapshot!;
+
+    expect(restored.chats.find(chat => chat.kind === "saved")?.avatar)
+      .toEqual({ label: "我", color: "#3390ec", icon: "saved" });
+    expect(restored.users.find(user => user.id === self.id)?.avatar).toEqual(photo);
+    expect(saved.avatar).toEqual(photo);
+  });
+
+  it("migrates version 1 snapshots and safely rejects damaged cache data", () => {
+    const managedLegacyChat = {
+      ...mockSnapshot.chats[0],
+      unreadMentionCount: undefined,
+      canCreateTopics: true,
+      management: deriveChatManagementCapabilities("supergroup", "owner"),
+    };
+    const legacy = {
+      version: 1,
+      savedAt: "2026-08-01T10:00:00Z",
+      currentUserId: mockSnapshot.currentUserId,
+      users: mockSnapshot.users,
+      folders: mockSnapshot.folders,
+      chats: [managedLegacyChat, ...mockSnapshot.chats.slice(1)],
+      messages: mockSnapshot.messages.slice(0, 2),
+    };
+
+    expect(migrateCachedSnapshot(legacy)).toMatchObject({
+      health: "migrated",
+      snapshot: { version: 4, currentUserId: mockSnapshot.currentUserId },
+    });
+    expect(migrateCachedSnapshot(legacy).snapshot?.chats[0]).not.toHaveProperty("management");
+    expect(migrateCachedSnapshot(legacy).snapshot?.chats[0]).not.toHaveProperty("canCreateTopics");
+    expect(migrateCachedSnapshot(legacy).snapshot?.chats[0]?.unreadMentionCount).toBe(0);
+    expect(migrateCachedSnapshot({ ...legacy, version: 99 })).toEqual({ health: "invalid" });
+    expect(migrateCachedSnapshot({ ...legacy, chats: [{ title: "missing id" }] }))
+      .toEqual({ health: "invalid" });
+  });
+
+  it("strips transient permissions and oversized inline previews from snapshots", () => {
+    const media: Message = {
+      ...message("20"),
+      renderKey: "temporary-20",
+      permissions: {
+        canReply: true,
+        canEdit: true,
+        canDeleteOnlyForSelf: true,
+        canDeleteForAllUsers: true,
+        canForward: true,
+      },
+      content: {
+        kind: "media",
+        mediaType: "photo",
+        fileName: "large.jpg",
+        localPath: "C:/cache/large.jpg",
+        sizeLabel: "1 MB",
+        isDownloading: true,
+        isDownloaded: true,
+        downloadedSize: 512,
+        progress: 0.5,
+        previewDataUrl: `data:image/jpeg;base64,${"a".repeat(40_000)}`,
+      },
+    };
+    const chat = mockSnapshot.chats.find(({ id }) => id === media.chatId)!;
+    const managedChat = {
+      ...chat,
+      canCreateTopics: true,
+      management: deriveChatManagementCapabilities("supergroup", "owner"),
+    };
+    const snapshot = cachedSnapshotFrom({
+      currentUserId: mockSnapshot.currentUserId,
+      users: new Map(mockSnapshot.users.map((user) => [user.id, user])),
+      folders: mockSnapshot.folders,
+      chats: new Map([[managedChat.id, managedChat]]),
+      messages: new Map([[chat.id, [media]]]),
+      drafts: new Map(),
+      activeChatId: chat.id,
+      chatFilter: "main",
+    } as TelegramState);
+
+    expect(snapshot.messages[0]).not.toHaveProperty("permissions");
+    expect(snapshot.messages[0]).not.toHaveProperty("renderKey");
+    expect(snapshot.messages[0].content).not.toHaveProperty("isDownloading");
+    expect(snapshot.messages[0].content).toHaveProperty("isDownloaded", true);
+    expect(snapshot.messages[0].content).toHaveProperty("downloadedSize", 512);
+    expect(snapshot.messages[0].content).not.toHaveProperty("progress");
+    expect(
+      snapshot.messages[0].content.kind === "media"
+        ? snapshot.messages[0].content.previewDataUrl
+        : "unexpected content",
+    ).toBeUndefined();
+  });
+
+  it("keeps linked discussion messages beside cached channel posts", () => {
+    const channel = { ...mockSnapshot.chats[0], id: "channel", kind: "channel" as const };
+    const post: Message = {
+      ...message("100"),
+      chatId: channel.id,
+      senderId: "chat:channel",
+      outgoing: false,
+      isChannelPost: true,
+      discussionThread: { chatId: "discussion", messageId: "900" },
+    };
+    const root: Message = {
+      ...message("900"),
+      chatId: "discussion",
+      outgoing: false,
+    };
+    const comment: Message = {
+      ...message("901"),
+      chatId: "discussion",
+      outgoing: false,
+      replyTo: { kind: "message", chatId: "discussion", messageId: root.id },
+    };
+    const cached = recentMessagesForCache({
+      chats: new Map([[channel.id, channel]]),
+      messages: new Map([[channel.id, [post]], [root.chatId, [root, comment]]]),
+      activeChatId: channel.id,
+    } as TelegramState);
+
+    expect(cached.map((item) => `${item.chatId}:${item.id}`)).toEqual([
+      "channel:100",
+      "discussion:900",
+      "discussion:901",
+    ]);
+  });
+
+  it("does not roll back edited content when an earlier history snapshot is committed", () => {
+    const original = message("12");
+    const edited = { ...original, editedAt: "2026-08-02T09:00:00Z", content: { kind: "text" as const, text: "latest edit" } };
+    expect(upsertMessages([edited], [original])[0]).toMatchObject(edited);
+  });
+
+  it("keeps sixty ordinary cached messages independently of retained deletion copies", () => {
+    const chat = mockSnapshot.chats[0];
+    const live = Array.from({ length: 60 }, (_, index) => ({ ...message(String(index + 1)), chatId: chat.id }));
+    const retained = Array.from({ length: 60 }, (_, index) => ({ ...message(String(index + 100)), chatId: chat.id,
+      isLocallyDeleted: true, locallyDeletedAt: new Date().toISOString() }));
+    const cached = recentMessagesForCache({ chats: new Map([[chat.id, chat]]),
+      messages: new Map([[chat.id, [...live, ...retained]]]), activeChatId: chat.id } as TelegramState);
+    expect(cached.map(message => message.id)).toEqual(live.map(message => message.id));
+  });
+
+  it("derives stable account registration and transition decisions", () => {
+    const user = mockSnapshot.users[0];
+    const registration = currentAccountRegistration({
+      activeAccountId: "default",
+      authorization: { kind: "ready" },
+      currentUserId: user.id,
+      users: new Map([[user.id, user]]),
+    });
+
+    expect(registration?.account).toEqual({
+      userId: user.id,
+      displayName: user.displayName,
+      avatar: user.avatar,
+    });
+    expect(accountStatePatch({ activeAccountId: "two", accounts: [] }))
+      .toMatchObject({ activeAccountId: "two", accountPending: false });
+    expect(shouldDiscardUnregisteredAccount([], "temporary", "default")).toBe(true);
+    expect(shouldDiscardUnregisteredAccount([
+      { id: "saved", userId: "1", displayName: "Saved", avatar: user.avatar },
+    ], "saved", "default")).toBe(false);
+  });
+});
+
+describe("draft sync controller", () => {
+  it("debounces transport writes and ignores stale server acknowledgements", async () => {
+    vi.useFakeTimers();
+    let drafts = new Map<string, ChatDraft>();
+    const sent: Array<{ chatId: string; draft?: ChatDraft }> = [];
+    const controller = new DraftSyncController({
+      isReady: () => true,
+      getDrafts: () => drafts,
+      setDrafts: (next) => { drafts = next; },
+      sendDraft: async (chatId, draft) => { sent.push({ chatId, draft }); },
+      reportError: vi.fn(),
+      scheduleCacheWrite: vi.fn(),
+    });
+    const local: ChatDraft = {
+      chatId: "chat-product",
+      text: "local",
+      updatedAt: "2026-08-02T08:00:00Z",
+      pending: true,
+    };
+    drafts.set(local.chatId, local);
+    controller.expect(local.chatId, local, 450);
+
+    await vi.advanceTimersByTimeAsync(449);
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sent).toMatchObject([{ chatId: local.chatId, draft: { text: "local" } }]);
+
+    expect(controller.acceptServerDraft(local.chatId, { ...local, text: "stale" })).toBe(false);
+    expect(drafts.get(local.chatId)?.text).toBe("local");
+    expect(controller.acceptServerDraft(local.chatId, { ...local, pending: false })).toBe(true);
+    expect(drafts.get(local.chatId)?.pending).toBe(false);
+    controller.clear();
+  });
+
+  it("sanitizes cached identity fields while preserving message content", () => {
+    const dirtyName = "所\u0334\u035f謂\u034f星\u0361Ⓥ🔥(●—●)|\u202e";
+    const cached = {
+      version: 4,
+      savedAt: "2026-08-01T10:00:00Z",
+      currentUserId: mockSnapshot.currentUserId,
+      users: [{ ...mockSnapshot.users[0], displayName: dirtyName, firstName: dirtyName }],
+      folders: [{ ...mockSnapshot.folders[0], title: dirtyName }],
+      chats: [{ ...mockSnapshot.chats[0], title: dirtyName }],
+      messages: [{
+        ...mockSnapshot.messages[0],
+        senderTag: dirtyName,
+        content: { kind: "text" as const, text: "正文保留 🔥" },
+      }],
+      profiles: [],
+      forumTopics: [{
+        chatId: mockSnapshot.chats[0]!.id,
+        topics: [{
+          id: "1",
+          chatId: mockSnapshot.chats[0]!.id,
+          name: dirtyName,
+          iconColor: 1,
+          createdAt: "2026-08-01T10:00:00Z",
+          isGeneral: false,
+          isOutgoing: false,
+          isClosed: false,
+          isHidden: false,
+          isPinned: false,
+          unreadCount: 0,
+          unreadMentionCount: 0,
+          unreadReactionCount: 0,
+          order: "1",
+          muted: false,
+        }],
+      }],
+      lastForumTopicIds: [],
+    };
+
+    const snapshot = migrateCachedSnapshot(cached).snapshot;
+
+    expect(snapshot?.users[0]).toMatchObject({
+      displayName: "所謂星V🔥(●—●)|",
+      firstName: "所謂星V🔥(●—●)|",
+    });
+    expect(snapshot?.folders[0]?.title).toBe("所謂星V🔥(●—●)|");
+    expect(snapshot?.chats[0]?.title).toBe("所謂星V🔥(●—●)|");
+    expect(snapshot?.messages[0]).toMatchObject({
+      senderTag: "所謂星V🔥(●—●)|",
+      content: { kind: "text", text: "正文保留 🔥" },
+    });
+    expect(snapshot?.forumTopics?.[0]?.topics[0]?.name).toBe("所謂星V🔥(●—●)|");
+  });
+
+  it("clears drafts whose text contains only whitespace", async () => {
+    vi.useFakeTimers();
+    const local: ChatDraft = {
+      chatId: "chat-product",
+      text: " \n\t",
+      updatedAt: "2026-08-02T08:00:00Z",
+      pending: true,
+    };
+    let drafts = new Map([[local.chatId, local]]);
+    const sendDraft = vi.fn(async () => undefined);
+    const controller = new DraftSyncController({
+      isReady: () => true,
+      getDrafts: () => drafts,
+      setDrafts: (next) => { drafts = next; },
+      sendDraft,
+      reportError: vi.fn(),
+      scheduleCacheWrite: vi.fn(),
+    });
+
+    controller.expect(local.chatId, local, 0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(sendDraft).toHaveBeenCalledWith(local.chatId, undefined);
+    expect(controller.acceptServerDraft(local.chatId)).toBe(true);
+    expect(drafts.has(local.chatId)).toBe(false);
+    controller.clear();
+  });
+
+  it("discards local attachments when a remote draft changes or is removed", () => {
+    const local: ChatDraft = {
+      chatId: "chat-product",
+      text: "local caption",
+      updatedAt: "2026-08-02T08:00:00Z",
+    };
+    let drafts = new Map([[local.chatId, local]]);
+    const discardLocalAttachments = vi.fn();
+    const controller = new DraftSyncController({
+      isReady: () => true,
+      getDrafts: () => drafts,
+      setDrafts: (next) => { drafts = next; },
+      sendDraft: vi.fn(async () => undefined),
+      reportError: vi.fn(),
+      scheduleCacheWrite: vi.fn(),
+      discardLocalAttachments,
+    });
+
+    expect(controller.acceptServerDraft(local.chatId, { ...local })).toBe(true);
+    expect(discardLocalAttachments).not.toHaveBeenCalled();
+    expect(controller.acceptServerDraft(local.chatId, { ...local, text: "remote caption" })).toBe(true);
+    expect(discardLocalAttachments).toHaveBeenCalledWith(local.chatId);
+
+    discardLocalAttachments.mockClear();
+    expect(controller.acceptServerDraft(local.chatId)).toBe(true);
+    expect(discardLocalAttachments).toHaveBeenCalledWith(local.chatId);
+
+    discardLocalAttachments.mockClear();
+    drafts = new Map();
+    controller.replaceServerDrafts([{ ...local, text: "remote snapshot" }], [local.chatId]);
+    expect(discardLocalAttachments).toHaveBeenCalledWith(local.chatId);
+    controller.clear();
+  });
+});

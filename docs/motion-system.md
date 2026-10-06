@@ -1,0 +1,260 @@
+# Fardgram motion system
+
+Fardgram uses motion to explain state changes in a dense desktop tool. Motion must stay quiet,
+interruptible, and subordinate to message readability. The system follows the functional and
+consistent motion principles in [Fluent 2](https://fluent2.microsoft.design/motion), the hierarchy
+and transition guidance in [Material 3](https://m3.material.io/styles/motion/overview), and the
+reduced-motion guidance from [web.dev](https://web.dev/articles/prefers-reduced-motion).
+
+## Motion layers
+
+| Layer | Use | Implementation |
+| --- | --- | --- |
+| Transient surfaces | Dialogs, drawers, toasts, anchored popovers | `MotionPresence` with a semantic `variant` |
+| Local feedback | New/deleted messages, spoiler reveal, media state | CSS animation using the shared tokens |
+| Content navigation | Explicit jumps to a distant message | Static relocation snapshot followed by one controlled deceleration |
+| Conversation handoff | Hide virtual-list measurement latency without changing state | Bounded header and source-shell snapshot with inert contents |
+| Continuous feedback | Loading, animated media, audio spectrum | Only while active and when reduced motion is disabled |
+| Async feedback | Loading, pending actions, image decode | Delayed visibility and a bounded minimum visible time |
+
+Conversation selection, scroll restoration, composer resizing, and virtual-list measurement are not
+presentation animations. They remain under their existing single-owner coordinators. A normal switch
+may use the bounded visual handoff above, but that layer cannot delay, select, measure, or write the
+destination.
+
+Expanding a quote detaches bottom following before changing its height and preserves
+the containing message's current screen offset, so the added content grows downward.
+Reuse the content-anchor coordinator through virtual measurements and layout commits.
+For a short bottom-aligned chat, preserve its existing leading gap as measured start
+space; explicit latest navigation clears it through the normal scroll lifecycle.
+User scrolling and newer navigation immediately take over from expansion settlement.
+
+Collapsing a long quote is a local layout change. Commit the collapsed content and
+anchor its expand chevron to the pointer before the next paint (keyboard activation
+uses the former collapse button's center). Reuse the content-anchor coordinator for
+virtual-list measurements, with one owner across row resizes and layout commits.
+Do not run message navigation, center the virtual block, add jump history, or animate
+the entire list. Convert screen-space offsets to scroll coordinates at interface zoom;
+at a scroll boundary keep the closest reachable position without repeated clamped writes.
+User scrolling and newer navigation cancel the bounded anchor settlement.
+
+Quote folding is a local display preference, shared by entity, Markdown, and rich-block
+quotes. Adjacent entity quotes separated only by whitespace form one folding surface;
+their original text and entity offsets remain unchanged. Count rendered lines, including
+soft wrapping, and fold only above the configured threshold (default 10). Keep the existing
+3.5-line preview, capped by lower thresholds, and invalidate saved geometry when the preference changes.
+
+## Shared tokens
+
+CSS tokens live at the top of `src/styles/global.css`; WAAPI and React fallback values live in
+`src/utils/motionTokens.ts`. Keep the duration and easing values aligned when changing the scale.
+
+- `60ms`: native/context-menu acknowledgement.
+- `120ms`: small popovers and fast feedback.
+- `180ms`: standard state transition and exit fallback.
+- `220ms`: large surface entrance.
+- `800ms`: bounded attention feedback such as the active message target.
+- `900ms`: continuous loops such as loading indicators.
+- Enter easing decelerates into place; exit easing accelerates away.
+- Standard travel is `8px`; near travel is `4px`.
+
+Presentation-only timers live in `motionLifecycleTiming`; loading visibility uses
+`asyncFeedbackTiming`. Network debounce, draft persistence, transport timeouts, virtual-list
+measurement, and the single scroll writer are business or geometry lifecycles and must not be moved
+into the motion token module.
+
+## Presence contract
+
+Use `MotionPresence` when a component needs an exit animation. Pass `null` when `present` is false;
+the component retains the last child until the root exit animation ends. Choose the variant by
+relationship, not visual preference:
+
+- `modal`: centered task surface with a backdrop.
+- `drawer`: contextual detail surface with a backdrop.
+- `toast`: non-blocking status or error notice.
+- `popover`: anchored menu, picker, or suggestion panel.
+- `status`: loading, empty, and error feedback that replaces another status in place.
+
+Exiting content is inert and hidden from the accessibility tree. Exit completion listens to the root
+animation and retains a cancelable timer only as a fallback. Do not add a second unmount delay in the
+calling component.
+
+Native Tauri context menus and standalone child windows are lifecycle exceptions. Their owner is the
+OS window or native bridge rather than the React tree, so the browser fallback has a short entry
+acknowledgement but no retained React exit. Validate those boundaries in the native WebView.
+
+## Async stability
+
+Connection status changes must not resize the message viewport, shift its reading
+anchor, or move the composer. Keep passive connection feedback out of document
+flow above the composer stack, including replies, queued messages and attachments.
+Ordinary chats, forum topics and discussions share this presentation. Recovery
+tests retain zero height variation and at most 1px scroll variation while checking
+that the visible status still updates.
+
+`useStableVisibility` waits `140ms` before publishing loading feedback. Work that finishes before the
+delay produces no spinner; feedback that became visible remains for at least `320ms`, preventing a
+single-frame loading/empty/result swap. Existing results stay mounted while search and shared-media
+pagination update. `StableImage` keeps the reserved media geometry but does not reveal a new source
+until `HTMLImageElement.decode()` completes. Decoded-resource knowledge is bounded and
+independent of the lifetime of a virtual row: an already-loaded cached resource restores
+before paint without another fade. Source replacement validates the current element and
+resolved URL before accepting a decode result; loading failures invalidate resource knowledge.
+Media surfaces opt into `retainWhileLoading`: the decoded image node stays in normal flow while
+its replacement loads and decodes in an absolute layer. Only the ready replacement takes over;
+it does not fade through an empty surface. Errors and superseded decodes retain the usable image.
+This is scoped to one media identity, not to unrelated items in a viewer or an account switch.
+
+Virtual rows may release their image and sticker players during reply/latest navigation.
+Avatars and stickers opt into a shared, account-local still-frame cache so a remounted
+surface restores actual pixels before paint while its new image decodes or player initializes.
+The live source still validates readiness; a URL or a previous ready flag alone cannot reveal it.
+Warm replacement images take over without another fade. TGS and WebM players retain their last
+usable frame before destruction; background and reduced-motion playback rules still apply.
+The cache holds at most 256 entries and a 24 MiB pixel/estimated-SVG budget, with raster edges
+capped at 384px and individual SVG previews capped at 2 MiB. It retains no running players,
+does not encode frames, and is cleared by account reset or media cleanup. Generation checks
+reject late writes after cleanup, and source errors invalidate their preview. SVG copies
+receive independent clip/gradient IDs. These previews never own navigation or row geometry.
+
+Conversation photos use display-sized previews instead of attaching downloaded originals to each
+virtual row. Measure the actual card/tile bounds including app zoom and device pixel ratio. Native
+asset requests generate PNG previews on a blocking worker with footprint-aware Triangle resampling;
+album tiles crop centrally before resizing, while individual cards preserve the original ratio.
+The original dimensions continue to own geometry and the viewer still requests the original file.
+Non-native fixtures and local browser sources use a cancellable OffscreenCanvas worker with staged
+downsampling. Unsupported codecs fall back to the existing original/error recovery path.
+
+Prepare only visible photos and their 120px margin, share identical requests, and allow at most two
+frontend loads. Native cold decodes run one at a time. Virtual unmount cancels unused pending loads;
+warm remounts restore a prepared source synchronously and reuse the existing still-frame cache.
+Prepared previews are account-local, capped at 128 entries/48 MiB estimated frontend pixels plus
+encoded bytes, and 128 entries/32 MiB natively. Live frontend leases are protected from eviction.
+Preview edges are capped at 1600 physical pixels; neither cache retains an original bitmap. Native
+keys include file size/mtime, session and display dimensions; reset generations reject late results.
+Account reset and media cleanup clear both caches. Asset requests continue to check account scope
+and expiry and retain no-store. Numeric-only `ui_photo_preview` records report generation duration,
+queue time, source/display dimensions, output bytes and cache hits (phase 1 generation, 2 reuse).
+
+The image viewer keeps its transform on a positioned surface outside the decoded-image lifecycle.
+Upgrading one photo must retain both its painted preview and its zoom/pan; selecting another photo
+resets the viewport before paint. Pointer moves coalesce into one transform write per animation frame,
+and standalone window/preview entrances reveal at full opacity. Wheel navigation
+handles every nonzero event without a cooldown or distance threshold, including events within one render.
+The image fits above the controls, but zoomed pixels and panning use the full screen. Original decoded
+dimensions override document thumbnail dimensions. Captions clamp to five lines with ellipsis and never
+scroll or expand. Captions overlay the image without reducing its fitted area; only the bottom controls
+reserve layout space. A dark media backdrop and caption/footer scrim maintain contrast in both themes.
+The viewer requests its best local source immediately; a separate small preview may load in parallel
+but must never gate the original on preview loading or decoding. The decoded original replaces this
+preview at full opacity, without an additional image fade. Source upgrades retain the existing decoded
+node. The standalone viewer owns a separate three-entry/192 MiB cache of decoded original
+elements, with live pixels protected and unused oversized originals released. An uncropped
+prepared conversation Blob may provide its first frame while the original loads; cropped
+album previews do not replace the whole photo. Native photo windows may remain hidden for
+60 seconds after closing so a fresh revision can reuse these elements. Account reset,
+media cleanup, replacement and idle expiry destroy that child. Native reveal follows a
+ready DOM frame, with bounded fallbacks for slow/error sources and hidden-frame throttling.
+The thumbnail strip selects small sources and adapts its item count to available width. Only the
+two adjacent local originals are warmed, sequentially and at low priority, after the current original
+has decoded and navigation settles, and only when their declared pixel footprint fits
+alongside live images. Zoom input retains every delta and clamps each intermediate
+transform, while both zoom and drag painting coalesce to one write per animation frame.
+Zoom updates the surface's layout dimensions so the browser rasterizes the original at its displayed
+size; do not scale a fitted image layer or pin it with `will-change: transform`. Panning uses translation
+only. Zoom limits must allow long images to reach actual size and 200% of the decoded dimensions.
+Viewer session updates coalesce file progress, ignore duplicate initialization, and cancel pending
+initialization/prefetch when replaced, closed, or the main account changes. Media-window focus return
+continues to follow the shared focus contract.
+
+The minimum-visible and exit-animation rules apply to presentation feedback, not to a
+viewport concealment layer. Conversation positioning feedback uses a delayed entrance and
+ends synchronously when its viewport transaction is ready. Retaining an opaque loading
+background after the old conversation snapshot releases would hide an already-ready view.
+
+The document visibility policy pauses continuous work when the application is backgrounded. CSS
+loops are paused through `motion-background-paused`; audio spectrum, autoplay media, stickers, and
+performance sampling stop scheduling frames and resume from current state when visible again.
+
+## Invariants
+
+1. Animate `opacity` and `transform`; do not animate layout dimensions or virtual-list position.
+2. A scroll position has one writer. Animation code may request a semantic destination but cannot
+   compete with `useConversationScroll`.
+3. Conversation switches do not use smooth scrolling or interactive/state-owning page snapshots.
+   Their optional header/source-shell handoff is `aria-hidden`, has inert cloned contents, consumes
+   pointer events, is interruptible, and is forcibly removed within 1500 ms. The destination header
+   and message shell remain inert until the snapshot exits. The composer and sidebar keep their
+   existing focus/navigation ownership. Exit completion follows the opacity transition event, with
+   a bounded timer fallback; resize, backgrounding and account changes clean up the handoff.
+   Explicit distant message jumps use a separate bounded,
+   static snapshot while the virtual list relocates, then reveal one controlled deceleration. The
+   source snapshot and destination list must not each run their own whole-list transform.
+4. New message animation is registered once by message identity and cannot replay after
+   virtualization or conversation restoration.
+5. Reduced motion is both CSS and JavaScript policy. CSS transitions collapse, smooth scrolling is
+   downgraded, autoplay is disabled, and Canvas/WAAPI loops must stop scheduling frames.
+6. Motion state must be interruptible. Reopening during exit cancels stale timers, keeps the presence
+   wrapper mounted, and starts a fresh child session so focus and local state initialize correctly.
+7. Loading or geometry settlement cannot be hidden by a long opaque animation. Publish stable layout
+   first, then animate presentation-only properties.
+8. Every CSS transition and keyframe uses a shared duration token and only changes `opacity` or
+   `transform`. Run `npm run motion:check` to enforce this contract.
+
+## Snapshot and presentation timing
+
+Snapshot media is frozen directly into canvases, never serialized to PNG on the navigation path.
+Only media intersecting the viewport is rasterized, at displayed size with DPR capped at 2 and a
+per-surface area cap of four viewport pixel areas. Overscan retains geometry with its media sources
+removed. Cloned videos are disarmed before insertion; the original frame or poster supplies the
+visual fallback. The virtual list and its scroll coordinator retain ownership of destination geometry.
+
+Conversation diagnostics distinguish `titleUpdateDurationMs` (destination title committed),
+`messagesVisibleDurationMs` (positioned messages have an uncovered frame after the snapshot exits),
+and `firstScreenMediaDurationMs` (visible media has a decoded image, poster, canvas or video frame).
+The retained header shares the message handoff even though its destination DOM commits earlier.
+`visualResponseDurationMs` includes the actual handoff after transition start. Media readiness is
+observed independently and never delays interactivity or selection; failed, cancelled or timed-out
+loads do not produce a successful media-ready duration. Observers are bounded by the trace lifetime,
+pause in the background and clean up on navigation or completion.
+
+## Message deletion
+
+Deletion removes the server message immediately from live data and retains only its existing
+presentation record for the 220ms exit plus the shared 40ms fallback buffer. The message and
+departing sender avatar fade and shrink together; exiting message controls are inert.
+
+`ConversationViewportBoundary` captures surviving surfaces before the removing rows disappear.
+`useConversationScroll` keeps the lower surviving message anchored while reading history, or
+uses its existing bottom coordinator when following latest. A bounded 300ms FLIP transition
+then moves the upper bubbles, albums, date labels, and avatars into place. Only the contents
+are transformed: measured message rows and virtual partitions retain their final geometry.
+Virtual-list commits and row measurements reconcile that same transaction before paint.
+Consecutive deletions capture the current visual position instead of replaying an old start.
+At the beginning of history, the measured Header reserves any distance that cannot be
+compensated with a negative scroll offset. That space changes once and is not animated.
+
+Scrolling, navigation, resizing preferences, reduced motion, backgrounding, and unmounting
+cancel retained transforms. Reduced motion keeps the anchor correction without a visual fall.
+The deletion browser suite checks actual per-frame positions, including stationary lower
+messages and the absence of a bounce when the transform is released.
+
+## Coverage and verification
+
+The browser motion suite interrupts popover exits, rapidly changes conversations, performs repeated
+message jumps, scrolls with an open popover, resizes across responsive breakpoints, simulates a
+background tab, and holds image decoding. Its visual matrix covers `390`, `768`, and `1280` pixels in
+both normal and reduced-motion modes. After changing the motion system, run:
+
+```powershell
+npm run motion:check
+npm run test:e2e:types
+npm run test:e2e -- tests/e2e/motion.e2e.ts
+```
+
+## Adding motion
+
+Before adding an animation, identify the state owner and the exact information the motion explains.
+Prefer an existing variant or token. Add a focused regression for rapid reopen, virtualization,
+reduced motion, or geometry whenever that boundary is involved. Validate the result in the Mock
+browser at desktop and narrow widths; use native WebView validation for window-level motion.

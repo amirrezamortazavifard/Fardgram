@@ -1,0 +1,58 @@
+import { translate } from "../i18n";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import type { MouseEvent } from "react";
+import { telegramStore } from "../store/telegramStore";
+import {
+  isUnsupportedTelegramLink,
+  parseTelegramUrl,
+} from "../telegram/telegramLinks";
+
+const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:", "tg:"]);
+const MAX_EXTERNAL_URL_LENGTH = 4_096;
+let telegramLinkRequestId = 0;
+
+export const safeExternalHref = (value?: string) => {
+  if (!value || value.length > MAX_EXTERNAL_URL_LENGTH || value.trim() !== value) {
+    return undefined;
+  }
+  if ([...value].some((character) => /[\u0000-\u001f\u007f]/.test(character))) {
+    return undefined;
+  }
+  const telegramUrl = parseTelegramUrl(value);
+  if (telegramUrl) return telegramUrl.href;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === "tg:") return undefined;
+    return ALLOWED_PROTOCOLS.has(parsed.protocol.toLowerCase()) ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export const openExternalLink = async (value: string) => {
+  const href = safeExternalHref(value);
+  if (!href) throw new Error(translate("不支持此外链地址"));
+  if (await openTelegramLinkInApp(href)) return;
+  if (isTauri()) {
+    await invoke("fardgram_open_external_url", { url: href });
+    return;
+  }
+  const opened = globalThis.open(href, "_blank", "noopener,noreferrer");
+  if (opened) opened.opener = null;
+};
+
+export const openTelegramLinkInApp = async (value: string) => {
+  const parsed = parseTelegramUrl(value);
+  if (!parsed) return false;
+  const requestId = ++telegramLinkRequestId;
+  const target = await telegramStore.getState().resolveTelegramLink(parsed.href);
+  if (requestId !== telegramLinkRequestId || !target || isUnsupportedTelegramLink(target)) return true;
+  globalThis.dispatchEvent(new CustomEvent("fardgram:telegram-link-opened", { detail: target }));
+  return true;
+};
+
+export const handleExternalLinkClick = (event: MouseEvent<HTMLAnchorElement>) => {
+  event.preventDefault();
+  event.stopPropagation();
+  void openExternalLink(event.currentTarget.href);
+};

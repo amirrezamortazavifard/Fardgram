@@ -1,0 +1,588 @@
+import { expect, test, type Page } from "@playwright/test";
+import type { PhotoMessage } from "../../src/utils/mediaViewerModel";
+import type { MediaViewerWindowDescriptor, MediaViewerWindowMessage } from "../../src/media/mediaViewerWindowBridge";
+
+type FixtureWindow = Window & { viewerFixture: {
+  descriptor: MediaViewerWindowDescriptor;
+  events: MediaViewerWindowMessage[];
+  channel: BroadcastChannel;
+  failActions: boolean;
+} };
+
+async function openFixture(page: Page, previewOnly = false, options: {
+  originalGate?: Promise<void>;
+  thumbnailGate?: Promise<void>;
+  neighborGate?: Promise<void>;
+  onRequest?: (path: string) => void;
+  originalSize?: { width: number; height: number };
+  detailPattern?: boolean;
+  native?: boolean;
+  preparedPreview?: boolean;
+} = {}) {
+  await page.route("**/viewer-fixture.html", route => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Viewer fixture</title>" }));
+  await page.goto("/viewer-fixture.html");
+  const originalSize = options.originalSize ?? { width: 3200, height: 2000 };
+  const images = await page.evaluate(({ originalSize, detailPattern }) => {
+    const render = (width: number, height: number, patterned = false) => {
+      const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
+      const context = canvas.getContext("2d")!;
+      if (patterned) {
+        const tile = document.createElement("canvas"); tile.width = 4; tile.height = 4;
+        const pixels = tile.getContext("2d")!;
+        pixels.fillStyle = "white"; pixels.fillRect(0, 0, 4, 4);
+        pixels.fillStyle = "black"; pixels.fillRect(0, 0, 2, 2); pixels.fillRect(2, 2, 2, 2);
+        context.fillStyle = context.createPattern(tile, "repeat")!; context.fillRect(0, 0, width, height);
+        return canvas.toDataURL("image/png").split(",")[1]!;
+      }
+      context.fillStyle = "#3f7969"; context.fillRect(0, 0, width, height);
+      context.fillStyle = "#e2d5a4"; context.fillRect(width / 4, height / 4, width / 2, height / 2);
+      return canvas.toDataURL("image/jpeg").split(",")[1]!;
+    };
+    return { original: render(originalSize.width, originalSize.height, detailPattern), thumbnail: render(160, 100) };
+  }, { originalSize, detailPattern: options.detailPattern });
+  const requests: string[] = [];
+  await page.route("**/viewer-image/**", async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    requests.push(pathname);
+    options.onRequest?.(pathname);
+    if (pathname === "/viewer-image/original-6.jpg") await options.originalGate;
+    if (pathname === "/viewer-image/thumb-6.jpg") await options.thumbnailGate;
+    if (pathname === "/viewer-image/original-5.jpg") await options.neighborGate;
+    if (pathname.includes("delayed")) await new Promise(resolve => setTimeout(resolve, 600));
+    if (pathname.includes("failed")) { await route.abort(); return; }
+    const thumbnail = pathname.includes("thumb");
+    await route.fulfill({ contentType: !thumbnail && options.detailPattern ? "image/png" : "image/jpeg", body: Buffer.from(thumbnail ? images.thumbnail : images.original, "base64") });
+  });
+  const messages: PhotoMessage[] = Array.from({ length: 15 }, (_, index) => ({
+    id: `photo-${index}`, chatId: "viewer-fixture", senderId: "fixture", outgoing: false, sentAt: "2026-09-14T00:00:00Z", delivery: "read",
+    content: { kind: "media", mediaType: "photo", fileName: `image-${index}.jpg`, sizeLabel: "2 MB", ...originalSize,
+      localPath: previewOnly && index === 6 ? undefined : `/viewer-image/original-${index}.jpg`,
+      thumbnailPath: `/viewer-image/thumb-${index}.jpg`,
+      isDownloaded: !(previewOnly && index === 6), dataCenterId: 5, remoteId: "AwADBAADewAPKgQ",
+      caption: index === 6 ? "Viewer caption" : `Caption ${index}` },
+  }));
+  const descriptor: MediaViewerWindowDescriptor = { id: "fixture", messages, activeMessageId: "photo-6", colorTheme: "dark" };
+  // Blob values must be structured-cloned through the actual channel, not JSON init arguments.
+  const previewBase64 = options.preparedPreview ? images.original : undefined;
+  if (options.native) { descriptor.reusable = true; descriptor.revision = 0; }
+  await page.addInitScript(({ native, previewBase64 }) => {
+    if (native) Object.assign(window, { isTauri: true, viewerNativeCalls: [] as Array<{ command: string; ready: boolean }>, __TAURI_INTERNALS__: {
+      metadata: { currentWindow: { label: "media-viewer-fixture" }, currentWebview: { label: "media-viewer-fixture" } },
+      convertFileSrc: (path: string) => path,
+      transformCallback: () => 1,
+      unregisterCallback: () => undefined,
+      invoke: async (command: string) => {
+        (window as unknown as { viewerNativeCalls: Array<{ command: string; ready: boolean }> }).viewerNativeCalls.push({ command,
+          ready: Boolean(document.querySelector('.media-viewer-surface img[data-image-state="ready"]')) });
+        return 1;
+      },
+    } });
+    (window as unknown as { viewerPreparedBase64?: string }).viewerPreparedBase64 = previewBase64;
+  }, { native: options.native, previewBase64 });
+  await page.addInitScript(input => {
+    const descriptor = input as unknown as MediaViewerWindowDescriptor;
+    const base64 = (window as unknown as { viewerPreparedBase64?: string }).viewerPreparedBase64;
+    if (base64) descriptor.preparedPreview = { sourcePath: descriptor.messages[6]!.content.localPath!,
+      blob: new Blob([Uint8Array.from(atob(base64), character => character.charCodeAt(0))], { type: "image/jpeg" }) };
+    const channel = new BroadcastChannel("fardgram-media-viewer-window-v1");
+    const fixture = { descriptor, channel, events: [] as MediaViewerWindowMessage[], failActions: false };
+    (window as unknown as FixtureWindow).viewerFixture = fixture;
+    channel.onmessage = (event: MessageEvent<MediaViewerWindowMessage>) => {
+      fixture.events.push(event.data);
+      if (event.data.type === "ready") channel.postMessage({ type: "init", id: "fixture", descriptor: fixture.descriptor });
+      if ((event.data.type === "save" || event.data.type === "download") && event.data.requestId !== undefined) {
+        channel.postMessage({ type: "action-result", id: "fixture", requestId: event.data.requestId, failed: fixture.failActions });
+      }
+    };
+  }, descriptor);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/windows/media-viewer-window.html?id=fixture");
+  await expect(page.locator('.media-viewer-image[data-image-state="ready"]')).toHaveCount(1);
+  await expect(page.locator(".media-viewer-thumbnails button")).toHaveCount(9);
+  return { requests };
+}
+
+test("a local original loads without waiting for a stalled thumbnail in a fresh viewer", async ({ page }) => {
+  let release!: () => void;
+  const thumbnailGate = new Promise<void>(resolve => { release = resolve; });
+  const requests: string[] = [];
+  const opened = openFixture(page, false, { thumbnailGate, onRequest: path => requests.push(path) });
+  // Observe the open promise immediately so a failed assertion still cleans up the fixture.
+  void opened.catch(() => undefined);
+  try {
+    await expect.poll(() => requests.includes("/viewer-image/original-6.jpg")).toBe(true);
+    const image = page.locator('.media-viewer-image[src="/viewer-image/original-6.jpg"][data-image-state="ready"]');
+    await expect(image).toHaveCount(1);
+    expect(await image.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(3200);
+  } finally {
+    release();
+    await opened;
+  }
+});
+
+test("returning to a decoded original reuses its node without a request or decode", async ({ page }) => {
+  const { requests } = await openFixture(page);
+  await page.evaluate(() => {
+    const image = document.querySelector<HTMLImageElement>('.media-viewer-image[data-image-state="ready"]')!;
+    Object.assign(window, { firstViewerImage: image, repeatDecodeCount: 0 });
+    const decode = image.decode.bind(image);
+    image.decode = () => { (window as unknown as { repeatDecodeCount: number }).repeatDecodeCount++; return decode(); };
+  });
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator('.media-viewer-image[src="/viewer-image/original-7.jpg"][data-image-state="ready"]')).toHaveCount(1);
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator('.media-viewer-image[src="/viewer-image/original-6.jpg"][data-image-state="ready"]')).toHaveCount(1);
+  expect(await page.evaluate(() => {
+    const state = window as unknown as { firstViewerImage: HTMLImageElement; repeatDecodeCount: number };
+    return { same: document.querySelector('.media-viewer-image[data-image-state="ready"]') === state.firstViewerImage, decodes: state.repeatDecodeCount };
+  })).toEqual({ same: true, decodes: 0 });
+  expect(requests.filter(path => path === "/viewer-image/original-6.jpg")).toHaveLength(1);
+});
+
+test("a predecoded neighbor mounts without repeating its request or losing a frame", async ({ page }) => {
+  const { requests } = await openFixture(page);
+  await expect.poll(() => requests.includes("/viewer-image/original-7.jpg")).toBe(true);
+  await page.evaluate(async () => {
+    const module = await import("/src/media/viewerImages.ts" as string) as typeof import("../../src/media/viewerImages");
+    const retained = module.retainViewerImage("/viewer-image/original-7.jpg");
+    const image = await retained.promise;
+    Object.assign(window, { predecodedNeighbor: image });
+    retained.release();
+  });
+  const result = await page.evaluate(async () => {
+    const viewport = document.querySelector(".media-viewer-viewport")!;
+    viewport.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 1 }));
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const image = document.querySelector<HTMLImageElement>('.media-viewer-image[data-image-state="ready"]');
+    return { same: image === (window as unknown as { predecodedNeighbor: HTMLImageElement }).predecodedNeighbor,
+      source: image?.getAttribute("src"), opacity: image ? getComputedStyle(image).opacity : undefined };
+  });
+  expect(result).toEqual({ same: true, source: "/viewer-image/original-7.jpg", opacity: "1" });
+  expect(requests.filter(path => path === "/viewer-image/original-7.jpg")).toHaveLength(1);
+});
+
+test("a prepared clear preview is visible while the original loads and has no entrance fade", async ({ page }) => {
+  let release!: () => void;
+  const originalGate = new Promise<void>(resolve => { release = resolve; });
+  const opened = openFixture(page, false, { originalGate, preparedPreview: true });
+  void opened.catch(() => undefined);
+  try {
+    const placeholder = page.locator('.media-viewer-placeholder[data-image-state="ready"]');
+    await expect(placeholder).toHaveCount(1);
+    expect(await placeholder.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(3200);
+    await expect(placeholder).toHaveCSS("opacity", "1");
+    await expect(placeholder).toHaveCSS("transition-duration", "0s");
+    await expect(page.locator(".media-viewer-backdrop")).toHaveCSS("animation-name", "none");
+    await expect(page.locator(".media-viewer")).toHaveCSS("animation-name", "none");
+  } finally { release(); await opened; }
+});
+
+test("native photo close parks the window and reopens the same pixels before showing", async ({ page }) => {
+  const { requests } = await openFixture(page, false, { native: true });
+  await page.evaluate(() => Object.assign(window, { parkedImage: document.querySelector('.media-viewer-image[data-image-state="ready"]') }));
+  await expect.poll(() => page.evaluate(() => (window as unknown as { viewerNativeCalls: Array<{ command: string }> })
+    .viewerNativeCalls.filter(call => call.command === "fardgram_show_media_viewer_window").length)).toBe(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".media-viewer")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (window as unknown as FixtureWindow).viewerFixture.events.some(event => event.type === "parked"))).toBe(true);
+  await page.evaluate(() => {
+    const fixture = (window as unknown as FixtureWindow).viewerFixture;
+    fixture.channel.postMessage({ type: "reopen", id: "fixture", descriptor: { ...fixture.descriptor, revision: 1 } });
+  });
+  await expect(page.locator('.media-viewer-image[data-image-state="ready"]')).toHaveCount(1);
+  expect(await page.evaluate(() => document.querySelector('.media-viewer-image[data-image-state="ready"]') ===
+    (window as unknown as { parkedImage: HTMLImageElement }).parkedImage)).toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { viewerNativeCalls: Array<{ command: string }> })
+    .viewerNativeCalls.filter(call => call.command === "fardgram_show_media_viewer_window").length)).toBe(2);
+  const calls = await page.evaluate(() => (window as unknown as { viewerNativeCalls: Array<{ command: string; ready: boolean }> }).viewerNativeCalls);
+  expect(calls.filter(call => call.command === "fardgram_show_media_viewer_window").every(call => call.ready)).toBe(true);
+  expect(calls.some(call => call.command === "plugin:window|close")).toBe(false);
+  expect(requests.filter(path => path === "/viewer-image/original-6.jpg")).toHaveLength(1);
+});
+
+test("native viewer exposes controls even when both image sources stall", async ({ page }) => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const opened = openFixture(page, false, { native: true, originalGate: gate, thumbnailGate: gate });
+  void opened.catch(() => undefined);
+  try {
+    await expect(page.locator(".media-viewer-details")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { viewerNativeCalls?: Array<{ command: string }> })
+      .viewerNativeCalls?.some(call => call.command === "fardgram_show_media_viewer_window") ?? false)).toBe(true);
+    await expect(page.locator('.media-viewer-surface img[data-image-state="ready"]')).toHaveCount(0);
+  } finally { release(); await opened; }
+});
+
+test("neighbor originals wait until the current original is decoded", async ({ page }) => {
+  let release!: () => void;
+  const originalGate = new Promise<void>(resolve => { release = resolve; });
+  const requests: string[] = [];
+  const opened = openFixture(page, false, { originalGate, onRequest: path => requests.push(path) });
+  void opened.catch(() => undefined);
+  try {
+    await expect.poll(() => requests.includes("/viewer-image/original-6.jpg")).toBe(true);
+    await expect(page.locator('.media-viewer-surface img[data-image-state="ready"]')).toHaveCount(1);
+    await page.waitForTimeout(350);
+    expect(requests.filter(path => path.includes("original"))).toEqual(["/viewer-image/original-6.jpg"]);
+    await page.evaluate(() => {
+      const state = { blankFrames: 0, running: true };
+      (window as unknown as { coldSampling: typeof state }).coldSampling = state;
+      const sample = () => {
+        if (![...document.querySelectorAll<HTMLImageElement>(".media-viewer-surface img")].some(image =>
+          image.complete && image.naturalWidth > 0 && Number(getComputedStyle(image).opacity) === 1)) state.blankFrames++;
+        if (state.running) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+  } finally {
+    release();
+    await opened;
+  }
+  await expect(page.locator('.media-viewer-image[src="/viewer-image/original-6.jpg"][data-image-state="ready"]')).toHaveCount(1);
+  await expect.poll(() => requests.filter(path => path.includes("original")).length).toBe(3);
+  expect(await page.evaluate(() => {
+    const state = (window as unknown as { coldSampling: { blankFrames: number; running: boolean } }).coldSampling;
+    state.running = false;
+    return state.blankFrames;
+  })).toBe(0);
+});
+
+test("neighbor warming is sequential and cancels the remaining queue when navigating", async ({ page }) => {
+  let release!: () => void;
+  const neighborGate = new Promise<void>(resolve => { release = resolve; });
+  const requests: string[] = [];
+  try {
+    await openFixture(page, false, { neighborGate, onRequest: path => requests.push(path) });
+    await expect.poll(() => requests.includes("/viewer-image/original-5.jpg")).toBe(true);
+    await page.waitForTimeout(200);
+    expect(requests).not.toContain("/viewer-image/original-7.jpg");
+    await page.getByRole("button", { name: "查看 image-10.jpg", exact: true }).click();
+    await expect(page.locator('.media-viewer-image[src="/viewer-image/original-10.jpg"][data-image-state="ready"]')).toHaveCount(1);
+    await expect.poll(() => requests.includes("/viewer-image/original-11.jpg")).toBe(true);
+    release();
+    await page.waitForTimeout(200);
+    expect(requests).not.toContain("/viewer-image/original-7.jpg");
+  } finally {
+    release();
+  }
+});
+
+test("zoom wheel bursts preserve every delta with one style write per frame", async ({ page }) => {
+  await openFixture(page);
+  const result = await page.evaluate(async () => {
+    const viewport = document.querySelector(".media-viewer-viewport")!;
+    const surface = document.querySelector<HTMLElement>(".media-viewer-surface")!;
+    const width = surface.getBoundingClientRect().width;
+    let writes = 0;
+    const observer = new MutationObserver(records => { writes += records.length; });
+    observer.observe(surface, { attributes: true, attributeFilter: ["style"] });
+    for (let index = 0; index < 100; index++) viewport.dispatchEvent(new WheelEvent("wheel", {
+      bubbles: true, ctrlKey: true, deltaY: -1, clientX: 640, clientY: 350,
+    }));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    observer.disconnect();
+    return { writes, scale: surface.getBoundingClientRect().width / width };
+  });
+  expect(result.scale).toBeCloseTo(Math.exp(100 * Math.log(1.5) / 240), 4);
+  expect(result.writes).toBeGreaterThan(0);
+  expect(result.writes).toBeLessThanOrEqual(2);
+});
+
+async function replaceOriginal(page: Page, source: string) {
+  await page.evaluate(source => {
+    const fixture = (window as unknown as FixtureWindow).viewerFixture;
+    fixture.descriptor.messages = fixture.descriptor.messages.map(message => message.id === "photo-6"
+      ? { ...message, content: { ...message.content, localPath: source, isDownloaded: true } } : message);
+    fixture.channel.postMessage({ type: "sync", id: "fixture", messages: fixture.descriptor.messages, colorTheme: "dark" });
+  }, source);
+}
+
+test("original upgrades retain painted pixels and the exact viewport during loading and errors", async ({ page }) => {
+  await openFixture(page, true);
+  const surface = page.locator(".media-viewer-surface");
+  const fitted = (await surface.boundingBox())!;
+  await page.keyboard.press("+");
+  await expect.poll(async () => (await surface.boundingBox())!.width).toBeCloseTo(fitted.width * 1.5, 1);
+  const viewport = page.locator(".media-viewer-viewport");
+  const bounds = (await viewport.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down(); await page.mouse.move(bounds.x + bounds.width / 2 + 80, bounds.y + bounds.height / 2 + 40, { steps: 12 }); await page.mouse.up();
+  const before = await surface.boundingBox();
+  expect(before!.width).toBeCloseTo(fitted.width * 1.5, 1);
+  await page.evaluate(() => {
+    const state = { blankFrames: 0, retainedFrames: 0, running: true };
+    (window as unknown as { upgradeSampling: typeof state }).upgradeSampling = state;
+    const sample = () => {
+      const images = [...document.querySelectorAll<HTMLImageElement>(".media-viewer-image")];
+      if (!images.some(image => image.complete && image.naturalWidth > 0 && Number(getComputedStyle(image).opacity) > 0)) state.blankFrames++;
+      if (images.some(image => image.dataset.imageRetained === "true")) state.retainedFrames++;
+      if (state.running) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await replaceOriginal(page, "/viewer-image/delayed-original.jpg");
+  await expect(page.locator('.media-viewer-image[data-image-retained="true"]')).toHaveCount(1);
+  await expect(page.locator('.media-viewer-image[src="/viewer-image/delayed-original.jpg"][data-image-state="ready"]')).toHaveCount(1);
+  const sampling = await page.evaluate(() => {
+    const state = (window as unknown as { upgradeSampling: { blankFrames: number; retainedFrames: number; running: boolean } }).upgradeSampling;
+    state.running = false; return state;
+  });
+  expect(sampling.blankFrames).toBe(0);
+  expect(sampling.retainedFrames).toBeGreaterThan(10);
+  expect(await surface.boundingBox()).toEqual(before);
+  await replaceOriginal(page, "/viewer-image/failed-original.jpg");
+  await expect(page.locator('.media-viewer-image[src="/viewer-image/thumb-6.jpg"][data-image-state="ready"]')).toHaveCount(1);
+  expect(await surface.boundingBox()).toEqual(before);
+});
+
+test("thumbnails stay small and selected images remain visible at every viewport", async ({ page }) => {
+  const { requests } = await openFixture(page);
+  await expect.poll(() => requests.filter(url => url.includes("original")).length).toBe(3);
+  expect(requests.filter(url => url.includes("original")).sort()).toEqual([
+    "/viewer-image/original-5.jpg", "/viewer-image/original-6.jpg", "/viewer-image/original-7.jpg",
+  ]);
+  await expect.poll(() => page.locator(".media-viewer-thumbnails img").evaluateAll(images => images.every(image => (image as HTMLImageElement).naturalWidth === 160))).toBe(true);
+  for (const width of [1280, 900, 700, 390, 320]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect.poll(() => page.evaluate(() => {
+      const strip = document.querySelector(".media-viewer-thumbnails")!.getBoundingClientRect();
+      const selected = document.querySelector(".media-viewer-thumbnails .is-active")!.getBoundingClientRect();
+      const info = document.querySelector(".media-viewer-details")!.getBoundingClientRect();
+      return strip.left >= 0 && strip.right <= innerWidth && selected.left >= strip.left && selected.right <= strip.right &&
+        !(info.left < strip.right && info.right > strip.left && info.top < strip.bottom && info.bottom > strip.top);
+    })).toBe(true);
+  }
+  await expect(page.locator(".media-viewer-thumbnails button")).toHaveCount(3);
+});
+
+test("unthrottled wheel bursts and duplicate initialization preserve the current image", async ({ page }) => {
+  await openFixture(page);
+  await page.evaluate(() => {
+    const viewport = document.querySelector(".media-viewer-viewport")!;
+    for (let i = 0; i < 3; i++) viewport.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 1 }));
+  });
+  await expect(page.locator(".media-viewer")).toHaveAttribute("aria-label", "图片查看器：image-9.jpg");
+  await page.evaluate(() => {
+    const fixture = (window as unknown as FixtureWindow).viewerFixture;
+    fixture.channel.postMessage({ type: "init", id: "fixture", descriptor: fixture.descriptor });
+  });
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".media-viewer")).toHaveAttribute("aria-label", "图片查看器：image-10.jpg");
+  await expect.poll(() => page.evaluate(() => (window as unknown as FixtureWindow).viewerFixture.events.filter(event => event.type === "active").map(event => event.messageId))).toContain("photo-10");
+});
+
+test("storage DC comes from the image and failed saves are visible in the viewer", async ({ page }) => {
+  await openFixture(page);
+  await expect(page.locator(".media-viewer-details")).toContainText("数据中心：DC4");
+  await page.evaluate(() => {
+    const fixture = (window as unknown as FixtureWindow).viewerFixture;
+    fixture.failActions = true;
+    fixture.descriptor.messages = fixture.descriptor.messages.map(message => ({ ...message, content: { ...message.content, remoteId: "unsupported", dataCenterId: 5 } }));
+    fixture.channel.postMessage({ type: "sync", id: "fixture", messages: fixture.descriptor.messages, colorTheme: "dark" });
+  });
+  await expect(page.locator(".media-viewer-details")).toContainText("数据中心：未知");
+  await page.getByRole("button", { name: "下载图片", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("文件下载失败");
+  await expect(page.getByRole("button", { name: "下载图片", exact: true })).toBeEnabled();
+});
+
+test("drag bursts write once per frame and zooming keeps the pointed image detail stable", async ({ page }) => {
+  await openFixture(page);
+  const viewport = page.locator(".media-viewer-viewport");
+  const surface = page.locator(".media-viewer-surface");
+  const bounds = (await viewport.boundingBox())!;
+  await page.mouse.move(Math.round(bounds.x + bounds.width / 2 + 70), Math.round(bounds.y + bounds.height / 2 + 40));
+  const before = await surface.boundingBox();
+  await page.keyboard.down("Control"); await page.mouse.wheel(0, -240); await page.keyboard.up("Control");
+  await expect.poll(async () => (await surface.boundingBox())!.width).toBeCloseTo(before!.width * 1.5, 1);
+  const after = (await surface.boundingBox())!;
+  const point = { x: Math.round(bounds.x + bounds.width / 2 + 70), y: Math.round(bounds.y + bounds.height / 2 + 40) };
+  expect((point.x - after.x) / after.width).toBeCloseTo((point.x - before!.x) / before!.width, 4);
+  expect((point.y - after.y) / after.height).toBeCloseTo((point.y - before!.y) / before!.height, 4);
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  const writes = await page.evaluate(async () => {
+    const viewport = document.querySelector(".media-viewer-viewport")!;
+    const surface = document.querySelector(".media-viewer-surface")!;
+    const bounds = viewport.getBoundingClientRect();
+    let writes = 0;
+    const observer = new MutationObserver(records => { writes += records.length; });
+    observer.observe(surface, { attributes: true, attributeFilter: ["style"] });
+    for (let index = 0; index < 200; index++) viewport.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true, pointerId: 1, clientX: bounds.x + bounds.width / 2 + index, clientY: bounds.y + bounds.height / 2 + index,
+    }));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    observer.disconnect(); return writes;
+  });
+  await page.mouse.up();
+  expect(writes).toBeGreaterThan(0);
+  expect(writes).toBeLessThanOrEqual(2);
+  await page.locator(".media-viewer-image").dblclick();
+  await expect.poll(async () => (await surface.boundingBox())!.width).toBeCloseTo(before!.width, 1);
+  await expect(surface).toHaveAttribute("style", /translate\(0px, 0px\)/);
+});
+
+test("late decodes cannot replace a newly selected image and captions clamp to five lines without scrollbars", async ({ page }) => {
+  await openFixture(page, true);
+  await replaceOriginal(page, "/viewer-image/delayed-stale.jpg");
+  await expect(page.locator('.media-viewer-image[data-image-retained="true"]')).toHaveCount(1);
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator('.media-viewer-image[src="/viewer-image/original-7.jpg"][data-image-state="ready"]')).toHaveCount(1);
+  const beforeCaption = await page.locator(".media-viewer-surface").boundingBox();
+  await page.evaluate(() => {
+    const fixture = (window as unknown as FixtureWindow).viewerFixture;
+    fixture.descriptor.messages = fixture.descriptor.messages.map(message => message.id === "photo-7" ? {
+      ...message, content: { ...message.content, caption: Array.from({ length: 12 }, (_, index) => `Caption paragraph ${index + 1}: long image descriptions remain readable.`).join("\n") },
+    } : message);
+    fixture.channel.postMessage({ type: "sync", id: "fixture", messages: fixture.descriptor.messages, colorTheme: "dark" });
+  });
+  await expect(page.locator(".media-viewer-caption")).toContainText("Caption paragraph 12");
+  expect(await page.locator(".media-viewer-surface").boundingBox()).toEqual(beforeCaption);
+  const imageBounds = (await page.locator(".media-viewer-surface").boundingBox())!;
+  const captionBounds = (await page.locator(".media-viewer-caption").boundingBox())!;
+  expect(captionBounds.y).toBeLessThan(imageBounds.y + imageBounds.height);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const caption = page.locator(".media-viewer-caption");
+  await expect(caption).toHaveCSS("-webkit-line-clamp", "5");
+  await expect(caption).toHaveCSS("overflow", "hidden");
+  const metrics = await caption.evaluate(element => ({ height: element.clientHeight, lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight), scrollHeight: element.scrollHeight }));
+  expect(metrics.height).toBeLessThanOrEqual(Math.ceil(metrics.lineHeight * 5));
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.height);
+  await expect(page.getByRole("button", { name: /展开说明|收起说明/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "下载图片", exact: true })).toBeVisible();
+  // The delayed request has now either decoded or been cancelled by navigation.
+  await page.waitForTimeout(650);
+  await expect(page.locator('.media-viewer-image[src="/viewer-image/original-7.jpg"][data-image-state="ready"]')).toHaveCount(1);
+  await expect(page.locator('.media-viewer-image[src="/viewer-image/delayed-stale.jpg"]')).toHaveCount(0);
+});
+
+test("image documents replace thumbnail dimensions with the decoded original size", async ({ page }) => {
+  await openFixture(page, true);
+  await page.evaluate(async () => {
+    const mapperPath = "/src/telegram/tdlibMapper.ts";
+    const { mapTdMessageContent } = await import(mapperPath);
+    const fixture = (window as unknown as FixtureWindow).viewerFixture;
+    const content = mapTdMessageContent({
+      "@type": "messageDocument", caption: { text: "Image sent as a file" },
+      document: {
+        file_name: "document.jpg", mime_type: "image/jpeg",
+        thumbnail: { width: 160, height: 100, file: { id: 2, local: { is_downloading_completed: true, path: "/viewer-image/thumb-document.jpg" } } },
+        document: { id: 1, size: 2000000, local: { is_downloading_completed: true, path: "/viewer-image/delayed-document.jpg" }, remote: {} },
+      },
+    });
+    fixture.descriptor.messages = fixture.descriptor.messages.map(message => message.id === "photo-6" ? { ...message, content } : message);
+    fixture.channel.postMessage({ type: "sync", id: "fixture", messages: fixture.descriptor.messages, colorTheme: "dark" });
+  });
+  const original = page.locator('.media-viewer-image[src="/viewer-image/delayed-document.jpg"][data-image-state="ready"]');
+  await expect(original).toHaveCount(1);
+  await expect.poll(() => original.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(3200);
+  await expect.poll(async () => (await original.boundingBox())!.width).toBeGreaterThan(800);
+  await expect(page.locator(".media-viewer-details")).toContainText("3200 × 2000");
+  await original.dblclick();
+  await expect(page.locator(".media-viewer-zoom")).toHaveText("100%");
+});
+
+test("zoomed pixels reach every screen edge while the controls stay above them", async ({ page }) => {
+  await openFixture(page);
+  for (const size of [{ width: 1280, height: 800 }, { width: 1080, height: 1920 }]) {
+    await page.setViewportSize(size);
+    for (let step = 0; step < 4; step++) await page.keyboard.press("+");
+    const viewport = page.locator(".media-viewer-viewport");
+    expect(await viewport.boundingBox()).toEqual({ x: 0, y: 0, ...size });
+    await expect.poll(() => page.evaluate(() => [[1, 1], [innerWidth - 2, 1], [1, innerHeight - 2], [innerWidth - 2, innerHeight - 2]].map(([x, y]) =>
+      document.elementsFromPoint(x!, y!).some(element => element.classList.contains("media-viewer-image"))))).toEqual([true, true, true, true]);
+    await expect(page.getByRole("button", { name: "下载图片", exact: true })).toBeVisible();
+    for (let step = 0; step < 4; step++) await page.keyboard.press("-");
+  }
+});
+
+test("light and dark themes keep metadata legible over a bright complex background", async ({ page }) => {
+  await openFixture(page);
+  for (const colorTheme of ["light", "dark"]) {
+    await page.evaluate(colorTheme => {
+      const fixture = (window as unknown as FixtureWindow).viewerFixture;
+      document.documentElement.style.setProperty("background", "repeating-conic-gradient(white 0% 25%, red 0% 50%) 0 / 32px 32px", "important");
+      fixture.channel.postMessage({ type: "sync", id: "fixture", messages: fixture.descriptor.messages, colorTheme });
+    }, colorTheme);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", `fardgram-${colorTheme}`);
+    await expect(page.locator(".media-viewer-backdrop")).toHaveCSS("background-color", "rgba(11, 13, 15, 0.9)");
+    await expect(page.locator(".media-viewer-details")).toHaveCSS("color", "rgb(255, 255, 255)");
+    await expect(page.locator(".media-viewer-details")).toHaveCSS("font-weight", "500");
+  }
+});
+
+for (const deviceScaleFactor of [1, 1.25, 2]) {
+  test.describe(`image detail at ${deviceScaleFactor} device scale`, () => {
+    test.use({ deviceScaleFactor });
+    for (const size of [
+      { width: 359, height: 8780 }, { width: 8780, height: 359 },
+      { width: 3200, height: 2000 }, { width: 2000, height: 3200 },
+      { width: 2048, height: 2048 }, { width: 64, height: 64 },
+      { width: 359, height: 30000 },
+    ]) {
+      test(`${size.width}x${size.height} retains original detail through zoom and pan`, async ({ page }, testInfo) => {
+        await openFixture(page, false, { originalSize: size, detailPattern: true });
+        const surface = page.locator(".media-viewer-surface");
+        const fitted = (await surface.boundingBox())!;
+        // Use the fitted integer axis so subpixel layout rounding is not
+        // magnified into a different target scale for very narrow images.
+        const actualZoom = Math.max(2, Number.isInteger(fitted.width) ? size.width / fitted.width : size.height / fitted.height);
+        const expected = size.width === 64 ? { width: 128, height: 128 } : size;
+        const point = { clientX: fitted.x + fitted.width / 2, clientY: fitted.y + fitted.height / 2 };
+        // Start with an intermediate zoom to exercise reuse of a previously painted layer.
+        await page.mouse.move(point.clientX, point.clientY);
+        await page.keyboard.down("Control"); await page.mouse.wheel(0, -240 * deviceScaleFactor); await page.keyboard.up("Control");
+        await expect.poll(async () => (await surface.boundingBox())!.width).toBeCloseTo(fitted.width * 1.5, 1);
+        await page.locator(".media-viewer-viewport").dispatchEvent("wheel", {
+          bubbles: true, ctrlKey: true, ...point,
+          deltaY: -Math.log(actualZoom / 1.5) * 240 / Math.log(1.5),
+        });
+        await expect.poll(async () => (await surface.boundingBox())!.width).toBeCloseTo(expected.width, 0);
+        await expect.poll(async () => (await surface.boundingBox())!.height).toBeCloseTo(expected.height, 0);
+        const bounds = (await surface.boundingBox())!;
+        const clip = { x: Math.ceil(bounds.x + bounds.width / 2 - 24), y: Math.ceil(bounds.y + bounds.height / 2 - 24), width: 48, height: 48 };
+        const actual = await page.screenshot({ clip, path: testInfo.outputPath("actual-detail.png") });
+        if (deviceScaleFactor === 1 && size.width !== 64) {
+          // At one device pixel per source pixel, require the detail of a fresh
+          // unscaled original as well, not just agreement between input paths.
+          await page.evaluate(({ bounds, size }) => {
+            const original = document.querySelector<HTMLImageElement>('.media-viewer-image[data-image-state="ready"]')!;
+            const reference = document.createElement("img"); reference.id = "quality-reference"; reference.src = original.src;
+            reference.style.cssText = `position: fixed; z-index: 999999; translate: -50% -50%; left: ${bounds.x + bounds.width / 2}px; top: ${bounds.y + bounds.height / 2}px; width: ${size.width}px; height: ${size.height}px; max-width: none; max-height: none;`;
+            document.body.append(reference);
+            return reference.decode();
+          }, { bounds, size });
+          const native = await page.screenshot({ clip, path: testInfo.outputPath("native-detail.png") });
+          expect(actual.equals(native), "100% zoom should retain the original pixels").toBe(true);
+          await page.locator("#quality-reference").evaluate(element => element.remove());
+        }
+        // Compare incremental wheel zoom with a direct jump to actual size.
+        // DOM dimensions alone cannot detect reuse of a blurry composited layer.
+        const viewport = page.locator(".media-viewer-viewport");
+        await viewport.dispatchEvent("dblclick", { bubbles: true, ...point });
+        await expect(page.locator(".media-viewer-zoom")).toHaveCount(0);
+        await viewport.dispatchEvent("dblclick", { bubbles: true, ...point });
+        await expect.poll(async () => (await surface.boundingBox())!.width).toBeCloseTo(expected.width, 1);
+        const reference = await page.screenshot({ clip, path: testInfo.outputPath("reference-detail.png") });
+        expect(actual.equals(reference), "Ctrl+wheel and double click should paint the same original detail").toBe(true);
+
+        if (size.height > 800) {
+          await page.mouse.move(point.clientX, point.clientY);
+          await page.mouse.down();
+          await page.mouse.move(point.clientX, point.clientY + 120, { steps: 4 });
+          await page.mouse.up();
+          expect((await surface.boundingBox())!.y - bounds.y).toBeCloseTo(120, 1);
+        }
+        // The longest image must reach native size via double click as well as wheel input.
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.keyboard.press("ArrowRight");
+        await expect(page.locator(".media-viewer-zoom")).toHaveCount(0);
+        const next = page.locator('.media-viewer-image[data-image-state="ready"]');
+        await next.dblclick();
+        await expect.poll(async () => (await surface.boundingBox())!.width).toBeCloseTo(size.width === 64 ? 128 : size.width, 1);
+        await page.keyboard.press("+"); await page.keyboard.press("+");
+        await expect.poll(async () => (await surface.boundingBox())!.width).toBeCloseTo(size.width === 64 ? 256 : size.width * 2, 1);
+      });
+    }
+  });
+}

@@ -1,0 +1,334 @@
+# Fardgram
+
+Fardgram is a desktop-first third-party Telegram client built with React, TypeScript, Tauri 2, and TDLib. It includes messaging, multi-account storage, native authorization, paginated chat/history synchronization, server-backed search, rich media, reactions, and a mock browser runtime.
+
+The desktop stack is already on Tauri 2: the frontend uses the v2 JavaScript API and plugins, the Rust application depends on the v2 crates, and `src-tauri/tauri.conf.json` uses the `config/2` schema with v2 capabilities. References to Tauri elsewhere in this document mean Tauri 2 unless stated otherwise.
+
+## Browser development
+
+```powershell
+npm install
+npm run dev
+```
+
+Set `VITE_TELEGRAM_TRANSPORT=mock`, then open `http://127.0.0.1:1420`. Use `http://127.0.0.1:1420/?auth=1` to exercise the mock authorization flow. A local `.env` set to `tauri` intentionally requires the native shell and will not run in an ordinary browser.
+
+## Native TDLib development
+
+The native application needs a Windows x64 TDLib runtime. The fastest setup is
+to download the pinned prebuilt package from the matching GitHub Release:
+
+```powershell
+npm run tdlib:fetch
+```
+
+The download is accepted only when the archive SHA-256 and all four runtime
+file hashes match `scripts/tdlib/version.json`. To build the same pinned TDLib
+commit from official source instead, install Visual Studio 2022 Build Tools with
+the Desktop development with C++ workload and run:
+
+```powershell
+npm run tdlib:build
+```
+
+The initial source build downloads TDLib and vcpkg dependencies and can take
+several minutes. Subsequent builds reuse `vendor/`. Source builds are validated
+for required files and exports but are not required to be byte-identical to the
+published package. You can also set `NOTGRAM_TDLIB_PATH` to a compatible custom
+library or its containing directory.
+
+Create `.env` from `.env.example`, set the native transport and API credentials,
+then start the application:
+
+```env
+VITE_TELEGRAM_TRANSPORT=tauri
+NOTGRAM_API_ID=123456
+NOTGRAM_API_HASH=replace_with_your_value
+```
+
+```powershell
+npm run tauri dev
+```
+
+`NOTGRAM_API_ID` and `NOTGRAM_API_HASH` are consumed by Rust and are not sent to
+the webview. `.env`, TDLib binaries, source, dependencies, and build outputs are
+ignored by Git. TDLib source revisions, prebuilt Release location, runtime
+hashes, and the vcpkg baseline are pinned in `scripts/tdlib/version.json` and
+`scripts/tdlib/vcpkg.json`.
+
+New account databases receive a random per-account encryption key protected for
+the current Windows user. `NOTGRAM_DATABASE_KEY_BASE64` is only an explicit
+override for existing development databases and is not copied into portable
+releases.
+
+## Portable Windows builds
+
+For a local portable build, run one command from the repository root:
+
+```powershell
+npm run build:portable
+```
+
+The command loads build variables from the root `.env`, skips the full test and
+lint suite, and writes each run to a unique timestamp-and-commit directory under
+`artifacts/portable/`. Existing artifacts are never replaced. `.env` is injected
+only into the build process and is never copied into the portable directory or
+ZIP.
+
+Use `npm run publish:portable` for a strict release build. That command requires
+a clean worktree, runs the full repository checks, and reads API credentials
+only from the process environment. Pass `-DestinationRoot` directly to
+`scripts/publish-portable.ps1` when a release needs a custom destination. The
+versioned ZIP contains `Fardgram.exe`, the Fardgram project license, TDLib and its
+runtime licenses, dependency inventory, build metadata, and per-file SHA-256
+hashes.
+Release builds remap local source roots to stable placeholders and refuse to
+package files that still contain the build user's profile or repository path.
+Portable builds retain account data across ZIP replacement and do not run the
+NSIS auto-updater; installed builds use the signed channel configured at build
+time.
+On first start, a portable build creates a `data/` directory beside
+`Fardgram.exe`. `data/config/` contains the encrypted account registry, database
+keys, proxy settings, storage settings, diagnostics consent, and window state;
+`data/tdlib/` contains the TDLib login databases, encrypted UI snapshots, and
+media cache; `data/webview/` contains WebView2 local storage and browser data.
+The default cache setting is stored as the relative path `data/tdlib`, so the
+whole portable directory can be moved without retaining an old absolute path.
+Preserve the existing `data/` directory when replacing the executable and
+runtime files with a newer ZIP. Release ZIPs never contain account data.
+
+Installed builds keep the existing locations: account configuration and TDLib
+login databases under `%APPDATA%/dev.fardgram.desktop/`, and the TDLib cache plus
+WebView2 data under `%LOCALAPPDATA%/dev.fardgram.desktop/`. Portable and installed
+profiles are intentionally separate; an existing installed profile is not
+copied into a portable directory automatically.
+After a bundled Tauri build, `npm run publish:installer` validates and stages
+the matching NSIS installer with the same dependency, metadata, and hash files.
+Before publishing a signed release, run `scripts/test-release-lifecycle.ps1` in
+an isolated local environment. It probes portable startup, ZIP replacement,
+current-user installation, in-place replacement, uninstallation, retained
+account data, and explicit test-data cleanup without opening Telegram or
+starting the network runtime. Use the separate isolated product identifier to
+verify a real previous-version upgrade before the signed production build.
+Uninstall keeps account data by policy; remove accounts and clear media cache in
+the app before uninstall when local data must be erased.
+
+The bridge searches these locations in order:
+
+1. `NOTGRAM_TDLIB_PATH`
+2. Packaged `resources/tdlib/`
+3. The app data `tdlib/` directory
+4. The executable directory
+5. `src-tauri/tdlib/` during development
+
+## Commands
+
+```powershell
+npm run dev       # Vite development server
+npm run build     # TypeScript and production web build
+npm test          # Unit tests
+npx playwright install chromium # One-time E2E browser installation
+npm run test:e2e:types # Type-check Playwright configuration and specs
+npm run test:e2e:smoke # Quick checks of core desktop/mobile flows
+npm run test:e2e:regression # Functional browser regression, excluding visual/performance suites
+npm run test:e2e:visual # Shared screenshot baselines across motion preferences
+npm run test:e2e:performance # Timing and geometry-read budgets, without tracing or retries
+npm run test:e2e  # Complete headless, muted Chromium suite
+npm run test:native-smoke -- -Profile Clean # Prepare an isolated native smoke run
+npm run check     # Frontend plus Rust formatting, lint, and tests
+npm run check:release # Full check plus a native release build
+npm run tdlib:fetch # Download and verify the pinned Windows x64 runtime
+npm run tdlib:build # Build the pinned TDLib source locally
+npm run verify:tdlib # Inspect the installed TDLib runtime and hashes
+npm run tauri dev # Native desktop shell
+npm run build:portable # Fast local portable build using .env; never replaces artifacts
+npm run publish:portable # Build a traceable portable ZIP in artifacts/
+npm run version:check # Verify version.json matches npm, Cargo, and Tauri
+npm run version:sync # Synchronize all manifests from version.json
+cargo check       # Run from src-tauri for the native bridge
+```
+
+`version.json` is the single application version source. Release tags and
+changelog rules are documented in
+[`docs/release-versioning.md`](docs/release-versioning.md).
+
+Real TDLib acceptance is tracked separately from browser mocks. See
+[`docs/native-smoke.md`](docs/native-smoke.md) for the isolated clean-profile and
+existing-account passes, their non-sensitive evidence format, verification
+commands, and the opt-in loopback Playwright endpoint for the real Tauri DOM.
+
+The automated accessibility gate and native Windows checklist are documented in
+[`docs/accessibility-matrix.md`](docs/accessibility-matrix.md).
+
+Browser suite selection, targeted runs, diagnostic capture, and baseline
+maintenance are documented in [`docs/testing.md`](docs/testing.md).
+
+## Architecture
+
+```text
+windows/               Independent HTML entries for auxiliary windows
+src/windows/           Auxiliary window bootstraps and shared mounting
+src/components/        React UI, authorization, message/media, and settings screens
+src/store/             Application state, preferences, and ordered event reduction
+src/telegram/          Transport contract plus mock/Tauri adapters
+src-tauri/src/         TDLib dynamic loader, receive loop, and commands
+src-tauri/icons/       Windows packaging icons and the shared PNG source
+tests/e2e/             Headless, muted browser regression tests and snapshot baselines
+tests/fixtures/public/ Mock media served only with the mock transport
+scripts/               Development checks, TDLib tooling, and release commands
+docs/                  Maintained architecture contracts and operating guides
+docs/archive/          Historical audits tied to their original baselines
+```
+
+`index.html` remains the main application entry. Auxiliary windows use
+`/windows/*-window.html` in both development and production; their entry paths
+must stay synchronized with the native window builders and browser bridges.
+The independent entries preserve separate loading for each window.
+
+Unit tests live beside their source and Vitest only collects tests under `src/`.
+Keep temporary baseline checkouts outside the repository. Git ignore rules do
+not define test discovery or development-server watch boundaries.
+
+Mock builds and browser development serve `tests/fixtures/public/` at the URL
+root. With `VITE_TELEGRAM_TRANSPORT=tauri`, Vite disables that public directory
+so native frontend builds omit the mock media. Keep production resources out of
+the mock fixture directory. Android and iOS icon sets are intentionally omitted
+while Windows is the release baseline.
+
+Generated output belongs in ignored directories: TypeScript build metadata in
+`node_modules/.cache/`, development and E2E server logs in `logs/`, test output
+in `test-results/`, and build or diagnostic evidence in `artifacts/`. Redirect
+ad hoc command logs into `logs/` instead of the repository root. Root manifests,
+tool configurations, and the local `project.md` and `.env` keep their existing
+locations.
+
+The native bridge uses TDLib's current `td_create_client_id`, `td_send`, and `td_receive` interface. One dedicated Rust thread owns `td_receive`; updates are copied immediately and emitted to the webview in the order received. Rust automatically answers `authorizationStateWaitTdlibParameters`, while user-facing authorization states remain in the TypeScript store.
+
+After authorization, the TDLib transport synchronizes the current user,
+paginated main/folder chat lists, user presence, paginated
+message history, outgoing text messages, send-failure retry state, read state,
+chat and sender avatars, and common real-time chat/message updates. Message
+metadata preserves replies, forward origins, edit timestamps, reactions,
+and current operation permissions. Reply, edit, delete, forward, retry, download,
+and emoji reaction actions are available in the conversation UI. Sender
+profile photos are downloaded through TDLib and refreshed when updateFile
+completes. The Tauri asset protocol starts with an empty static scope and only
+authorizes completed TDLib files that were observed in trusted per-account roots;
+cached snapshot paths are canonicalized and checked before exact-file authorization.
+Consecutive messages from the same sender use joined Telegram-style
+bubbles, local-calendar date separators, show the sender name only on the first item, and keep the sender avatar floating near
+the bottom of the visible portion of its message group while scrolling. Timestamps render with
+second precision. Photo messages use a sender header
+only when they start a consecutive group; subsequent photos are borderless.
+History is preloaded in
+30-message pages and continues loading when the message list is scrolled upward.
+Each account and chat keeps its reading position for the current application
+session. First entry and a double-click on a chat open the latest message; when
+the reader is away from the bottom, new messages stay off-screen behind a
+counted jump-to-latest button instead of moving the viewport.
+On startup, the UI restores a DPAPI-protected snapshot from the configured cache
+directory while TDLib connects in parallel; live server updates always replace
+cached chat, folder, user, and message state. The generated local archive folder
+is not shown or loaded. History requests are deferred until authorization is
+ready. Each chat keeps an independent server-history cursor and always starts
+its first refresh from TDLib's latest window, even if a live message arrived
+first. History refreshes acknowledge cached messages that TDLib returns but do
+not infer deletion from gaps in a page. Only non-cache deletion updates remove
+messages; partial or stalled responses preserve the existing cache and remain
+retryable instead of marking history complete.
+Documents and Telegram media messages are mapped separately: image documents
+remain file cards, while photos, videos, video notes, animations, audio, voice,
+and stickers render with previews, download state, and native playback where applicable.
+Photos and stickers are cached automatically through TDLib `updateFile` events. Completed user
+downloads are copied to the configured download directory without overwriting
+existing files. The cache path defaults to the Windows app cache directory, while
+downloads default to the downloads folder beside Fardgram.exe; both paths are
+configurable under Advanced Settings. Settings provides account management,
+notification/sound preferences, compact chat and send-key behavior, animation
+preferences, proxy controls, and storage paths. Native file upload is available
+through a Rust-owned file picker so local paths are never exposed to the webview.
+
+Local unsent text, attachment manifests, and outbox state are stored separately
+from the replaceable UI snapshot. New attachments use account-owned DPAPI chunks
+(1 MiB per IPC transfer, 512 MiB per batch, 2 GiB total); owned legacy IndexedDB
+batches are verified and migrated on startup. Legacy batches with unknown account
+ownership are retained without guessing an owner. Settings lists recoverable
+native batches and storage layers. Media cache, exported downloads, WebView data,
+and logs are not covered by application-level DPAPI encryption.
+
+Cache directory changes take effect on restart after verified copying. The old
+cache remains as a migration backup until explicitly reclaimed in Settings. A
+failed migration keeps the previous runtime directory. Cache cleanup delegates
+ordinary media deletion to TDLib and preserves active conversations/transfers;
+it does not clear local drafts or exported downloads. Signing out removes the
+selected account's app-owned data and records while preserving exported files.
+Interrupted outbox sends require review before retry; accepted attachment groups
+are recorded so a retry can skip them.
+
+The desktop conversation list starts at 360 pixels wide and can be resized from its right edge
+down to a 300-pixel minimum. The preferred width is restored on the next launch. Default chat
+rows, avatars, message text, headers, and the composer use a unified daily-messaging scale, while
+the narrow layout keeps its full-width conversation switching behavior.
+
+Phone-number and QR-code authorization are supported. QR login uses TDLib's
+`requestQrCodeAuthentication` flow and redraws whenever TDLib rotates the
+confirmation link.
+
+## Runtime logs
+
+Fardgram writes structured lifecycle and receive-loop statistics to
+`logs\fardgram.log` beside the executable. The app log rotates at 2 MB. Raw
+TDLib logging is disabled because it may include account, network, or message
+data that cannot be reliably redacted.
+
+The receive loop blocks for up to one second while idle and enforces a 25 ms
+minimum cycle when TDLib returns immediately. Receive errors use exponential
+backoff up to one second, and bridge error events are limited to one every five
+seconds. A `receive_stats` record is written once per minute with poll, update,
+error, and polls-per-second counts. Structured log values are recursively
+redacted before being written and intentionally omit credentials, authentication
+secrets, phone numbers, paths, and message bodies.
+
+History pagination also writes `ui_history_data`, `ui_history_merge`, and
+`ui_history_render` records with request/merge/render duration, batch sizes,
+and scroll-anchor drift. Main-thread tasks over 50 ms are sampled as
+`ui_long_task` at most once every ten seconds. These records contain only
+numeric and boolean diagnostics and never include chat IDs or message content.
+
+## Diagnostics and crash reports
+
+The native **Diagnostics and privacy** settings can export a ZIP selected by the
+user. Export applies a second redaction pass to bounded runtime-log records and
+includes a manifest that identifies the application version, distribution kind,
+architecture, and record count. It never includes message text, credentials,
+account/chat/message identifiers, phone numbers, or local paths.
+
+Crash reporting is disabled by default. Opting in stores one minimal crash event
+locally with only a fixed event type, application version, and timestamp;
+nothing is uploaded.
+The record is included only when the user manually exports diagnostics and is
+deleted when crash reporting is disabled. Corrupt consent settings fail closed.
+
+## Proxy settings
+
+Fardgram uses the Windows system proxy by default. On Windows, the current
+per-user explicit proxy is read from Internet Settings every time the app
+starts. If no explicit system proxy is enabled, system mode falls back to a
+direct connection.
+
+The connection dialog is available before login and from the main navigation.
+It supports system, direct, custom HTTP, SOCKS5, and MTProto modes, including a
+TDLib connection test. Custom settings are encrypted for the current Windows
+user with DPAPI before being written to the application configuration directory;
+proxy passwords and secrets are never written to logs.
+
+Existing databases created before per-account keys are registered as legacy
+empty-key databases during the first upgrade and remain readable. New databases
+use a random DPAPI-protected key rather than `.env`.
+
+## License
+
+Fardgram is available under the [MIT License](LICENSE).
+Bundled third-party components, including TDLib and its native runtime
+dependencies, remain under their respective licenses included with release
+artifacts.

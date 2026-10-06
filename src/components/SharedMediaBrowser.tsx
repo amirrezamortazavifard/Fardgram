@@ -1,0 +1,321 @@
+import { translate } from "../i18n";
+import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
+import {
+  Download,
+  FileText,
+  Forward,
+  Headphones,
+  Image as ImageIcon,
+  Link2,
+  LoaderCircle,
+  Search,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  Chat,
+  ForwardMessagesResult,
+  Message,
+  MessagePermissions,
+  SharedMediaCategory,
+  SharedMediaPage,
+  SharedMediaSearchInput,
+} from "../telegram/types";
+import { messageContentText } from "../telegram/messageContent";
+import { formatChatTime } from "../utils/formatters";
+import { useTelegramStore } from "../store/telegramStore";
+import { useLocalHiddenUserIds } from "../store/localUserBlocks";
+import { isLocalHiddenMessage } from "../utils/localBlockedMessages";
+import { useStableVisibility } from "../hooks/useStableVisibility";
+import { useFlipListMotion } from "../hooks/useFlipListMotion";
+import { DeleteMessagesDialog } from "./ConversationOverlays";
+import { MotionPresence } from "./MotionPresence";
+import { StableImage } from "./StableImage";
+
+const CATEGORIES: { id: SharedMediaCategory; label: string; icon: typeof ImageIcon }[] = [
+  { id: "media", get label() { return translate("图片与视频"); }, icon: ImageIcon },
+  { id: "file", get label() { return translate("文件"); }, icon: FileText },
+  { id: "link", get label() { return translate("链接"); }, icon: Link2 },
+  { id: "audio", get label() { return translate("音频"); }, icon: Headphones },
+];
+
+interface SharedMediaBrowserProps {
+  chatId: string;
+  forwardTargets: Chat[];
+  onLoad: (input: SharedMediaSearchInput, force?: boolean) => Promise<SharedMediaPage | undefined>;
+  onOpenMessage: (chatId: string, messageId: string) => void;
+  onDownload: (fileId: number, fileName: string) => Promise<void>;
+  onLoadMessageProperties: (chatId: string, messageId: string) => Promise<MessagePermissions | undefined>;
+  onDelete: (chatId: string, messageIds: string[], revoke: boolean) => Promise<boolean>;
+  onForward: (fromChatId: string, messageIds: string[], toChatId: string) => Promise<ForwardMessagesResult | undefined>;
+}
+
+const mediaSource = (message: Message) => {
+  if (message.content.kind !== "media") return undefined;
+  const source = message.content.localPath ?? message.content.thumbnailPath ?? message.content.previewDataUrl;
+  if (!source || source.startsWith("data:") || !isTauri()) return source;
+  return convertFileSrc(source, "fardgram-asset");
+};
+
+const mediaSourceFileId = (message: Message) => {
+  if (message.content.kind !== "media") return undefined;
+  return message.content.localPath
+    ? message.content.fileId
+    : message.content.thumbnailPath ? message.content.thumbnailFileId : undefined;
+};
+
+const messageFile = (message: Message) => {
+  const content = message.content;
+  if (content.kind !== "media" && content.kind !== "file") return undefined;
+  if (content.fileId === undefined) return undefined;
+  return { fileId: content.fileId, fileName: content.fileName };
+};
+
+export function SharedMediaBrowser({
+  chatId,
+  forwardTargets,
+  onLoad,
+  onOpenMessage,
+  onDownload,
+  onLoadMessageProperties,
+  onDelete,
+  onForward,
+}: SharedMediaBrowserProps) {
+  const accountId = useTelegramStore(state => state.activeAccountId);
+  const hiddenUserIds = useLocalHiddenUserIds(accountId);
+  const recoverFile = useTelegramStore((state) => state.recoverFile);
+  const generationRef = useRef(0);
+  const attemptedRecoveryRef = useRef(new Set<string>());
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const [category, setCategory] = useState<SharedMediaCategory>("media");
+  const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [page, setPage] = useState<SharedMediaPage>({ messages: [], hasMore: false });
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [forwardTargetId, setForwardTargetId] = useState("");
+  const [actionPending, setActionPending] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [permissionLoadingIds, setPermissionLoadingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [failedMediaSources, setFailedMediaSources] = useState<ReadonlySet<string>>(() => new Set());
+  const showLoading = useStableVisibility(loading);
+  const showLoadingMore = useStableVisibility(loadingMore, { minimumVisible: 220 });
+
+  const loadFirstPage = async (force = false, nextQuery = appliedQuery) => {
+    const generation = ++generationRef.current;
+    setLoading(true);
+    setSelected(new Set());
+    const result = await onLoad({ chatId, category, query: nextQuery, limit: 40 }, force);
+    if (generation === generationRef.current && result) setPage(result);
+    if (generation === generationRef.current) setLoading(false);
+  };
+
+  useEffect(() => {
+    void loadFirstPage(false, appliedQuery);
+  // The request generation prevents a late category response from replacing the active page.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId, category, appliedQuery]);
+
+  const visibleMessages = useMemo(() => page.messages.filter((message) => {
+    if (isLocalHiddenMessage(message, hiddenUserIds)) return false;
+    const date = message.sentAt.slice(0, 10);
+    return (!fromDate || date >= fromDate) && (!toDate || date <= toDate);
+  }), [fromDate, hiddenUserIds, page.messages, toDate]);
+  useFlipListMotion({
+    containerRef: resultsRef,
+    itemSelector: ".shared-media-item[data-motion-key]",
+    dependencies: [visibleMessages, category, showLoading],
+  });
+  const selectedMessages = visibleMessages.filter((message) => selected.has(message.id));
+  useEffect(() => {
+    setSelected(current => {
+      const visibleIds = new Set(visibleMessages.map(message => message.id));
+      const next = new Set([...current].filter(id => visibleIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [visibleMessages]);
+  const permissionsReady = selectedMessages.length > 0 && selectedMessages.every((message) => Boolean(message.permissions));
+  const canDeleteOnlyForSelf = permissionsReady && selectedMessages.every((message) => message.permissions?.canDeleteOnlyForSelf === true);
+  const canDeleteForAllUsers = permissionsReady && selectedMessages.every((message) => message.permissions?.canDeleteForAllUsers === true);
+
+  const toggleSelected = (messageId: string) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) next.delete(messageId);
+      else if (next.size < 100) next.add(messageId);
+      return next;
+    });
+    const message = page.messages.find((candidate) => candidate.id === messageId);
+    if (!message || selected.has(messageId) || message.permissions || permissionLoadingIds.has(messageId)) return;
+    setPermissionLoadingIds((current) => new Set(current).add(messageId));
+    void onLoadMessageProperties(chatId, messageId).then((permissions) => {
+      if (permissions) {
+        setPage((current) => ({
+          ...current,
+          messages: current.messages.map((candidate) => candidate.id === messageId
+            ? { ...candidate, permissions }
+            : candidate),
+        }));
+      }
+    }).finally(() => {
+      setPermissionLoadingIds((current) => {
+        const next = new Set(current);
+        next.delete(messageId);
+        return next;
+      });
+    });
+  };
+
+  const loadMore = async () => {
+    if (!page.hasMore || !page.nextFromMessageId || loadingMore) return;
+    setLoadingMore(true);
+    const result = await onLoad({
+      chatId,
+      category,
+      query: appliedQuery,
+      fromMessageId: page.nextFromMessageId,
+      limit: 40,
+    });
+    if (result) setPage(result);
+    setLoadingMore(false);
+  };
+
+  const downloadSelected = async () => {
+    const files = selectedMessages.map(messageFile).filter((file): file is NonNullable<typeof file> => Boolean(file));
+    if (files.length === 0 || actionPending) return;
+    setActionPending(true);
+    for (const file of files) await onDownload(file.fileId, file.fileName);
+    setActionPending(false);
+  };
+
+  const forwardSelected = async () => {
+    if (!forwardTargetId || selectedMessages.length === 0 || actionPending) return;
+    setActionPending(true);
+    const result = await onForward(chatId, selectedMessages.map(message => message.id), forwardTargetId);
+    if (result && result.failedMessageIds.length === 0) setSelected(new Set());
+    setActionPending(false);
+  };
+
+  const deleteSelected = async (revoke: boolean) => {
+    if (selectedMessages.length === 0) return false;
+    const ids = selectedMessages.map(message => message.id);
+    const succeeded = await onDelete(chatId, ids, revoke);
+    if (succeeded) {
+      const removed = new Set(ids);
+      setPage((current) => ({
+        ...current,
+        messages: current.messages.filter((message) => !removed.has(message.id)),
+        totalCount: current.totalCount === undefined ? undefined : Math.max(0, current.totalCount - ids.length),
+      }));
+      setSelected(new Set());
+      setDeleteDialogOpen(false);
+    }
+    return succeeded;
+  };
+
+  return (
+    <div className="shared-media-browser">
+      <div className="shared-media-tabs" role="tablist" aria-label={translate("共享媒体分类")}>
+        {CATEGORIES.map(({ id, label, icon: Icon }) => (
+          <button key={id} type="button" role="tab" aria-selected={category === id} onClick={() => setCategory(id)}>
+            <Icon size={15} /><span>{label}</span>
+          </button>
+        ))}
+      </div>
+      <form className="shared-media-search" onSubmit={(event) => {
+        event.preventDefault();
+        setAppliedQuery(query.trim());
+      }}>
+        <Search size={15} />
+        <input aria-label={translate("搜索共享媒体")} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translate("搜索")} />
+        <button type="submit">{translate("搜索")}</button>
+      </form>
+      <div className="shared-media-date-filter">
+        <label>{translate("开始日期")}<input aria-label={translate("共享媒体开始日期")} type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label>
+        <label>{translate("结束日期")}<input aria-label={translate("共享媒体结束日期")} type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label>
+      </div>
+      {selected.size > 0 && (
+        <div className="shared-media-selection" role="toolbar" aria-label={translate("共享媒体批量操作")}>
+          <strong>{translate("{{value0}} 项", { value0: selected.size })}</strong>
+          <button type="button" disabled={actionPending || selectedMessages.every((message) => !messageFile(message))} onClick={() => void downloadSelected()}><Download size={15} />{translate("下载")}</button>
+          <select aria-label={translate("共享媒体转发目标")} value={forwardTargetId} onChange={(event) => setForwardTargetId(event.target.value)} disabled={actionPending}>
+            <option value="">{translate("转发到...")}</option>
+            {forwardTargets.map((chat) => <option key={chat.id} value={chat.id}>{chat.title}</option>)}
+          </select>
+          <button type="button" disabled={actionPending || !forwardTargetId} onClick={() => void forwardSelected()}><Forward size={15} />{translate("转发")}</button>
+          <button
+            className="is-danger"
+            type="button"
+            disabled={actionPending || !permissionsReady || (!canDeleteOnlyForSelf && !canDeleteForAllUsers)}
+            title={!permissionsReady
+              ? translate("正在读取删除权限")
+              : !canDeleteOnlyForSelf && !canDeleteForAllUsers
+                ? translate("所选消息没有共同的删除范围")
+                : translate("删除所选消息")}
+            onClick={() => setDeleteDialogOpen(true)}
+          ><Trash2 size={15} />{translate("删除")}</button>
+        </div>
+      )}
+      <div ref={resultsRef} className={`shared-media-results ${category === "media" ? "is-grid" : ""}`} aria-busy={loading} data-search-state={loading ? "updating" : "settled"}>
+        {!showLoading && visibleMessages.map((message) => {
+          const source = mediaSource(message);
+          const usableSource = source && !failedMediaSources.has(source) ? source : undefined;
+          return (
+            <div className={`shared-media-item ${selected.has(message.id) ? "is-selected" : ""}`} data-motion-key={message.id} key={message.id}>
+              <label className="shared-media-check"><input type="checkbox" aria-label={translate("选择 {{value0}}", { value0: message.id })} checked={selected.has(message.id)} onChange={() => toggleSelected(message.id)} /></label>
+              <button className="shared-media-open" type="button" onClick={() => onOpenMessage(message.chatId, message.id)}>
+                {category === "media" ? usableSource ? <StableImage
+                  src={usableSource}
+                  alt=""
+                  onError={() => {
+                    setFailedMediaSources((current) => new Set(current).add(usableSource));
+                    const fileId = mediaSourceFileId(message);
+                    if (fileId === undefined || attemptedRecoveryRef.current.has(usableSource)) return;
+                    attemptedRecoveryRef.current.add(usableSource);
+                    void recoverFile(fileId, 24).then((recovered) => {
+                      if (!recovered) return;
+                      setFailedMediaSources((current) => {
+                        const next = new Set(current);
+                        next.delete(usableSource);
+                        return next;
+                      });
+                    });
+                  }}
+                /> : <span className="shared-media-fallback"><ImageIcon size={22} /></span> : (
+                  <span className="shared-media-type-icon">{category === "file" ? <FileText size={19} /> : category === "link" ? <Link2 size={19} /> : <Headphones size={19} />}</span>
+                )}
+                <span className="shared-media-copy"><strong>{messageContentText(message.content) || translate("媒体消息")}</strong><time dateTime={message.sentAt}>{formatChatTime(message.sentAt)}</time></span>
+              </button>
+            </div>
+          );
+        })}
+        <MotionPresence present={showLoading || (!loading && visibleMessages.length === 0)} variant="status">
+          {showLoading || (!loading && visibleMessages.length === 0) ? (
+            <div key={showLoading ? "loading" : "empty"} className="shared-media-empty" role="status">
+              {showLoading ? <><LoaderCircle className="spin" size={19} />{translate("正在读取")}</> : translate("没有匹配的内容")}
+            </div>
+          ) : null}
+        </MotionPresence>
+      </div>
+      {!loading && page.hasMore && <button className="shared-media-more" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{showLoadingMore && <LoaderCircle className="spin" size={15} />}{loadingMore ? translate("正在加载") : translate("加载更多")}</button>}
+      <div className="shared-media-count">{translate("{{value0}} 项", { value0: hiddenUserIds.size > 0 ? visibleMessages.length : page.totalCount ?? page.messages.length })}</div>
+      <MotionPresence present={deleteDialogOpen}>
+        {deleteDialogOpen ? <DeleteMessagesDialog
+          count={selectedMessages.length}
+          batch
+          canDeleteOnlyForSelf={canDeleteOnlyForSelf}
+          canDeleteForAllUsers={canDeleteForAllUsers}
+          pending={actionPending}
+          onConfirm={(revoke) => {
+            setActionPending(true);
+            void deleteSelected(revoke).finally(() => setActionPending(false));
+          }}
+          onClose={() => setDeleteDialogOpen(false)}
+        /> : null}
+      </MotionPresence>
+    </div>
+  );
+}

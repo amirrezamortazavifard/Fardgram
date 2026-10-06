@@ -1,0 +1,247 @@
+import { activeNativeAccount, nativeAttachmentsAvailable } from "../store/nativeBlobs";
+import { translate } from "../i18n";
+import { invoke } from "@tauri-apps/api/core";
+import { tdNumber, type TdObject } from "./tdlibMapper";
+import { numericId } from "./tdlibRequests";
+import type { MessageTextEntity } from "./types";
+import { TdRequestError } from "./sendErrors";
+
+type PendingRequest = {
+  resolve: (value: TdObject) => void;
+  reject: (reason: Error) => void;
+  timer: ReturnType<typeof globalThis.setTimeout>;
+};
+
+type InvokeCommand = (
+  command: string,
+  args?: Record<string, unknown>,
+) => Promise<unknown>;
+
+export interface PreparedPastedFile {
+  name: string;
+  mimeType: string;
+  dataBase64?: string;
+  blobToken?: string;
+}
+
+export interface PreparedPastedAttachment extends PreparedPastedFile {
+  kind: "photo" | "video" | "audio" | "animation" | "document";
+  width?: number;
+  height?: number;
+  duration?: number;
+  title?: string;
+  performer?: string;
+  thumbnail?: PreparedPastedFile;
+  /** Original photo bytes used if the high-quality upload is rejected. */
+  fallback?: PreparedPastedFile;
+  hasSpoiler?: boolean;
+  showCaptionAboveMedia?: boolean;
+}
+
+export class TdRequestBroker {
+  private pending = new Map<string, PendingRequest>();
+  private preparedFiles = new Map<string, (error: Error) => void>();
+
+  constructor(private invokeCommand: InvokeCommand = invoke, private onSendTimeout?: () => void) {}
+
+  async recoverFile(fileId: number) {
+    const extra = crypto.randomUUID();
+    const response = this.waitForResponse(extra, translate("文件下载失败。"));
+    void this.invokeCommand("telegram_recover_file", { fileId, extra })
+      .catch((error) => this.reject(extra, error));
+    return response;
+  }
+
+  async optimizeStorage(categories: string[], olderThanDays?: number, activeChatId?: string) {
+    const extra = crypto.randomUUID();
+    const response = this.waitForResponse(extra, translate("无法清理媒体缓存"), 120_000);
+    void this.invokeCommand("telegram_optimize_storage", {
+      categories, olderThanDays, activeChatId: activeChatId ? numericId(activeChatId) : undefined, extra,
+    }).catch((error) => this.reject(extra, error));
+    return response;
+  }
+
+  async request(request: TdObject, timeoutMs = 30_000) {
+    const requestType = typeof request["@type"] === "string" ? request["@type"] : "unknown";
+    const extra = crypto.randomUUID();
+    const response = this.waitForResponse(
+      extra,
+      translate("TDLib {{value0}} 请求超时。", { value0: requestType }),
+      timeoutMs,
+      ["sendMessage", "sendMessageAlbum", "resendMessages"].includes(requestType) ? this.onSendTimeout : undefined,
+    );
+    void this.invokeCommand("telegram_send", {
+      request: { ...request, "@extra": extra },
+    }).catch((error) => this.reject(extra, error));
+    return response;
+  }
+
+  async requestPreparedFile(chatId: string, onError: (error: Error) => void, topicId?: string) {
+    const extra = crypto.randomUUID();
+    this.preparedFiles.set(extra, onError);
+    try {
+      const selected = await this.invokeCommand("telegram_pick_and_send_file", {
+        chatId: numericId(chatId),
+        topicId: topicId ? numericId(topicId) : undefined,
+        extra,
+      });
+      if (!selected) {
+        this.preparedFiles.delete(extra);
+        return false;
+      }
+    } catch (error) {
+      this.preparedFiles.delete(extra);
+      throw error;
+    }
+    return true;
+  }
+
+  async requestPreparedPastedFiles(
+    chatId: string,
+    files: PreparedPastedAttachment[],
+    caption: string | undefined,
+    onError: (error: Error) => void,
+    topicId?: string,
+    captionEntities?: MessageTextEntity[],
+    replyToMessageId?: string,
+    replyQuote?: { text: string; position: number },
+    disableNotification = false,
+  ) {
+    const extra = crypto.randomUUID();
+    const response = this.waitForResponse(extra, translate("附件上传未完成"), 120_000, this.onSendTimeout);
+    void response.catch(() => undefined);
+    void onError;
+    try {
+      const sent = await this.invokeCommand("telegram_send_pasted_files", {
+        accountId: nativeAttachmentsAvailable() ? await activeNativeAccount() : undefined,
+        chatId: numericId(chatId),
+        topicId: topicId ? numericId(topicId) : undefined,
+        extra,
+        files,
+        caption: caption ? {
+          text: caption,
+          entities: captionEntities?.flatMap((entity) => {
+            const userId = Number(entity.userId);
+            return entity.kind === "mentionName" && Number.isSafeInteger(userId) && userId > 0
+              ? [{ offset: entity.offset, length: entity.length, userId }]
+              : [];
+          }) ?? [],
+        } : undefined,
+        replyToMessageId: replyToMessageId ? numericId(replyToMessageId) : undefined,
+        replyQuote,
+        disableNotification,
+      });
+      if (!sent) {
+        this.clear(extra);
+        return false;
+      }
+    } catch (error) {
+      this.reject(extra, error);
+      throw error;
+    }
+    await response;
+    return true;
+  }
+
+  async requestPreparedProfilePhoto() {
+    const extra = crypto.randomUUID();
+    const response = this.waitForResponse(extra, translate("更新头像请求超时。"));
+    try {
+      const selected = await this.invokeCommand("telegram_pick_profile_photo", { extra });
+      if (!selected) {
+        this.clear(extra);
+        return false;
+      }
+    } catch (error) {
+      this.reject(extra, error);
+    }
+    await response;
+    return true;
+  }
+
+  async requestPreparedChatPhoto(chatId: string) {
+    const extra = crypto.randomUUID();
+    const response = this.waitForResponse(extra, translate("更新聊天头像请求超时。"));
+    try {
+      const selected = await this.invokeCommand("telegram_pick_chat_photo", {
+        chatId: numericId(chatId),
+        extra,
+      });
+      if (!selected) {
+        this.clear(extra);
+        return false;
+      }
+    } catch (error) {
+      this.reject(extra, error);
+    }
+    await response;
+    return true;
+  }
+
+  settle(update: TdObject) {
+    const extra = typeof update["@extra"] === "string" ? update["@extra"] : undefined;
+    if (!extra) return false;
+    const preparedFileError = this.preparedFiles.get(extra);
+    if (preparedFileError) {
+      this.preparedFiles.delete(extra);
+      if (update["@type"] === "error") preparedFileError(this.responseError(update));
+      return true;
+    }
+    const pending = this.pending.get(extra);
+    if (!pending) return false;
+    globalThis.clearTimeout(pending.timer);
+    this.pending.delete(extra);
+    if (update["@type"] === "error") {
+      pending.reject(this.responseError(update));
+    } else {
+      pending.resolve(update);
+    }
+    return true;
+  }
+
+  rejectAll(error: Error) {
+    for (const [extra, pending] of this.pending) {
+      globalThis.clearTimeout(pending.timer);
+      pending.reject(error);
+      this.pending.delete(extra);
+    }
+    for (const [extra, report] of this.preparedFiles) {
+      report(error);
+      this.preparedFiles.delete(extra);
+    }
+  }
+
+  private waitForResponse(extra: string, timeoutMessage: string, timeoutMs = 30_000, onTimeout?: () => void) {
+    return new Promise<TdObject>((resolve, reject) => {
+      const timer = globalThis.setTimeout(() => {
+        this.pending.delete(extra);
+        reject(new TdRequestError(timeoutMessage, "unknown"));
+        onTimeout?.();
+      }, timeoutMs);
+      this.pending.set(extra, { resolve, reject, timer });
+    });
+  }
+
+  private clear(extra: string) {
+    const pending = this.pending.get(extra);
+    if (pending) globalThis.clearTimeout(pending.timer);
+    this.pending.delete(extra);
+  }
+
+  private reject(extra: string, error: unknown) {
+    const pending = this.pending.get(extra);
+    if (!pending) return;
+    globalThis.clearTimeout(pending.timer);
+    this.pending.delete(extra);
+    pending.reject(error instanceof Error ? error : new Error(String(error)));
+  }
+
+  private responseError(update: TdObject) {
+    const code = tdNumber(update.code);
+    const suffix = code === undefined ? "" : ` (${code})`;
+    return new TdRequestError(translate("{{value0}}{{value1}}", {
+      value0: String(update.message ?? translate("TDLib 请求失败")),
+      value1: suffix,
+    }), "rejected", code);
+  }
+}

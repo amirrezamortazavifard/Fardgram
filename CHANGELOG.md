@@ -1,0 +1,205 @@
+# Changelog
+
+Notable Fardgram changes are recorded here. Versions follow Semantic Versioning,
+with prerelease identifiers used for release candidates.
+
+## [Unreleased]
+
+## [0.5.0-rc.5] - 2026-09-18
+
+Windows x64 candidate with an NSIS installer and a portable ZIP. Both packages
+include the pinned TDLib runtime and build-time Telegram API credentials.
+
+### Added
+
+- Add chat folder filters, stable bulk selection, and more TDLib chat context-menu
+  actions, plus Telegram invite-link handling and localized reporting.
+- Add rich composer formatting, visible-message editing, and responsive mention
+  suggestions that include conversation authors and support hidden-member groups.
+- Add configurable local quote folding and richer, consistent conversation service
+  notices with participant, topic, call, payment, and message-link details.
+
+### Changed
+
+- Unify photo and video viewing, with lightweight video previews, application-owned
+  playback sessions, mixed media navigation, recoverable errors and continuous
+  playback when switching to a small window. Coordinate audio/video ownership and
+  exact cache leases; schedule TDLib ranges with bounded workers, source cancellation
+  and full-download arbitration. Add first-frame, seek and frame-quality metrics.
+- Fade deleted messages and smoothly lower the messages above them while keeping
+  the lower messages anchored, including virtualized histories and reduced motion.
+- Add an opt-in local copy of incoming messages that are permanently deleted by
+  another party, render retained copies as semi-transparent read-only messages,
+  and automatically cache original photos while the feature is enabled. Self-
+  destructing, expiring, protected, and locally deleted messages remain excluded.
+- Calibrate frame-drop estimates against the current window's active display refresh
+  rate and attach bounded evidence, focus, frame-budget, script, and region context to
+  performance records.
+- Rework Settings into a more compact and consistent layout, keep the account page
+  focused on the current account, constrain long blocked-sender lists, and remove
+  the former developer tools and remote-debugging controls.
+- Store cache and download locations as environment-variable paths, defaulting to
+  `%LOCALAPPDATA%\dev.fardgram.desktop\tdlib` and
+  `%USERPROFILE%\Downloads\downloads` on Windows.
+- Store portable account configuration, TDLib login state, media cache, and
+  WebView2 data beside the executable under `data/`, while installed builds keep
+  their existing per-user application data locations.
+- License the Fardgram source under MIT and include the project license in Windows
+  release bundles alongside the existing third-party notices.
+
+### Fixed
+
+- Restore saved conversation reading positions, follow newly arrived messages only
+  when the full tail fits, and preserve bottom alignment through delayed layouts.
+- Paginate ordinary history past retained deleted-message archives, keep quote
+  collapse anchored to the pointer, and restore composer focus after chat actions.
+- Improve original-image loading, viewer sizing and zoom, cached-file recovery,
+  media download state, IME composition, and bot start-link compatibility.
+- Separate playback buffering from download progress, preserve valid video ranges
+  when seeking, and size loading posters to the video. Make the small video window
+  draggable across its surface, with transparent surroundings and automatically
+  hidden translucent controls.
+- Confirm empty history boundaries and retry stalled pages without moving the older
+  cursor forward. Keep permanent deletions, sent message ID replacements, and newer
+  edits authoritative when delayed history or context responses arrive.
+- Preserve visible incoming messages after remote deletion even if TDLib's raw cache
+  has been evicted, and keep retained copies outside the ordinary startup cache quota.
+- Serialize native Range downloads per media file so concurrent header and metadata-tail
+  probes cannot replace each other's TDLib download window and leave sparse, unplayable media.
+- Close layered fullscreen video from the blank surface in both preview and playback modes.
+- Advance native audio stream buffer windows with the active playback position and
+  preserve validated audio MIME types, preventing large high-bitrate files such as
+  FLAC tracks from stalling after the initial 8 MiB range.
+- Allow strictly validated TDLib file-download cancellation requests through the
+  WebView bridge so cancel actions stop the underlying transfer.
+- Separate measured UI stalls from asynchronous backend waits and incomplete tracing,
+  so an eight-second conversation trace timeout no longer implies an eight-second
+  frozen interface.
+- Justify received photo and video albums across the complete message bubble,
+  selecting compact rows from item count and source proportions so mixed albums
+  no longer leave an empty grid cell.
+
+## [0.5.0-rc.4] - 2026-08-22
+
+This candidate contains the latest conversation, forwarding, attachment,
+activity tracking, and native context-menu fixes. The release includes the
+Windows installer and portable package only; the standalone prebuilt TDLib
+runtime archive is intentionally not published.
+
+## [0.5.0-rc.3] - 2026-08-21
+
+### Added
+
+- Offer a hash-pinned Windows x64 TDLib runtime package alongside source builds,
+  with verified Release download and selectable CI preparation paths.
+- Start Fardgram automatically after Windows sign-in through an explicit desktop
+  setting, keeping automatic launches quietly available from the system tray.
+- Restore the main window's last normal position, size, and maximized state on the
+  next launch, while moving stale off-screen placements into an available work area.
+- Navigate links opened from conversations with back and forward controls or mouse
+  side buttons, without recording ordinary conversation-list switches as jumps.
+- Reopen forum groups at their last topic and switch topics from a compact horizontal
+  strip containing only the topic avatar, name, and unread counter, with mouse-wheel
+  horizontal scrolling when the strip overflows.
+- Send selected videos, audio, animations, photos, and documents as native Telegram
+  media with probed dimensions, duration, generated covers, spoiler/caption placement,
+  original-file mode, compatible mixed albums, and native-path-safe validation.
+- Participate in Telegram polls and quizzes, including multiple-choice submissions,
+  result updates, correct-answer explanations, restrictions, and vote revocation.
+- Pin and unpin messages with Telegram notification scope, browse and jump through
+  pinned messages, and configure preset or custom chat auto-delete durations.
+- Browse server-paginated shared media by category with search and date filters,
+  TTL-backed indexing, message jumps, batch downloads, forwarding, and deletion.
+- Continue adjacent audio and voice messages automatically within the active
+  conversation while retaining a single active playback session.
+- Queue attachment uploads while offline with encrypted snapshot metadata,
+  persistent browser storage, SHA-256 change detection, expiry and quota limits,
+  reconnect recovery, cancellation, and explicit retry states.
+- Create basic groups, supergroups, and channels with initial members,
+  descriptions, public usernames, history visibility, permission templates,
+  and native-path-safe chat photo selection.
+- Add a lightweight WebView performance timeline for startup, interaction, rendering,
+  history, and media stalls, backed by a separately rotated performance log.
+- Search the current conversation from the shared sidebar field through TDLib with
+  stable pagination, total counts, a searchable sender filter, exact
+  context loading, and a member-avatar context-menu shortcut.
+- Add a muted inline video surface, Alt-click floating playback, and progress-preserving
+  fullscreen transitions with compact controls for narrow conversations.
+
+### Changed
+
+- Route Ctrl+F to the shared sidebar search field with the active conversation as an
+  explicit scope, keep direct sidebar input global, and return to global results when
+  the conversation scope is removed.
+- Move pinned-list message navigation into a compact action at each bubble's
+  top-right corner and remove the redundant linked-channel jump button.
+- Replace the pinned-message preview dialog with an in-conversation pinned-message
+  view, a persistent header strip that advances through earlier pins as their source
+  messages enter the viewport, per-message history jumps, and exact return-position
+  restoration without injecting non-contiguous pinned history into the normal timeline.
+- Keep the forum group name in topic conversation headers and remove the redundant
+  back-to-topic-list control.
+- Cache bounded forum-topic metadata with per-group selection state so forum entry
+  paints immediately while topic metadata and history refresh in the background.
+- Coalesce forum-topic refreshes, reuse fresh topic/read state, and load only the
+  destination topic when opening a search result or notification.
+- Preserve TDLib voice-note duration before media loading and disable unavailable
+  voice controls instead of presenting an inert play action.
+- Merge chat and message search into the single conversation-sidebar field, return
+  global chat results without mutating the canonical chat list through a second
+  request, and hide the contacts navigation entry until it is assigned a new location.
+- Treat all search input as plain text and remove the local regular-expression mode.
+- Prefetch image and video covers above the viewport, replace percentage media loaders
+  with rotating indicators, and stop paused streams after a bounded buffer window.
+- Present fullscreen video controls in a light 550-by-80 floating panel that hides
+  after pointer inactivity, and route Space to the selected video without activating
+  the currently focused non-text control.
+
+### Fixed
+
+- Keep the latest messages immediately above a newly opened reply or edit context
+  while preserving the visible anchor when the user has scrolled away from the bottom.
+- Stop conversation search from restarting itself whenever its loading state changes,
+  and keep the searchable member picker open while results update.
+- Keep pinned-message jumps smooth by avoiding redundant same-chat selection,
+  suppressing the transient target flash, and ignoring clicks when the pinned
+  source message is already visible.
+- Give captioned media a stable readable card width without letting short captions
+  shrink wide media, keep incoming and outgoing geometry identical, and scale the
+  complete media frame proportionally in narrow conversations.
+- Prevent rapid forum history initialization from leaving the virtual message list
+  stuck in its positioning state and delaying conversation performance traces.
+
+## [0.5.0-rc.2] - 2026-08-03
+
+### Fixed
+
+- Preserve messages when TDLib evicts them only from its local cache, avoid
+  inferring deletions from incomplete history windows, and stabilize ordering
+  for messages sent within the same second.
+
+## [0.5.0-rc.1] - 2026-08-03
+
+### Added
+
+- Connection recovery, native notifications, complete media actions, cache
+  management, and automatic download controls.
+- Paginated global search with filters, exact context loading, profiles,
+  contacts, members, chat organization, and server-backed folder management.
+- Deterministic Mock browser coverage and isolated native smoke evidence.
+- Traceable portable and NSIS artifacts, signed stable/candidate update channels,
+  forward-only rollback policy, and isolated install/upgrade/uninstall lifecycle
+  verification.
+- User-exported redacted diagnostics, opt-in local crash reports, and settings
+  that keep crash capture disabled by default.
+- Automated 125%/150%/200% DPI, forced-colors, long-text, narrow-screen,
+  keyboard, and accessibility-tree release checks.
+
+### Security
+
+- Per-account DPAPI-protected database keys, constrained local-file commands,
+  trusted media asset paths, and recursively redacted structured logs.
+- Release builds reject hidden local inputs, publish dependency/license and
+  SHA-256 inventories, verify the pinned TDLib runtime, and sign native binaries.
+- Diagnostic export removes string values, identifiers, messages, credentials,
+  phone numbers, and local paths before creating the ZIP archive.

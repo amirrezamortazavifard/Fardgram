@@ -1,0 +1,55 @@
+node_modules/
+dist/
+/artifacts/
+target/
+src-tauri/target/
+/src-tauri/gen/schemas/
+
+# Local backups and heavy SDK builds
+.vanilla_client_backup/
+tdlib/
+mhrv-rs
+
+# Local project notes and credentials
+/project.md
+.env
+.env.*
+!.env.example
+/docs/tdlib-feature-selection.md
+*.key
+*.pfx
+*.p12
+AGENT.md
+AGENTS.md
+
+# Compiled binaries and libraries
+*.dll
+*.dylib
+*.so
+*.exe
+*.msi
+*.lib
+*.pdb
+*.exp
+src-tauri/tdlib/*.dll
+src-tauri/tdlib/*.dylib
+src-tauri/tdlib/*.so
+src-tauri/resources/mhrv/
+vendor/tdlib-src/
+vendor/tdlib-build/
+vendor/tdlib-install/
+
+# Runtime and development output
+*.log
+logs/
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+/.native-smoke/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

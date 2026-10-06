@@ -1,0 +1,695 @@
+# Conversation Selection and Viewport Model
+
+This document defines the ownership and completion rules for conversation switching and message
+viewport positioning. It is a contract for future changes, not a description of one incident.
+
+## Evidence from the db808d7 artifact
+
+The portable artifact used for the `16fd66a` state-model analysis was built from clean commit
+`db808d7`. Its performance log shows that
+selection and data projection were usually fast, while stage 6 (scroll positioning) frequently took
+roughly 240-334 ms. Some navigation traces stayed open until the 8 second timeout. The same sessions
+also contain repeated long frames and layout shifts.
+
+The old UI could therefore reach this state:
+
+1. `activeChatId` changed and the sidebar highlighted the destination.
+2. A full-conversation snapshot still covered the destination until positioning reported completion.
+3. A second click issued a new latest-position request and happened to release the snapshot sooner.
+
+At the bottom of a conversation, Virtuoso, viewport/content resize observers, message mount callbacks,
+and a multi-frame pin loop could all write `scrollTop`. Observer notifications restarted the loop, so
+the list could alternate between Virtuoso's correction and the application's correction.
+
+## State ownership
+
+There are only two authoritative inputs:
+
+- The Telegram store owns the selected destination: `activeChatId` and `activeTopicId`.
+- `App` owns one `ConversationScrollRequest`, a discriminated command with `entry`, `latest`, or
+  `message` semantics and a monotonically increasing `requestId`.
+
+There must not be separate entry/latest/message request states. A request is meaningful only when its
+`chatId` matches the selected chat. `Conversation` derives its entire header, message projection, and
+viewport command from that same selected destination.
+
+## Selection transaction
+
+Every user-visible route into a conversation follows this order:
+
+1. Resolve the destination chat/topic and the viewport intent.
+2. In one synchronous React transaction, issue the viewport command and call `selectChat` or
+   `selectForumTopic`.
+3. Let the destination shell render immediately. A bounded visual handoff may cover measurement
+   latency, but it must not participate in destination selection or positioning.
+4. Start or continue background history work using the captured destination generation.
+5. Ignore an asynchronous result when its generation or request is no longer current.
+
+Selection methods are synchronous by contract. Read markers, history loading, and cache writes may
+continue in the background, but callers must never await them before committing the selected
+destination.
+
+An interactive, state-owning, or unbounded conversation switch snapshot is prohibited. The current
+visual handoff is deliberately narrower: it clones only the already rendered shell into a closed
+shadow root, copies canvas pixels, is `aria-hidden`, inert, and ignores pointer input. Destination
+readiness starts its 90 ms release and a 1500 ms bound removes it even when readiness never arrives;
+resize, unmount, and a newer switch cancel it. It cannot choose a destination, write scroll state,
+or delay background work. A separate local snapshot remains valid for an explicit in-conversation
+message jump because that operation has one owner and one list. For a distant virtual relocation the
+snapshot stays still, and only the final controlled deceleration is revealed; source and destination
+must not run separate whole-list transforms.
+
+## Reentering a conversation
+
+The native transport synchronizes TDLib `openChat`/`closeChat` with selection so
+channel and supergroup updates remain subscribed. These requests serialize in
+the background and never delay the synchronous selection transaction. Session
+reset invalidates pending transitions before another account can take ownership.
+Channel posts in the actual viewport are reported through `viewMessages` once
+per visit, including each reentry and connection recovery. Overscan only warms
+media and does not report views. Interaction updates continue through the
+existing message update path; failures retry while the post remains visible.
+Pin service events remain in stored history but are excluded from conversation
+and discussion projections, independently of pinned-post metadata and banners.
+
+Ordinary entry preserves the reading viewport from departure, including a viewport that was at
+the bottom. Current-view following is not an instruction to follow messages that arrive while
+the conversation is closed. Save the visible message anchor and offset even while following,
+along with whether the viewport actually reached the raw bottom and the last known message.
+An unchanged tail at a saved bottom resumes bottom alignment on entry. If the tail grew, a
+viewport that was actually at the bottom and following may also resume following when the last
+old message and every new message fit completely in the current viewport. Use measured height,
+including album metadata, date/group spacing and the end sentinel, rather than message counts.
+An entry with no local old-tail boundary or reading anchor keeps its saved reading position.
+A partial history context cannot establish that every arrival is present, so it also preserves
+the reading position even when its projected tail happens to fit.
+Explicit latest navigation and incoming messages in an already following, open conversation
+retain their behavior.
+
+Measure a candidate tail while entry is hidden, using the existing anchor positioning owner.
+Only fully mounted content with known media geometry can establish fit; an unknown image ratio
+or incomplete rich content preserves the checkpoint. Verify again after bottom settlement to
+include arrivals during positioning. Publish the first visible viewport only after the chosen
+bottom or reading anchor is stable. A later media load must not reconsider an already shown
+entry. Leaving during measurement restores the immutable departure checkpoint; stale callbacks
+cannot publish a result in another conversation.
+
+For short lists, preserve the leading flex space in the measured Header while restoring the
+old viewport. Otherwise restoring the anchor would require a negative scroll offset. Explicit
+latest navigation or an entry whose tail fits releases that space and resumes normal bottom alignment.
+
+The departure capture reads the live scroller and Virtuoso handle when called; their refs may not
+be available when the capture effect first registers. Validate the list identity and positioning
+completion before writing memory. Switching away while restoring must preserve the prior
+checkpoint, and a late snapshot callback cannot overwrite a newer capture. Account/topic/view
+scopes remain independent.
+
+Before capturing a settled, following viewport, reconcile any outstanding raw bottom displacement
+through the existing coordinator. A child resize or passive virtualizer correction may precede its
+observer; that transient gap must not become a detached departure checkpoint. Reading, navigation,
+and active input retain the coordinator's existing priority and cancellation rules.
+
+Freeze the entry checkpoint before layout effects update live message counts. An anchor absent
+from the projected history first uses the existing context loader and history-window selector.
+Loading is bounded and tied to the current positioning generation; navigation or user input
+invalidates it. If recovery fails, prefer another saved visible message at its original offset,
+then a chronological neighbor (successor before predecessor), rather than defaulting to latest.
+Do not publish readiness or expose the unpositioned destination while a local anchor is pending.
+The existing anchor/bottom coordinators remain the only owners of final alignment.
+
+## Positioning completion
+
+`positioning=false` means the requested geometry is stable, not merely that a correction was queued.
+The performance stage `positioned` and `aria-busy=false` are published only by the final settlement
+callback. Controlled message navigation must not reuse the user-scroll interrupt path, because a user
+interrupt intentionally accepts the current geometry while a controlled navigation does not.
+
+Destination changes invalidate all positioning work by identity and generation. A stale callback may
+not publish completion, write memory, or change the current scroll mode.
+
+## Bottom following coordinator
+
+Bottom following has one writer: the coordinator in `useConversationScroll`.
+
+- Resize, total-height, and message-mount callbacks only request reconciliation.
+- Requests with the same identity and generation are coalesced; notifications do not restart the
+  quiet window.
+- The coordinator samples geometry until two quiet animation frames or an eight-frame bound.
+- Tracking requests keep the bottom aligned while viewport or content geometry changes. A final
+  conditional write starts a bounded verification pass because that write can trigger another
+  Virtuoso measurement correction.
+- User upward intent, pointer control, a detached scroll mode, or a destination generation change
+  cancels the request.
+- A passive scroll displacement can arrive after a tracking request has settled. While following,
+  a raw bottom distance greater than the existing 1px rounding tolerance requests another bounded
+  settlement. Preserve this tolerance: repeatedly correcting the last pixel can create a feedback loop.
+  It does not restart a pending settlement or override active user input/navigation. Passive events
+  describe movement, not its author; `isTrusted` alone never establishes user intent.
+- The viewport observer, composer resize callback, message-mount callback, and Virtuoso's
+  `totalListHeightChanged` signal may report committed geometry, but only the coordinator may write
+  `scrollTop`. Observer notifications coalesce into the active request.
+- A real row resize and a virtual-list layout commit must reconcile active tracking before paint,
+  including repeated notifications within the same frame. They do not extend its deadline. Observe
+  actual rows for late child-content changes after a transaction has settled. Do not discard per-row
+  subpixel changes: their sum may be visible. A clamped scroll assignment that makes no progress is
+  not a successful write and must not start another verification pass.
+- A virtual-list layout commit after settlement must also check a following viewport for raw
+  bottom displacement and request tracking before paint. Waiting for a later resize/scroll signal
+  exposes an already positioned conversation with its newest message clipped by the composer.
+- Do not observe the virtualized content node to request bottom pins. Its size can change in response
+  to a pin, creating a resize-pin-measurement feedback loop even when no application content changed.
+
+Virtual rows contain their sender/day margins, and top spacing belongs to a measured Header at every
+responsive breakpoint. Preserve fractional item dimensions instead of rounding each row: independent
+rounding accumulates into a different endpoint than the DOM. The 12px Footer is scrollable content;
+only the final 1px rounding tolerance at the raw scroll maximum may absorb downward wheel input.
+Latest navigation approaches that endpoint under one application-owned animation or reconciliation
+pass. If the final row is already mounted, the application skips Virtuoso's `LAST/end` command because
+that command measures against the row while the application endpoint includes the Footer. An index
+command is used only when it must mount an unrendered tail; the bounded bottom coordinator then owns
+the final raw maximum correction.
+
+Layout measurement must not temporarily shrink live content. Removing a wrapped
+metadata class and restoring it in the same task still lets a forced layout clamp
+the ancestor's scroll position. Restoring the class restores the height, not the
+offset. Folded quotes therefore choose their dedicated metadata row before any
+inline measurement; an already wrapped text/caption flow probes the alternative
+layout in a hidden, inert, fixed-position copy with the same CSS width. Text
+bubbles include their row's sizing context so a wider viewport can restore inline
+metadata; fixed-width captions only copy the flow. The copy is removed synchronously
+and cannot own scrolling or enter the virtual row model.
+This rule applies to text, photo captions, album captions, and discussion messages,
+including readers detached just above the bottom. Never compensate for a probing
+mutation by adding another scroll writer.
+
+Text metadata measurements share a phased queue: collect live geometry, insert all
+necessary probes, read all line rectangles, remove all probes, then publish results.
+The virtual list flushes that queue once after its children commit; resize notifications
+are deduplicated by flow. Do not reintroduce per-message synchronous measurement or
+parent state updates to mirror a child's wrapped class. Bubble padding follows that
+class through CSS. Text layout results belong to immutable content through a WeakMap,
+with at most eight geometry/metadata variants. Validate the actual width, typography,
+text/metadata DOM and quote state before reusing a result. Quote line measurements and
+Markdown parser output also survive remounts in bounded caches (256 sources/512,000
+source characters, up to eight quote variants); source caches clear on account changes.
+Parser trees are copied before downstream plugins may mutate them. Cached values must
+never retain live DOM, event callbacks, selection state or media side effects.
+Resize delivery drains after the shared observer batch in the same frame. Explicit
+quote expansion/collapse drains the affected row before the viewport owner computes
+its anchor. A child layout commit informs that owner without mirroring child state
+in the bubble or rerendering the conversation.
+
+Cold positioning waits for mounted rich-text/math fallbacks and loading fonts to
+resolve before final settlement, for at most one second. A fallback's initial height
+does not establish visual readiness. Superseding selection and user input continue
+to cancel positioning through its existing generation owner.
+
+Middle-button autoscroll outlives pointerup and the short wheel/key input timeout. Both row observers
+and total-height callbacks must yield detached anchoring for its entire lifetime, until explicit input
+or window blur ends it.
+
+### Virtual index origin and viewport anchors
+
+`firstItemIndex` is a size-cache origin, not a viewport anchor. The resolver computes prefix
+displacements from ordered stable virtual block IDs (including sponsored blocks), against the last
+committed render: subtract inserted blocks only when the entire old sequence is an unchanged suffix
+of the new one, and add removed blocks only for the inverse operation.
+
+Each reading prepend has one geometry owner. During continuous detached scrolling, use the resolved origin
+and let Virtuoso preserve motion. Its temporary content margin and deferred `scrollBy` form one
+pass; application layout, row-resize and total-height callbacks must yield until that margin clears.
+Do not cancel that ownership guard on wheel input or cover this pass with a static snapshot. Capture
+the final live reading position when it ends. An idle reader instead keeps the committed origin and
+uses the before-mutation application anchor, including grouping and late-content adjustments. A
+single input followed by a pause is idle: compare input sequence against the pagination request's
+checkpoint, which survives cancellation of its old anchor. Programmatic navigation and bottom following
+retain their existing positioning paths. Never run reading-anchor compensation alongside
+Virtuoso's prepend compensation. Cache origins and block sequences commit together; abandoned
+renders do not publish either.
+
+Idle history transactions capture the visible body, media card or album caption by message identity,
+plus up to two surviving neighbors. Keep those content positions, not a sender header's row top:
+pagination can turn the old first message into a group continuation and remove its header. If the
+content changes size/topology (for example a single photo becoming an album tile), prefer a captured
+unchanged neighbor and never switch back within that transaction. Missing content falls back to the
+existing row anchor. All application layout/resize callbacks use the same transaction's content
+points. Release the static snapshot after those positions and dimensions converge, with the existing
+bounded deadline; `ui_history_render.timedOut` distinguishes deadline release. Re-capture ordinary
+row-based reading memory from the final live viewport, so later passive resizes do not interpret a
+body offset as a row offset. Explicit input, navigation and view changes cancel this ownership.
+
+Upward intent requests the next history page within one viewport of the loaded boundary, with a
+64px minimum. Passive scroll/measurement events never arm requests. Finishing a request while the
+reader is still near the boundary does not itself start another visible-page load.
+
+Interior insertions/deletions, tail edits, group splits/merges, mixed changes and independent history
+window replacements keep the origin. Mounted rows remeasure at their current indexes. Stable block
+identity survives a member deletion or a pending-message ID confirmation, so neither counts as a
+removed block. Bottom and non-prefix detached changes remain owned by the existing before-mutation
+viewport capture and coordinator. Neither the tail message nor the preferred reading anchor may
+shift the global size cache.
+
+`ui_conversation_viewport` provides numeric-only native evidence once per second while the current
+viewport is visible, and emits only when endpoint geometry or control state changes. It records the
+raw scroll maximum separately from the visible Footer/message gap, clipping by ancestors, row
+measurement error, scale and following/input state. Negative gaps mean content extends below the
+visible viewport; `latestRowPresent` distinguishes the mounted tail from the actual latest message.
+Sampling owns no scroll writes or resize reconciliation. These records diagnose persistent endpoint
+failures; ordinary frame-drop events alone cannot establish pixel movement.
+
+### Conversation diagnostics
+
+The diagnostic build also records `ui_conversation_trace`, `ui_conversation_row`, and
+`ui_conversation_member` through the existing numeric-only performance log and export pipeline.
+This is instrumentation, not a scroll behavior fix. It starts for the current conversation only while
+the persisted performance-monitoring switch is on (enabled by default for existing installations).
+The switch is shared across windows and also controls `ui_conversation_viewport`. Turning it off
+disposes diagnostic timers, animation frames, input/scroll listeners, and trace identity tables;
+hot-path hooks skip diagnostic layout reads and record construction. Pending records are discarded,
+while an already submitted native log batch may finish. Turning it on creates a fresh trace session
+without remounting the conversation or replaying activity from the disabled interval.
+No server message/chat/user IDs, text, URLs, button data, paths, or keyboard text are written.
+
+`traceSession` identifies one mounted conversation observer; `traceRun` identifies one burst within it.
+`messageToken`, `replyToken`, and `partitionToken` are opaque session-local counters, not hashes of IDs.
+`rowToken` identifies the actual DOM node; `revisionToken` identifies an in-memory message object.
+Thus the same logical message can be distinguished from a replaced DOM node or new object revision.
+Tokens are not comparable across sessions/windows. The ID table is bounded to 4096 entries; zero means
+unknown/over budget. Object identities use weak references. A conversation/account switch disposes
+the observer and its ID table. Use the existing `windowId` with these keys across native windows.
+
+Every trace record includes `traceSeq` and `traceTimeMs`. Reconstruct event time as
+`traceOriginMs + traceTimeMs`; `observedAtMs`/native `timestampMs` are emission times and may be later
+because pre-trigger evidence is buffered. A start marker precedes replayed history, so file order is
+not necessarily event order. History can appear in successive runs; deduplicate by session/sequence
+when combining runs.
+
+Collection policy:
+
+- Idle geometry stays at 1 Hz and is deduplicated. The most recent 96 callback/input/write events
+  stay in memory. The 100 ms housekeeping timer performs no geometry reads while idle.
+- A remote deletion or ghost creation triggers a burst (`triggerKind=1`). Geometry sampling can also
+  trigger it for row error >8 px (`2`), or following the latest message with >32 px bottom distance,
+  <-8 px latest gap, or >8 px ancestor clipping without active pointer/autoscroll (`3`). These are
+  capture thresholds, not declarations that ordinary navigation is broken.
+- A burst lasts at most 8 seconds or 640 records, including its terminal record. Starts are separated
+  by at least 30 seconds; repeated callbacks cannot extend the deadline. `finishKind` is `1` for time,
+  `2` for output budget, `3` for disposal. `droppedCount` reports overwritten/unemitted callback entries.
+- During a burst, each animation frame reads raw scroll metrics. Every 100 ms the trace reports
+  extrema, sample count, and direction reversals, preserving evidence of movement between snapshots.
+  Row snapshots run at most every 250 ms: the mounted tail plus the largest measurement errors,
+  at most eight rows. `selectedRowCount`/`mountedRowCount` make this sampling explicit.
+- Rows record cached/actual height, layout height, relative top, width, offsetTop, transform/scale,
+  logical/absolute indexes, partition/node identity, and removing-member counts. Member records map
+  individual anonymous messages to expected/actual indexes whenever a selected row's membership
+  changes (up to 16 members per row; `memberCount` exposes truncation). New runs resend membership.
+- Live-message and deletion lifecycle evidence is also flushed outside bursts, including cooldown,
+  so a bot's later self-deletion is not lost just because the geometry burst ended. This queue keeps
+  at most 32 pending lifecycle records and flushes at most once per second while idle.
+- Hiding the document pauses frame/row reads. Visibility/focus events and terminal elapsed time
+  identify gaps; absence of a sample is not evidence of stable geometry. Disposal cancels all
+  observer timers/listeners/frames. Existing file rotation and performance-log drop reporting apply.
+
+`traceKind` decoding:
+
+| Code | Meaning |
+| --- | --- |
+| 1 / 2 | Burst start / end |
+| 3 | Per-frame scroll extrema and reversal summary |
+| 4 | Application scrollTop assignment: requested, previous, and actual clamped value |
+| 5 | Passive scroll event; `trusted` does not imply human input |
+| 6 | Requested Virtuoso index scroll, alignment, offset, and smooth flag |
+| 7 / 8 | Before-mutation / committed-list notification, including index/count changes |
+| 9 / 10 | Real row resize / virtualizer total-height notification |
+| 11 / 12 | Removal settling transaction started / released |
+| 13 / 14 | Input category / document visibility or window focus change |
+| 15 / 16 | Committed message upsert / received deletion event |
+| 17 / 18 | Removal ghost created / expired, including timer deadline lag |
+| 19 / 20 | Immediate removal / local deletion archive retained |
+| 21 | Scroll-control snapshot: generation, follow mode, ownership, anchor, input window |
+| 22 | Size returned to Virtuoso's itemSize callback, before it updates its size cache |
+| 23 | Idle lifecycle queue truncation/drop count |
+
+`writerKind`: `1` bottom pin, `2` latest animation, `3` latest approach,
+`4` anchor correction, `5` resized-row correction, `6` jump animation, `7` target reveal,
+`8` selection autoscroll, `9` selection return. Index commands are separately recorded as kind 6.
+Browser anchoring, focus scrolling, and Virtuoso's internal corrections do not pass through the
+application's scrollTop helper. They remain observable as kind 5 / frame changes without a matching
+kind 4. Do not label an unattributed movement as a definite browser or library write.
+
+`inputKind`: wheel, keydown, pointerdown, pointerup, pointercancel = 1..5.
+`keyKind`: ArrowUp, ArrowDown, PageUp, PageDown, Home, End, Space = 1..7; all other keys = 0.
+`contentKind`: text, rich, media, file, sticker, service, unsupported = 1..7; other kinds = 0.
+`mediaKind`: photo, video, animation, audio, voice = 1..5; other kinds = 0.
+`scrollMode`: following, detached, restoring, navigating = 0..3.
+`reconcileMode`: settle, track, motion = 0..2; no transaction = -1.
+
+For deletion investigations, follow a `messageToken` from remote deletion through ghost expiry and
+the commit/index records. Compare the same `rowToken` and `partitionToken` before/after mapping
+changes, then compare kind 22 measurements to the next cached heights. Finally align application
+writes, passive scroll changes, control ownership, and frame extrema. This distinguishes a wrong
+cache mapping, genuine content resizing, repeated scroll correction, and a DOM-node replacement.
+
+Anchor and explicit message navigation use longer quiet windows because virtual rows can mount several
+frames after the target first appears.
+
+## Required invariants
+
+- A selected chat row, conversation header, and rendered message IDs always name the same destination.
+- One click commits the destination; a second click is never part of the switching protocol.
+- Any source-view visual handoff is non-interactive, cannot own state, and is removed within its
+  bounded lifecycle.
+- `positioned` is emitted once per current request and only after its settlement callback.
+- A following conversation remains visually motionless across idle frames.
+- A detached conversation never moves because of a bottom-following notification.
+- Async history results cannot restore an older selection or viewport command.
+
+## Stable timeline partitions and visual readiness
+
+Semantic sender/day grouping and virtual partition identity have different lifetimes.
+The timeline projector reconciles against the last **committed** partitions for the same
+account, conversation and view. New history is packed independently of existing partitions;
+live messages can fill the final partition. Deleting a partition's first message does not
+rename its surviving siblings. A sender/day change or an album topology change may split
+the affected partition, but must not repack unrelated partitions. Albums remain atomic and
+the four-message target continues to bound ordinary partitions and sender-avatar geometry.
+
+Commit the projection reference in a layout effect. Do not mutate a global partition cache
+during render: an interrupted render must not redefine the next committed view. Nested React
+keys must use the same stable partition identity, and album identity must not depend on its
+first loaded member.
+
+Virtuoso measurements are reusable only when the ordered message-to-partition mapping,
+message object versions, viewport width, language and geometry-affecting preferences still
+match. Equal first/last message IDs and row counts are insufficient. A stable conversation
+surface supplies width before the destination scroller mounts. Capture message versions
+as weak references so size snapshots do not retain evicted history; keep at most 32 size
+snapshots. Eviction does not remove semantic reading memory. On a mismatch, retain the
+reading anchor and let the destination measure its actual layout.
+
+`npm run test:performance:switch` builds an isolated production React/Mock benchmark
+under ignored artifacts and performs 30 warm switches at 250ms intervals while editing.
+Require zero long tasks, frame interval P95 below 22ms and maximum below 40ms,
+synchronous click P95 below 16.7ms, editor processing P95 below 8ms, and first-frame
+editor response P95 below 40ms. Unchanged warm text performs no line-rectangle reads.
+Development runs enforce cache and behavior correctness; JSX development checks
+make their timings unsuitable as production acceptance. These Chromium gates
+do not prove native WebView2 or 240Hz acceptance; compare native builds against the
+same account/history and retain separate blocking, positioning and visual release metrics.
+
+Positioning feedback belongs to the viewport transaction. It may appear after a delay, but
+must unmount in the same commit that publishes a positioned view. It has no independent
+minimum lifetime or exit animation over destination messages. The source snapshot continues
+to use its bounded, presentation-only release protocol.
+
+Image resource readiness survives virtual row remounts through bounded URL metadata. A
+previously decoded image that is already loaded in the new element is revealed before paint
+without replaying an entrance. A cache hit alone must never expose an unloaded or failed
+element; stale source decodes must not publish readiness for a replacement.
+
+Regression checks must include partial same-sender history pages at the production partition
+size, deletion of a partition head, restored image opacity and node identity, source-decode
+races, and loading/positioned handoff at both short and long response times. An unchanged
+reading offset alone does not establish visual continuity.
+
+The focused unit and browser tests cover command consistency, source-row isolation, unread-marker
+settlement, repeated warm switching, bounded geometry reads, idle bottom stability, long-message edit
+entry/cancel/save, and detached edit anchoring.
+
+## History windows and recovery ownership
+
+`ConversationHistory` owns separate refresh and reader cursors for each chat/topic. Transport calls
+with an explicit `HistoryPageRequest` return the next cursor without consuming another window's
+cursor. The existing history pager, message merge rules, deletion facts and sync generations remain
+shared. A stale response cannot publish into a discarded scope or a new account/recovery generation.
+
+The message cache is broader than the displayed timeline. A disjoint context loaded by search/reply
+navigation has its own membership and older cursor. It remains cached while the latest timeline
+excludes those context-only records. Normal pagination can admit returned records into the latest
+timeline. Overlapping real server pages can join windows; numerical gaps between IDs cannot establish
+or disprove continuity. Explicit navigation selects a window in the same transaction as its existing
+viewport request. End/latest selects the latest window; jump return can select a cached context and
+restore its original pixel offset. A context's local bottom is not the latest conversation window.
+
+Recovery captures the recent server-message boundary before accepting new live updates. It refreshes
+from the head until that boundary is returned/passed or the server confirms exhaustion. Distant
+context membership is never a recovery target. Each recovery has a total nine-page budget (including
+the first page), rather than an eight-page limit that silently restarts every five seconds. A budget
+stop preserves the cursor and publishes `recovery: paused`; it neither deletes unconfirmed messages
+nor claims completion. Explicit older loading continues that repair from its committed cursor with a
+one-page budget per gesture, including retries after a request failure. Taking manual ownership cancels
+a queued background retry, so it cannot resume a nine-page scan after the reader stops. Reconnect
+starts a new background budget while preserving the unfinished boundary. An accepted partial or
+stalled manual page stays paused until the next gesture. Request failures before page acceptance and
+background stalls have a bounded three-attempt retry path using the existing retry queue. Switching
+accounts clears all window and retry ownership. Reconnect retires requests but preserves reader
+windows and their cursors.
+
+A cold cache has no continuity guarantee: it may contain an old tail plus a newer head page saved
+after an interrupted recovery. Its first refresh must walk through the oldest ordinary cached
+message outside explicit contexts, rather than stopping at the newest cached ID. After validation,
+ordinary reconnects use the recent boundary again. An unfinished refresh keeps its original boundary
+across further reconnects; accepting a newer page does not prove that the remaining gap is filled.
+
+When the head page has not reached that boundary, older unconfirmed cache records move into an
+existing-style context window. They remain available to saved reading anchors and are persisted via
+`historyContexts`, but cannot appear immediately adjacent to the head page in the latest timeline.
+Subsequent server pages admit them through the normal window merge. Upward loading resumes paused
+or failed refreshes from the committed refresh cursor and coalesces with an active refresh. Pending
+recovery keeps the latest window pageable even if its pre-disconnect reader had reached the oldest
+message. Completion restores that reader's exhaustion state; it does not delete unconfirmed records.
+
+Retained deletion archives have independent persistence and do not establish coverage of ordinary
+server history. A restored chat can contain only 60 recent ordinary messages alongside much older
+archives. Each window keeps its oldest covered message boundary; latest admits archives at or above
+that boundary, and contexts also apply their newest boundary. Confirmed server exhaustion admits the
+remaining older archives. Boundaries survive deletion of their original message, and retained copies
+remain cached while outside the visible window. Explicit navigation can select a retained copy in a
+separate context without treating the intervening history as loaded. A retained copy alone cannot
+join distant server windows.
+
+Reader pagination walks duplicate cached pages until it extends the displayed history, reaches a
+confirmed end, stalls, or consumes the same nine-page budget. Each accepted page commits its cursor;
+an error can retry from that cursor, while account/recovery generations still reject stale pages.
+This keeps a single upward gesture useful after restart without starting an unbounded cache scan.
+Numeric reader cursors never move toward newer messages, including when an endpoint repeats a page.
+
+Optional `historyContexts` in cache schema 4 preserves only membership present in the bounded saved
+message cache. It contains no claim that an entire old cache is contiguous. Legacy caches remain
+usable without this metadata; malformed optional metadata is ignored. Cache membership never takes
+precedence over permanent deletion or a newer live edit.
+
+The virtual index adapter derives from the last committed mapping. Following views preserve a
+surviving bottom row; detached views preserve their reading anchor. Index/layout caches are written
+only on commit. Structural changes establish a bounded bottom-follow transaction before mutation,
+so list layout notifications reconcile that same owner before paint. Equivalent message refreshes
+preserve existing message objects and arrays.
+
+History diagnostics use `ui_history_data`: `purpose` 1 is recovery and 2 is reader pagination.
+`stopReason` 1 means complete/page accepted, 2 stalled/no cursor progress, 3 inactive scope,
+4 total budget reached and 5 request failure. `remainingBoundaryCount` is zero only when recovery
+completed. These numeric fields are accepted by the native logging boundary; no message identifiers
+or bodies are included.
+
+The native pager caps each window at the requested number of distinct older messages. A response
+may include the cursor message or omit it; the reserved boundary slot must never admit an extra older
+message. Overflow remains for the next request, whose cursor is the last emitted message, preserving
+continuity across short responses and both boundary conventions.
+
+Regression coverage must include disjoint cached context plus repeated reconnects while idle at the
+bottom, original visible DOM-node identity, every sampled frame's bottom distance, context/latest and
+jump-return navigation, interrupted renders, bounded recovery continuation, independent reader
+cursors, restart membership and deleted recovery boundaries. Final scroll position alone is not an
+adequate assertion for this failure mode.
+
+## Ordinary history retention
+
+The in-memory Store trims ordinary history per chat at 2,400 messages, targeting 2,000
+with hysteresis. A detached reader keeps a contiguous interval around its actual visible
+anchor plus 300 recent messages. Mounted rows, selected/action/reply/edit targets, draft
+reply targets, recovery boundaries, pending/failed sends and complete media albums are
+protected. Deletion archives retain their independent persistence and are not counted
+against this ordinary-message budget. Protected records can temporarily exceed it.
+
+Positioning and pending history transactions defer eviction; the existing snapshot-write
+callback retries after positioning. Viewport registrations contain live getters, not DOM
+nodes or message arrays, and dispose when their conversation unmounts. Account reset
+clears them. Inactive conversations use the recent tail; a saved reading position outside
+that tail is restored through the existing message-context loader.
+An open channel-discussion panel temporarily protects its source and thread caches: that
+panel has a separate thread-pagination owner. Closing it allows the ordinary policy to
+resume; this change does not replace its pagination or trim its displayed comment list.
+
+Eviction commits the message array and history-window membership together. It releases
+ordinary file indexes, downstream download indexes and native raw-message/file indexes,
+without deletion tombstones or removing locally retained copies. Empty context membership
+is discarded; surviving disjoint intervals never become adjacent in one timeline.
+
+Removing an older prefix resets the reader cursor to the surviving oldest message and
+reopens older pagination. A reader interval with an evicted newer suffix exposes `hasNewer`;
+downward input within one viewport requests one newer page. Negative TDLib history offsets
+are shared by ordinary chats and forum topics. Short responses are walked back to the
+starting boundary before publication, and one empty response does not prove exhaustion.
+The controller captures latest membership before the request, since native publication
+can precede its result. Overlap rejoins the intervals; End/latest selects the retained tail.
+
+Regression coverage includes repeated live updates, hundreds of older/newer pages,
+frame-by-frame reading stability, native early publication, short/empty newer responses,
+file/raw-index release, archive/send/draft/album protection and reload after eviction.
+
+## Private chat history deletion
+
+The confirmation defaults to deleting only the current user's history. Deleting for both sides
+requires an explicit checkbox selection and `chat.canDeleteForAllUsers === true`, mapped from TDLib's
+`can_be_deleted_for_all_users`. The self-only and both-sides capabilities are independent; missing
+capabilities authorize neither scope. An open confirmation retains its selected scope through
+permission changes and failed attempts. Losing permission disables confirmation without silently
+changing scope, and the user can still deselect the both-sides option.
+
+The store checks the selected scope, and the native transport refreshes `getChat` before sending
+`deleteChatHistory(remove_from_chat_list=true, revoke=forEveryone)`. The Rust request validator requires
+an explicit boolean `revoke`; group/channel destruction via `deleteChat` remains unavailable.
+Both scopes share the existing history-deletion boundary, retained-copy cleanup, account-generation
+checks and protection for messages newer than the deleted history. Mock deletion validates scope and
+local cleanup; another account's server history requires native integration verification.
+
+## Cached message media identity
+
+TDLib numeric file IDs are runtime handles, not persistent media identities. Both snapshot writing
+and legacy snapshot migration clear main/thumbnail IDs and transfer flags from ordinary messages,
+deletion archives, quoted messages, and nested article media. Remote IDs, unique IDs, and existing
+local preview paths survive. A downloaded flag without a local path is not restorable readiness.
+
+When the account is ready and online, `MediaFileRestorer` resolves persistent identities for the
+selected conversation and deletion archives. Inactive ordinary conversations wait until selection.
+Lookups deduplicate remote IDs and run with at most four workers. A selection during an in-flight
+batch requests another pass. A new account invalidates old results. Missing, failed, or mismatched
+identities may refresh the source message once per pass; they never authorize an old numeric handle.
+Deleted and pending messages cannot use that fallback.
+
+`MessageFileIndex` follows committed message reset/upsert/replace/remove events. A `file.updated`
+event reaches ordinary cached messages even when they are absent from the transport's raw history
+index. Match the numeric handle and available persistent identity before applying progress, local
+paths, or completion. Unchanged file updates preserve object identity. Ordinary media follows TDLib
+cache eviction; only deletion archives retain their independently owned local copies.
+
+Media restoration does not change history membership, ordering, deletion facts, or viewport ownership.
+It does not scan every conversation on each file update. Automatic download still follows the user's
+media type and size preferences after a current handle is bound.
+
+Native save failures keep their concrete IPC error in operation feedback. The native
+`download_save_failed` log records only a fixed reason category, never paths, filenames, or raw OS
+errors. Cache-root validation and export restrictions remain enforced.
+
+Regression coverage includes legacy cache migration, repeated restart, automatic/manual download
+without raw history hydration, independent thumbnail completion, nested/reply media, cache eviction,
+account-generation cancellation, and concrete save failure feedback.
+
+## Background update delivery
+
+The native receive loop owns an ordered update queue for each main/settings WebView. Events only
+wake the consumer; their payload never contains TDLib records. The consumer leases at most 64 records
+and acknowledges a packet only after applying every record. Native read retries replay an unacknowledged
+lease. Frontend application faults stop the stream instead of replaying a partially applied packet.
+Closing a window or replacing its account session retires that window's stream; late closes cannot
+retire a replacement stream. Reconnection retains the stream and ordinary sync-generation rules.
+
+A suspended consumer spills ordered queue chunks beyond 512 records or 1 MiB of serialized content
+to DPAPI-protected temporary files. This bounds the active memory buffer, with a separate bounded
+reading chunk and one lease; it is not a total process-memory limit. Windows delete-on-close handles
+remove spool contents even on process exit. Spill failures retain the current records and backpressure
+the native receive loop. New messages, edits and deletions are never coalesced or dropped to reduce lag.
+
+The frontend applies each lease in approximately 4 ms slices, yielding a macrotask between slices and
+packets. The budget is cooperative: a single update cannot be preempted. Native receive diagnostics
+include pending records, in-flight records and acknowledged batches. Optional UI diagnostics report
+queue age and delivery duration separately from synchronous processing time.
+
+Native connection recovery owns actual system-wake and network detection. Browser focus, visibility
+and timer drift request only a non-forced check; background throttling alone must not reset a healthy
+TDLib connection. Overlapping folder refreshes share chat lookups within the current sync generation.
+Hidden folder warmup waits for a visible document and the selected list to finish loading.
+
+Receiving a live update does not authorize a desktop notification. Public previews and linked
+channel discussion groups can receive updates without membership. Notification eligibility requires
+a known chat, and groups/channels require server-mapped `isMember === true`; private chats need no
+membership flag and Saved Messages never notify. Check membership before resolving forum topics and
+again against current state after the lookup, so leaving a group during the request cannot leak an
+alert. Keep these updates in message history and discussion views; membership gates presentation,
+not update delivery, and a followed channel has its own membership independent of its discussion group.
+
+Regression coverage includes ordered new/edit/delete bursts through encrypted overflow, acknowledgement
+and I/O retry behavior, session disposal, and user input while a large backlog is still being applied.
+
+## Unread mention navigation
+
+The TDLib chat mention count and per-message unread flags own mention state. The conversation
+attention index is a navigation index, not a second unread authority. Restore explicit unread
+mentions from cached snapshots and history pages; an old reply to an outgoing message alone does
+not establish unread state. Live replies keep their existing local attention behavior.
+
+The sidebar retains its attention badge when ordinary unread messages reach zero. The conversation
+button includes mentions reported by the chat count even before their IDs have been loaded. Recover
+those IDs through the existing unread-mention search on entry, count changes and reconnection;
+coalesce requests and allow a click to retry. Search recovery must not expand the current history
+window or mark messages read. Navigation loads the selected message's context through the existing
+viewport owner and discards a delayed jump after another navigation or account change.
+
+Only focused, visible message rows submit mention reads. A successful view request does not itself
+clear a server-backed mention: retain the entry until TDLib reports the read, including when its
+reaction is acknowledged first. A zero chat mention count clears known mention flags and entries
+without consuming unrelated local replies or reactions. Late searches cannot overwrite newer
+message state, restore deleted messages, or cross account generations; a reduced aggregate count
+also invalidates a search snapshot that could contain a remotely read, uncached message.
+
+## Local user blocking
+
+Each account stores a per-user display mode with the existing local block record. Missing or
+unknown modes retain the original `mask` behavior. Masking uses animal identities in groups and
+discussions and supports the existing temporary reveal scopes. Sender tags and album captions
+remain in layout while concealed; revealing a message or sender must not resize those surfaces.
+An invisible real-name sizing span keeps a short animal alias from changing the bubble width.
+Successful native metadata writes broadcast only the changed key; other windows reload the
+durable records and notify their existing subscribers. A delayed reload cannot replace a newer
+local edit. This keeps mode changes in the independent settings window visible in the chat window.
+
+The `hide` mode excludes incoming messages before timeline grouping and virtualization, including
+private chats, topics, discussion threads and the pinned view. It has no placeholder or reveal
+override. Search results, shared media, media-viewer navigation, reply previews, draft/action
+targets and chat-list previews must apply the same exclusion. Keep source messages available for
+history synchronization and reply-sender resolution; display filtering must not delete server or
+cached history. Changing back to masking or unblocking restores the original records.
+
+Blocked unread reactions are filtered synchronously before attention indexing and rendering,
+independently of remote read completion or failure. Precise unread sender metadata takes
+precedence over older aggregate participants. Mixed or unknown unread senders preserve their
+attention entry. Since TDLib's reaction read command is chat-wide, automatically issue it only
+when all known unread reactions belong to blocked senders and the known message count covers the
+server count; otherwise retain unrelated unread reactions until the existing visibility read path
+can acknowledge them.
+
+## Centered conversation notices
+
+TDLib service events retain a small, whitelisted display model in `MessageContent.event`:
+actor/member identities, readable event fields, related-message targets, and optional existing
+local/minithumbnail photos. Never persist payment credentials, Passport payloads, gift redemption
+codes, or Web App data in this model. Legacy service text/member IDs remain readable.
+
+`presentServiceEvent` localizes events at render time and keeps person and message references
+structured. `ServiceMessageContent` renders names in bold without underlines, supports existing
+profile/message navigation, and folds secondary information into details. Name substitution must
+not interpret user text as markup or template slots. Local user aliases apply to every identity,
+and related-message summaries must not expose locally blocked content. Unknown message types use
+a friendly fallback without protocol identifiers. Retained deleted service records explain their
+state in a tooltip and accessible description instead of adding another visible line.
+
+Timeline dates, floating dates, service messages, loading notices, and empty states share the
+`conversation-notice` style and theme token. The token is blended with the canvas in advance so
+floating notices keep the same color over messages or media. Floating notices use the measured
+timeline center, accounting for scrollbar gutters and interface scaling; the alignment observer
+never writes scroll position. Channel/discussion service rows reserve no avatar column and cannot
+inherit channel-post bubble styles.
+
+Regression coverage includes the pinned TDLib service-type inventory, event-specific wording and
+amounts, multilingual names/details, local privacy, related-message navigation, photo fallback,
+long names, light/dark themes, narrow windows, and alignment at 100% and 125% interface scale.

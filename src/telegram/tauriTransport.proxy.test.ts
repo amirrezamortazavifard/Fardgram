@@ -1,0 +1,197 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { TauriTelegramTransport } from "./tauriTransport";
+import type { TdObject } from "./tdlibMapper";
+import type { TelegramEventListener } from "./transport";
+import type { ProxySettings } from "./types";
+
+type Internal = {
+  listener?: TelegramEventListener;
+  settingsOnly: boolean;
+  handleUpdate: (update: TdObject) => void;
+  finishInitialChatSync: () => void;
+  requestImmediateConnectionRecovery: (force: boolean) => void;
+  request: (request: TdObject) => Promise<TdObject>;
+};
+const settings = (port = 7890): ProxySettings => ({
+  mode: "system", profiles: [], activeProfileId: "", autoSwitch: false, revision: 3,
+  systemStatus: { kind: "resolved" },
+  system: { type: "http", server: "127.0.0.1", port, username: "", password: "", secret: "", httpOnly: false },
+});
+const setup = (invoke = vi.fn().mockResolvedValue(undefined)) => {
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: { invoke } });
+  const transport = new TauriTelegramTransport();
+  const internal = transport as unknown as Internal;
+  internal.listener = vi.fn();
+  internal.finishInitialChatSync();
+  return { transport, internal, invoke };
+};
+const native = (phase: string, state = "connectionStateReady") => ({ "@type": "updateFardgramConnectionState", phase, state });
+
+describe("native proxy recovery boundary", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+  it("saves intent and its revision through the native owner without TDLib mutations", async () => {
+    const { transport, invoke } = setup();
+    await transport.saveProxySettings(settings());
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("telegram_save_proxy_settings", {
+      preferences: { mode: "system", profiles: [], activeProfileId: "", autoSwitch: false }, revision: 3,
+    }, undefined);
+  });
+
+  it("does not blame the proxy when persistence fails", async () => {
+    const { transport, internal } = setup(vi.fn().mockRejectedValue(new Error("disk full")));
+    await expect(transport.saveProxySettings(settings())).rejects.toThrow("disk full");
+    expect(internal.listener).not.toHaveBeenCalledWith({ type: "connection.changed", status: "proxyError" });
+  });
+
+  it("coalesces wake signals and waits for native verification after acknowledgement", async () => {
+    vi.useFakeTimers();
+    const { internal, invoke } = setup();
+    internal.handleUpdate(native("idle"));
+    internal.handleUpdate(native("recovering"));
+    internal.requestImmediateConnectionRecovery(true);
+    internal.requestImmediateConnectionRecovery(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("telegram_recover_connection", { force: true }, undefined);
+    // A recovery phase is only user-visible after the disconnect grace period.
+    expect(internal.listener).toHaveBeenLastCalledWith({ type: "connection.changed", status: "online" });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(internal.listener).toHaveBeenLastCalledWith({ type: "connection.changed", status: "recovering" });
+    // A delayed raw READY must not overwrite a recovery in progress.
+    internal.handleUpdate({ "@type": "updateConnectionState", state: { "@type": "connectionStateReady" } });
+    expect(internal.listener).toHaveBeenLastCalledWith({ type: "connection.changed", status: "recovering" });
+    internal.handleUpdate(native("idle"));
+    expect(internal.listener).toHaveBeenLastCalledWith({ type: "connection.changed", status: "online" });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(internal.listener).not.toHaveBeenCalledWith({ type: "sync.required" });
+  });
+
+  it("keeps settings windows from recovering or shutting down the shared client", async () => {
+    const { internal, invoke, transport } = setup();
+    internal.settingsOnly = true;
+    internal.requestImmediateConnectionRecovery(true);
+    await transport.disconnect();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("does not install a second JS watchdog when connection updates arrive", async () => {
+    vi.useFakeTimers();
+    const { internal, invoke } = setup();
+    internal.handleUpdate({ "@type": "updateConnectionState", state: { "@type": "connectionStateConnectingToProxy" } });
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("hides a disconnect that recovers within the grace period", async () => {
+    vi.useFakeTimers();
+    const { internal } = setup();
+    internal.handleUpdate(native("idle"));
+    expect(internal.listener).toHaveBeenLastCalledWith({ type: "connection.changed", status: "online" });
+
+    internal.handleUpdate({ "@type": "updateConnectionState", state: { "@type": "connectionStateConnecting" } });
+    expect(internal.listener).toHaveBeenLastCalledWith({ type: "connection.changed", status: "online" });
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(internal.listener).toHaveBeenLastCalledWith({ type: "connection.changed", status: "online" });
+
+    internal.handleUpdate({ "@type": "updateConnectionState", state: { "@type": "connectionStateReady" } });
+    expect(internal.listener).toHaveBeenLastCalledWith({ type: "connection.changed", status: "online" });
+  });
+
+  it("surfaces failure to dispatch a recovery signal without leaking native details", async () => {
+    const { internal } = setup(vi.fn().mockRejectedValue(new Error("private native details")));
+    internal.requestImmediateConnectionRecovery(true);
+    await vi.waitFor(() => expect(internal.listener).toHaveBeenCalledWith({ type: "sync.error", message: "无法请求连接恢复，后台将继续重试" }));
+  });
+
+  it("refreshes data once after hidden recovery settles without changing the visible status", async () => {
+    vi.useFakeTimers();
+    const { internal } = setup();
+    internal.listener = vi.fn();
+    internal.handleUpdate(native("idle"));
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      internal.handleUpdate(native("recovering"));
+      await vi.advanceTimersByTimeAsync(400);
+      internal.handleUpdate(native("idle"));
+      await vi.advanceTimersByTimeAsync(400);
+    }
+    expect(internal.listener).toHaveBeenCalledExactlyOnceWith({ type: "connection.changed", status: "online" });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(internal.listener).toHaveBeenCalledTimes(2);
+    expect(internal.listener).toHaveBeenLastCalledWith({ type: "sync.required" });
+    internal.handleUpdate(native("idle"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(internal.listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("debounces established syncing blips and cancels deferred refresh on session reset", async () => {
+    vi.useFakeTimers();
+    const { internal, transport } = setup();
+    const listener = vi.fn();
+    internal.listener = listener;
+    internal.handleUpdate(native("idle"));
+    internal.handleUpdate({ "@type": "updateConnectionState", state: { "@type": "connectionStateUpdating" } });
+    await vi.advanceTimersByTimeAsync(400);
+    internal.handleUpdate(native("idle"));
+    expect(internal.listener).toHaveBeenCalledExactlyOnceWith({ type: "connection.changed", status: "online" });
+    await transport.disconnect();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(listener).not.toHaveBeenCalledWith({ type: "sync.required" });
+  });
+
+  it("tests freshly detected system settings rather than the settings dialog snapshot", async () => {
+    const { transport, internal, invoke } = setup(vi.fn().mockResolvedValue(settings(7891)));
+    internal.request = vi.fn().mockResolvedValue({ seconds: 0.02 });
+    await expect(transport.testProxy(settings())).resolves.toBe(20);
+    expect(invoke).toHaveBeenCalledWith("telegram_proxy_settings", {}, undefined);
+    expect(internal.request).toHaveBeenCalledWith(expect.objectContaining({ "@type": "pingProxy", proxy: expect.objectContaining({ port: 7891 }) }));
+  });
+
+  it("never turns unsupported system settings into a direct speed test", async () => {
+    const { transport, internal } = setup(vi.fn().mockResolvedValue({ ...settings(), system: undefined, systemStatus: { kind: "unsupported" } }));
+    internal.request = vi.fn();
+    await expect(transport.testProxy(settings())).rejects.toThrow("系统代理暂不可用");
+    expect(internal.request).not.toHaveBeenCalled();
+  });
+
+  it("invokes native proxy discovery and returns parsed discovered proxies", async () => {
+    const mockDiscovered = [
+      {
+        id: "smart-1",
+        name: "MTProto (cloudflare.com)",
+        endpoint: { type: "mtproto", server: "1.2.3.4", port: 443, secret: "ee123", username: "", password: "", httpOnly: false },
+        latencyMs: 95,
+        isFakeTls: true,
+        sniDomain: "cloudflare.com",
+      },
+    ];
+    const { transport, invoke } = setup(vi.fn().mockResolvedValue(mockDiscovered));
+    const result = await transport.discoverProxies();
+    expect(invoke).toHaveBeenCalledWith("telegram_discover_proxies", {}, undefined);
+    expect(result).toEqual(mockDiscovered);
+  });
+
+  it("invokes native apply discovered proxies with profile rotation", async () => {
+    const mockDiscovered = [
+      {
+        id: "smart-1",
+        name: "MTProto",
+        endpoint: { type: "mtproto" as const, server: "1.2.3.4", port: 443, secret: "ee123", username: "", password: "", httpOnly: false },
+        latencyMs: 110,
+        isFakeTls: true,
+      },
+    ];
+    const { transport, invoke } = setup(vi.fn().mockResolvedValue(settings()));
+    await transport.applyDiscoveredProxies(mockDiscovered, "smart-1");
+    expect(invoke).toHaveBeenCalledWith("telegram_apply_discovered_proxies", {
+      proxies: mockDiscovered,
+      activeId: "smart-1",
+    }, undefined);
+  });
+
+  it("invokes native quick connect to best proxy", async () => {
+    const { transport, invoke } = setup(vi.fn().mockResolvedValue(settings()));
+    await transport.quickConnectBestProxy();
+    expect(invoke).toHaveBeenCalledWith("telegram_quick_connect_best_proxy", {}, undefined);
+  });
+});

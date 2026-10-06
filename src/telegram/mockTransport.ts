@@ -1,0 +1,2896 @@
+import { mockChatReport } from "./mockChatReport";
+import { mentionSuggestionsFor } from "../utils/mentionSuggestions";
+import { telegramInviteLink } from "./telegramLinks";
+import type { DiscoveredProxy, JoinChatInput, JoinChatResult } from "./types";
+import { groupOutgoingAttachments, outgoingAlbumCaptionIndex } from "../media/outgoingAttachments";
+import {
+  mockProfilePhotoUrl,
+  mockSnapshot,
+  tallMediaPreviewUrl,
+  wideMediaPreviewUrl,
+} from "./mockData";
+import { isCaptionContent, isEditableMessageContent, messageContentText, messagePreviewText } from "./messageContent";
+import { hasChatDraftContent } from "./chatDraft";
+import { inputMediaCopy } from "./mediaCopy";
+import { messageSearchMatches } from "./messageSearch";
+import type { TelegramEventListener, TelegramTransport } from "./transport";
+import type {
+  MessageFileState,
+  AuthorizationAction,
+  CacheCleanupInput,
+  CacheUsage,
+  CachedTelegramSnapshot,
+  HistoryPageRequest,
+  Chat,
+  ChatEvent,
+  ChatEventLogInput,
+  ChatEventPage,
+  ChatManagement,
+  ChatInviteLink,
+  ChatInviteLinkPage,
+  ChatJoinRequest,
+  ChatJoinRequestPage,
+  CreateChatInviteLinkInput,
+  GetChatInviteLinksInput,
+  GetChatJoinRequestsInput,
+  BotCommandSuggestion,
+  CallbackQueryAnswer,
+  InlineQueryResultPage,
+  BlockedSender,
+  ChatReportResult,
+  ReportChatInput,
+  DeviceSession,
+  PrivacyRule,
+  PrivacySettingKey,
+  ChatMemberStatusInput,
+  ChatPermissions,
+  ManagedChatMember,
+  ChatProfile,
+  ChatProfileMembersPage,
+  ConnectionStatus,
+  CreateChatInput,
+  DeleteMessageInput,
+  EditMessageInput,
+  EmojiPickerAsset,
+  EmojiPickerCatalog,
+  ForwardMessagesInput,
+  ForwardMessagesResult,
+  SendMediaCopyInput,
+  ForumTopic,
+  ForumTopicPage,
+  GetForumTopicsInput,
+  GetMessageReactionSendersInput,
+  CreateForumTopicInput,
+  GlobalSearchInput,
+  GlobalSearchPage,
+  ChatMessageSearchFilter,
+  ChatMessageSearchInput,
+  ChatMessageSearchPage,
+  Message,
+  MessagePermissions,
+  MessageTextEntity,
+  ProfileAudio,
+  ProfilePhoto,
+  PinMessageInput,
+  ProxySettings,
+  SendEmojiAssetInput,
+  SendFileInput,
+  SendFilesInput,
+  SendMessageInput,
+  SetChatDraftInput,
+  SetChatMessageAutoDeleteTimeInput,
+  SetMessageReactionInput,
+  SetPollAnswerInput,
+  SharedMediaSearchInput,
+  StorageLayer,
+  StorageSettings,
+  StickerSet,
+  TelegramAccount,
+  TelegramAccountState,
+  TelegramSnapshot,
+  UpdateCurrentUserProfileInput,
+  ChatHistoryPage,
+  ChatSponsoredMessages,
+  User,
+} from "./types";
+import {
+  knownUnsupportedTelegramLink,
+  parseTelegramUrl,
+  telegramBotStartParameters,
+  telegramStickerSetName,
+  unsupportedTelegramLink,
+} from "./telegramLinks";
+import {
+  DEFAULT_CHAT_ADMIN_RIGHTS,
+  DEFAULT_CHAT_PERMISSIONS,
+  cloneChatAdminRights,
+  cloneChatPermissions,
+  chatMemberTagError,
+  deriveChatManagementCapabilities,
+} from "./chatManagement";
+import { identityTextField, normalizeIdentityText } from "./identityText";
+
+const clone = <T,>(value: T): T => structuredClone(value);
+const CACHE_KEY = "fardgram:ui-cache:v1";
+const ACCOUNT_STATE_KEY = "fardgram:accounts:v1";
+const PINNED_ORDER_KEY = "fardgram:mock-pinned-order:v1";
+
+const mockProfilePhotos = (user: User): ProfilePhoto[] => [
+  {
+    id: `${user.id}:current`,
+    addedAt: "2026-07-18T10:00:00+08:00",
+    content: {
+      kind: "media",
+      mediaType: "photo",
+      fileName: `${user.displayName} 的当前头像.png`,
+      sizeLabel: "128 KB",
+      localPath: mockProfilePhotoUrl,
+      canDownload: false,
+      isDownloaded: true,
+      width: 512,
+      height: 512,
+      caption: "当前头像",
+    },
+  },
+  {
+    id: `${user.id}:history:1`,
+    addedAt: "2026-04-12T14:30:00+08:00",
+    content: {
+      kind: "media",
+      mediaType: "photo",
+      fileName: `${user.displayName} 的历史头像 1.jpg`,
+      sizeLabel: "220 KB",
+      localPath: tallMediaPreviewUrl,
+      canDownload: false,
+      isDownloaded: true,
+      width: 900,
+      height: 1800,
+      caption: "历史头像",
+    },
+  },
+  {
+    id: `${user.id}:history:2`,
+    addedAt: "2025-12-06T09:15:00+08:00",
+    content: {
+      kind: "media",
+      mediaType: "photo",
+      fileName: `${user.displayName} 的历史头像 2.jpg`,
+      sizeLabel: "310 KB",
+      localPath: wideMediaPreviewUrl,
+      canDownload: false,
+      isDownloaded: true,
+      width: 1800,
+      height: 600,
+      caption: "历史头像",
+    },
+  },
+];
+
+const mockProfileBio = (user: User): { bio?: string; bioEntities?: MessageTextEntity[] } => {
+  if (user.id !== "u-mia") return {};
+  const bio = "产品设计师，关注桌面端体验。作品集 https://example.com @mia_design";
+  const portfolio = "https://example.com";
+  const mention = "@mia_design";
+  return {
+    bio,
+    bioEntities: [
+      { offset: bio.indexOf(portfolio), length: portfolio.length, kind: "url" },
+      { offset: bio.indexOf(mention), length: mention.length, kind: "mention" },
+    ],
+  };
+};
+
+const mockProfileAudios = (user: User): ProfileAudio[] => user.id === "u-mia" ? [
+  {
+    id: `${user.id}:audio:1`,
+    title: "夜航界面",
+    performer: "Mia Chen",
+    content: {
+      kind: "media",
+      mediaType: "audio",
+      fileName: "夜航界面.m4a",
+      sizeLabel: "278 KB",
+      fileId: 94,
+      size: 283_989,
+      mimeType: "audio/mp4",
+      localPath: "/mock-video.mp4",
+      duration: 24,
+      canDownload: false,
+      isDownloaded: true,
+      isDownloading: false,
+    },
+  },
+  {
+    id: `${user.id}:audio:2`,
+    title: "评审之后",
+    performer: "Mia Chen",
+    content: {
+      kind: "media",
+      mediaType: "audio",
+      fileName: "评审之后.m4a",
+      sizeLabel: "196 KB",
+      fileId: 95,
+      size: 200_704,
+      mimeType: "audio/mp4",
+      localPath: "/mock-video.mp4",
+      duration: 18,
+      canDownload: false,
+      isDownloaded: true,
+      isDownloading: false,
+    },
+  },
+] : [];
+
+const defaultMockAccount = (): TelegramAccount => {
+  const user = mockSnapshot.users.find((item) => item.id === mockSnapshot.currentUserId);
+  return {
+    id: "default",
+    userId: mockSnapshot.currentUserId,
+    displayName: user?.displayName ?? "Telegram 账号",
+    avatar: clone(user?.avatar ?? { label: "N", color: "#3390ec" }),
+  };
+};
+
+const browserStorage = () => {
+  try {
+    return globalThis.localStorage;
+  } catch {
+    return undefined;
+  }
+};
+
+const readableFileSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const mockChatSearchFilterMatches = (message: Message, filter: ChatMessageSearchFilter) => {
+  const content = message.content;
+  if (filter === "all") return true;
+  if (filter === "animation") return content.kind === "media" && content.mediaType === "animation";
+  if (filter === "audio") return content.kind === "media" && content.mediaType === "audio";
+  if (filter === "document") return content.kind === "file";
+  if (filter === "photo") return content.kind === "media" && content.mediaType === "photo";
+  if (filter === "poll") return content.kind === "poll";
+  if (filter === "video") return content.kind === "media" && content.mediaType === "video";
+  if (filter === "voiceNote") return content.kind === "media" && content.mediaType === "voice";
+  if (filter === "photoAndVideo") return content.kind === "media" && ["photo", "video"].includes(content.mediaType);
+  if (filter === "url") return content.kind === "text" && (
+    content.entities?.some((entity) => entity.kind === "url" || entity.kind === "textUrl") ||
+    /https?:\/\//i.test(content.text)
+  );
+  if (filter === "chatPhoto") return content.kind === "service" && /头像|照片|photo/i.test(content.text);
+  if (filter === "videoNote") return content.kind === "media" && content.mediaType === "videoNote";
+  if (filter === "voiceAndVideoNote") return content.kind === "media" && ["voice", "videoNote"].includes(content.mediaType);
+  if (filter === "mention" || filter === "unreadMention") return Boolean(message.containsUnreadMention);
+  if (filter === "unreadReaction") return Boolean(message.interaction?.reactions.some((reaction) => reaction.chosen));
+  if (filter === "unreadPollVote") return content.kind === "poll" && content.options.some((option) => option.chosen);
+  if (filter === "failedToSend") return message.delivery === "failed";
+  return message.isPinned === true;
+};
+
+const previewDataUrl = async (file: File) => {
+  if (!file.type.startsWith("image/") || file.size > 256 * 1024) return undefined;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return `data:${file.type};base64,${btoa(binary)}`;
+};
+
+const mockEmojiPreview = (emoji: string, background: string, width = 180, height = 180) =>
+  `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <rect width="${width}" height="${height}" rx="42" fill="${background}"/>
+      <text x="${width / 2}" y="${height / 2}" dominant-baseline="central" text-anchor="middle" font-size="${Math.min(width, height) * 0.54}">${emoji}</text>
+    </svg>
+  `)}`;
+
+const mockSticker = (
+  fileId: number,
+  emoji: string,
+  background: string,
+  stickerSetId?: string,
+  width = 180,
+  height = 180,
+): EmojiPickerAsset => ({
+  id: `mock-sticker:${fileId}`,
+  kind: "sticker",
+  fileId,
+  stickerSetId,
+  emoji,
+  fileName: "sticker.webp",
+  mimeType: "image/webp",
+  previewMimeType: "image/svg+xml",
+  previewDataUrl: mockEmojiPreview(emoji, background, width, height),
+  width,
+  height,
+});
+
+const denseWorkStickerEmojis = ["👍", "🎉", "💡", "✅", "👀", "🚀", "📌", "💬"];
+const denseWorkStickerBackgrounds = ["#dff2ff", "#fff0ca", "#f4e8ff", "#e3f6e8", "#ffe7e1", "#e6ecff"];
+const denseWorkStickers = Array.from({ length: 32 }, (_, index) => {
+  const dimensions = [[180, 180], [320, 180], [180, 320]][index % 3];
+  return mockSticker(
+    7101 + index,
+    denseWorkStickerEmojis[index % denseWorkStickerEmojis.length],
+    denseWorkStickerBackgrounds[index % denseWorkStickerBackgrounds.length],
+    "mock-pack-work",
+    dimensions[0],
+    dimensions[1],
+  );
+});
+
+const mockAnimation = (
+  fileId: number,
+  emoji: string,
+  background: string,
+): EmojiPickerAsset => ({
+  id: `mock-animation:${fileId}`,
+  kind: "animation",
+  fileId,
+  fileName: "animation.mp4",
+  mimeType: "video/mp4",
+  previewMimeType: "image/svg+xml",
+  previewDataUrl: mockEmojiPreview(emoji, background),
+  width: 320,
+  height: 240,
+  duration: 2,
+});
+
+const mockStickerSets: StickerSet[] = [
+  {
+    id: "mock-pack-work",
+    title: "工作日常",
+    name: "fardgram_work",
+    size: denseWorkStickers.length,
+    covers: [denseWorkStickers[0]],
+    stickers: denseWorkStickers,
+  },
+  {
+    id: "mock-pack-cats",
+    title: "办公室猫猫",
+    name: "fardgram_cats",
+    size: 6,
+    covers: [mockSticker(7201, "😺", "#ffe8d4", "mock-pack-cats")],
+    stickers: [
+      mockSticker(7201, "😺", "#ffe8d4", "mock-pack-cats"),
+      mockSticker(7202, "🙀", "#e8f4ff", "mock-pack-cats"),
+      mockSticker(7203, "😼", "#e9f7df", "mock-pack-cats"),
+      mockSticker(7204, "😻", "#ffe4ef", "mock-pack-cats"),
+      mockSticker(7205, "😿", "#e7e9ff", "mock-pack-cats"),
+      mockSticker(7206, "😸", "#fff4c9", "mock-pack-cats"),
+    ],
+  },
+];
+
+const mockSavedAnimations = [
+  mockAnimation(7301, "👏", "#dff4ee"),
+  mockAnimation(7302, "😂", "#fff0c9"),
+  mockAnimation(7303, "🔥", "#ffe0da"),
+  mockAnimation(7304, "💯", "#e7e7ff"),
+];
+
+export class MockTelegramTransport implements TelegramTransport {
+  readonly kind = "mock" as const;
+  readonly label = "演示数据";
+
+  private listener?: TelegramEventListener;
+  private installedStickerSets = new Map<string, Set<string>>();
+  private recentStickerAssets = new Map<string, EmojiPickerAsset[]>();
+
+  private installedStickerIds() {
+    const accountId = this.accountState.activeAccountId;
+    let ids = this.installedStickerSets.get(accountId);
+    if (!ids) {
+      ids = new Set(mockStickerSets.slice(0, 2).map((set) => set.id));
+      this.installedStickerSets.set(accountId, ids);
+    }
+    return ids;
+  }
+  private snapshot = clone(mockSnapshot);
+  private mockCurrentUserBio = "Fardgram 演示账号";
+  private cachedSnapshot?: CachedTelegramSnapshot;
+  private accountState: TelegramAccountState;
+  private historyOffsets = new Map<string, number>();
+  private forumTopics = new Map<string, ForumTopic[]>();
+  private drafts = new Map((mockSnapshot.drafts ?? []).map((draft) => [draft.chatId, draft]));
+  private createdChatSettings = new Map<string, CreateChatInput>();
+  private chatManagement = new Map<string, ChatManagement>();
+  private chatAudit = new Map<string, ChatEvent[]>();
+  private chatInviteLinks = new Map<string, ChatInviteLink[]>();
+  private chatJoinRequests = new Map<string, ChatJoinRequest[]>();
+  private inlineResults = new Map<string, { botUserId: string; text: string }>();
+  private blockedSenders = new Map<string, BlockedSender>();
+  private sessions: DeviceSession[] = [
+    { id: "session-current", isCurrent: true, isPasswordPending: false, isUnconfirmed: false, canAcceptSecretChats: true, canAcceptCalls: true, applicationName: "Fardgram", applicationVersion: "0.5.0", deviceModel: "Windows Desktop", platform: "Windows", systemVersion: "11", loggedInAt: new Date(Date.now() - 86_400_000 * 30).toISOString(), lastActiveAt: new Date().toISOString(), ipAddress: "192.0.2.10", location: "Singapore, SG" },
+    { id: "session-phone", isCurrent: false, isPasswordPending: false, isUnconfirmed: false, canAcceptSecretChats: true, canAcceptCalls: true, applicationName: "Telegram Android", applicationVersion: "11.2", deviceModel: "Pixel 8", platform: "Android", systemVersion: "15", loggedInAt: new Date(Date.now() - 86_400_000 * 12).toISOString(), lastActiveAt: new Date(Date.now() - 3_600_000).toISOString(), ipAddress: "198.51.100.7", location: "Shanghai, CN" },
+  ];
+  private privacyRules: Record<PrivacySettingKey, PrivacyRule[]> = {
+    showStatus: [{ kind: "allowContacts" }], showPhoneNumber: [{ kind: "restrictAll" }], showProfilePhoto: [{ kind: "allowContacts" }], allowCalls: [{ kind: "allowContacts" }], allowChatInvites: [{ kind: "allowContacts" }], allowSecretChats: [{ kind: "allowAll" }],
+  };
+  private authFlow: boolean;
+  private connectionStatus: ConnectionStatus;
+  private initialTyping?: { chatId: string; senderId: string };
+  private storageSettings: StorageSettings = {
+    cachePath: "%LOCALAPPDATA%\\dev.fardgram.desktop\\tdlib",
+    downloadPath: "%USERPROFILE%\\Downloads\\downloads",
+    defaultCachePath: "%LOCALAPPDATA%\\dev.fardgram.desktop\\tdlib",
+    defaultDownloadPath: "%USERPROFILE%\\Downloads\\downloads",
+  };
+  private cacheUsage: CacheUsage = {
+    total: { bytes: 48_758_784, files: 18 },
+    images: { bytes: 6_291_456, files: 9 },
+    videos: { bytes: 31_457_280, files: 2 },
+    audio: { bytes: 5_242_880, files: 3 },
+    documents: { bytes: 4_718_592, files: 3 },
+    other: { bytes: 1_048_576, files: 1 },
+  };
+  private proxySettings: ProxySettings = {
+    mode: "system",
+    profiles: [{
+      id: "proxy-1",
+      name: "代理 1",
+      endpoint: {
+        type: "http",
+        server: "127.0.0.1",
+        port: 7890,
+        username: "",
+        password: "",
+        secret: "",
+        httpOnly: false,
+      },
+    }],
+    activeProfileId: "proxy-1",
+    autoSwitch: false,
+    system: {
+      type: "http",
+      server: "127.0.0.1",
+      port: 7897,
+      username: "",
+      password: "",
+      secret: "",
+      httpOnly: false,
+    },
+  };
+
+  private folderTitle(title: string) {
+    try {
+      return identityTextField(title, 12, "文件夹名称", true);
+    } catch {
+      throw new Error("文件夹名称需要包含 1 至 12 个字符，且只能使用受支持字符");
+    }
+  }
+
+  private requireCustomFolder(folderId: string) {
+    const folder = this.snapshot.folders.find((item) => item.id === folderId);
+    if (!folder || folderId === "main" || folderId === "archive") {
+      throw new Error("找不到自定义文件夹");
+    }
+    return folder;
+  }
+
+  private publishFolders() {
+    this.listener?.({ type: "folders.replaced", folders: clone(this.snapshot.folders) });
+  }
+
+  constructor(options: {
+    authFlow?: boolean;
+    blockedSenderCount?: number;
+    cachedSnapshot?: CachedTelegramSnapshot;
+    connectionStatus?: ConnectionStatus;
+    initialTyping?: { chatId: string; senderId: string };
+    reactionPreview?: boolean;
+  } = {}) {
+    const serializedAccounts = browserStorage()?.getItem(ACCOUNT_STATE_KEY);
+    let storedAccounts: TelegramAccountState | undefined;
+    if (serializedAccounts) {
+      try {
+        storedAccounts = JSON.parse(serializedAccounts) as TelegramAccountState;
+      } catch {
+        storedAccounts = undefined;
+      }
+    }
+    this.accountState = storedAccounts ?? {
+      activeAccountId: "default",
+      accounts: [defaultMockAccount()],
+    };
+    const activeAccountExists = this.accountState.accounts.some(
+      (account) => account.id === this.accountState.activeAccountId,
+    );
+    this.authFlow = options.authFlow ?? !activeAccountExists;
+    this.connectionStatus = options.connectionStatus ?? "online";
+    this.initialTyping = options.initialTyping;
+    if (options.reactionPreview) {
+      const previewMessage = this.snapshot.messages.find((message) => message.id === "p-4");
+      if (previewMessage) {
+        previewMessage.interaction = {
+          viewCount: 0,
+          forwardCount: 0,
+          replyCount: 0,
+          canGetAddedReactions: true,
+          reactions: [
+            {
+              type: { kind: "emoji", emoji: "👍" },
+              totalCount: 3,
+              chosen: true,
+              recentSenderIds: ["self", "u-mia", "u-chen"],
+            },
+            {
+              type: { kind: "emoji", emoji: "🔥" },
+              totalCount: 2,
+              chosen: false,
+              recentSenderIds: ["u-jules", "u-mia"],
+            },
+          ],
+        };
+      }
+      const outgoingPreviewMessage = this.snapshot.messages.find((message) => message.id === "p-2");
+      if (outgoingPreviewMessage) {
+        outgoingPreviewMessage.interaction = {
+          viewCount: 0,
+          forwardCount: 0,
+          replyCount: 0,
+          canGetAddedReactions: true,
+          reactions: [
+            {
+              type: { kind: "emoji", emoji: "👍" },
+              totalCount: 1,
+              chosen: false,
+              recentSenderIds: ["u-mia"],
+            },
+          ],
+        };
+      }
+    }
+    for (let index = 0; index < (options.blockedSenderCount ?? 0); index += 1) {
+      const sender: BlockedSender = {
+        id: `blocked-${index}`,
+        kind: "user",
+        title: `屏蔽用户 ${index + 1}`,
+        avatar: { label: `${index + 1}`, color: "#73808c" },
+        blockedAt: new Date(Date.now() - index * 60_000).toISOString(),
+      };
+      this.blockedSenders.set(`${sender.kind}:${sender.id}`, sender);
+    }
+    this.cachedSnapshot = options.cachedSnapshot
+      ? clone(options.cachedSnapshot)
+      : undefined;
+    if (this.authFlow) {
+      this.snapshot.authorization = { kind: "waitPhoneNumber" };
+    }
+    for (const chat of this.snapshot.chats) {
+      if (chat.kind !== "group" && chat.kind !== "channel") continue;
+      chat.management = deriveChatManagementCapabilities(
+        chat.kind === "channel" ? "channel" : chat.isForum ? "supergroup" : "basicGroup",
+        "owner",
+      );
+    }
+    this.restorePinnedOrders();
+  }
+
+  async connect(listener: TelegramEventListener): Promise<TelegramSnapshot> {
+    this.listener = listener;
+    this.listener({ type: "connection.changed", status: this.connectionStatus });
+    if (this.initialTyping) {
+      const { chatId, senderId } = this.initialTyping;
+      globalThis.queueMicrotask(() => this.listener?.({
+        type: "chat.typingChanged",
+        chatId,
+        senderId,
+        typing: true,
+      }));
+    }
+    return clone({ ...this.snapshot, messages: [], drafts: [...this.drafts.values()] });
+  }
+
+  async disconnect() {
+    this.setConnectionStatus("offline");
+    this.listener = undefined;
+  }
+
+  setConnectionStatus(status: ConnectionStatus) {
+    this.connectionStatus = status;
+    this.listener?.({ type: "connection.changed", status });
+  }
+
+  async loadCachedSnapshot() {
+    if (this.cachedSnapshot) return clone(this.cachedSnapshot);
+    const serialized = browserStorage()?.getItem(this.cacheKey());
+    if (!serialized) return undefined;
+    try {
+      return JSON.parse(serialized) as CachedTelegramSnapshot;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async saveCachedSnapshot(snapshot: CachedTelegramSnapshot) {
+    this.cachedSnapshot = clone(snapshot);
+    browserStorage()?.setItem(this.cacheKey(), JSON.stringify(snapshot));
+  }
+
+  async clearCachedSnapshot() {
+    this.cachedSnapshot = undefined;
+    browserStorage()?.removeItem(this.cacheKey());
+  }
+
+  async getAccountState() {
+    return clone(this.accountState);
+  }
+
+  async registerCurrentAccount(account: Omit<TelegramAccount, "id">) {
+    const registered = { ...clone(account), id: this.accountState.activeAccountId };
+    const index = this.accountState.accounts.findIndex((item) => item.id === registered.id);
+    if (index >= 0) this.accountState.accounts[index] = registered;
+    else this.accountState.accounts.push(registered);
+    this.persistAccountState();
+    return clone(this.accountState);
+  }
+
+  async selectAccount(accountId: string) {
+    this.accountState.activeAccountId = accountId;
+    this.authFlow = !this.accountState.accounts.some((account) => account.id === accountId);
+    this.snapshot.authorization = this.authFlow ? { kind: "waitPhoneNumber" } : { kind: "ready" };
+    this.persistAccountState();
+    return clone(this.accountState);
+  }
+
+  async removeAccount(accountId: string) {
+    this.accountState.accounts = this.accountState.accounts.filter(
+      (account) => account.id !== accountId,
+    );
+    if (this.accountState.activeAccountId === accountId) {
+      this.accountState.activeAccountId = this.accountState.accounts[0]?.id ?? "default";
+    }
+    browserStorage()?.removeItem(accountId === "default" ? CACHE_KEY : `${CACHE_KEY}:${accountId}`);
+    browserStorage()?.removeItem(
+      accountId === "default" ? PINNED_ORDER_KEY : `${PINNED_ORDER_KEY}:${accountId}`,
+    );
+    this.persistAccountState();
+    return clone(this.accountState);
+  }
+
+  async logOut() {
+    this.snapshot.authorization = { kind: "loggingOut" };
+    this.listener?.({ type: "authorization.changed", state: { kind: "loggingOut" } });
+    this.snapshot.authorization = { kind: "closed" };
+    this.listener?.({ type: "authorization.changed", state: { kind: "closed" } });
+    this.setConnectionStatus("offline");
+  }
+
+  async authenticate(action: AuthorizationAction) {
+    if (!this.authFlow) return;
+    if (action.kind === "registration") {
+      identityTextField(action.firstName, 64, "名字", true);
+      identityTextField(action.lastName, 64, "姓氏");
+    }
+    const next =
+      action.kind === "qr"
+        ? { kind: "waitOtherDeviceConfirmation" as const, link: "tg://login?token=fardgram-demo" }
+        : action.kind === "phone"
+        ? { kind: "waitCode" as const, phoneNumber: action.phoneNumber, codeLength: 5 }
+        : action.kind === "code"
+          ? { kind: "waitPassword" as const, hint: "mock password" }
+          : action.kind === "password"
+            ? { kind: "ready" as const }
+            : action.kind === "emailAddress"
+              ? { kind: "waitEmailCode" as const, emailPattern: "m•••@example.com", codeLength: 6 }
+              : action.kind === "emailCode" || action.kind === "registration"
+                ? { kind: "ready" as const }
+                : { kind: "waitPhoneNumber" as const };
+    this.snapshot.authorization = next;
+    this.listener?.({ type: "authorization.changed", state: next });
+    if (next.kind === "ready") this.publishReadySnapshot();
+  }
+
+  async loadMoreChats() {
+    return { loadedCount: 0, hasMore: false };
+  }
+
+  async setPinnedChats(chatListId: string, chatIds: string[]) {
+    const rankBase = BigInt(chatIds.length);
+    for (const [index, chatId] of chatIds.entries()) {
+      const chat = this.snapshot.chats.find((item) => item.id === chatId);
+      if (!chat) continue;
+      chat.listOrderByFolder = {
+        ...chat.listOrderByFolder,
+        [chatListId]: String(rankBase - BigInt(index)),
+      };
+      this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+    }
+    const stored = this.loadPinnedOrders();
+    stored[chatListId] = [...chatIds];
+    browserStorage()?.setItem(this.pinnedOrderKey(), JSON.stringify(stored));
+  }
+
+  async setChatPinned(chatListId: string, chatId: string, pinned: boolean) {
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat || !chat.folderIds.includes(chatListId)) {
+      throw new Error("找不到当前列表中的会话");
+    }
+    const pinnedFolderIds = new Set(chat.pinnedFolderIds ?? []);
+    const listOrderByFolder = { ...chat.listOrderByFolder };
+    if (pinned) {
+      pinnedFolderIds.add(chatListId);
+      const currentOrders = this.snapshot.chats.flatMap((item) => {
+        const order = item.listOrderByFolder?.[chatListId];
+        return order ? [BigInt(order)] : [];
+      });
+      listOrderByFolder[chatListId] = String(
+        currentOrders.reduce((highest, order) => order > highest ? order : highest, 0n) + 1n,
+      );
+    } else {
+      pinnedFolderIds.delete(chatListId);
+      delete listOrderByFolder[chatListId];
+    }
+    chat.pinnedFolderIds = [...pinnedFolderIds];
+    chat.listOrderByFolder = listOrderByFolder;
+    chat.pinned = pinnedFolderIds.size > 0;
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+  }
+
+  async setChatMuted(chatId: string, muted: boolean) {
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat) throw new Error("找不到会话");
+    chat.muted = muted;
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+  }
+
+  async setChatArchived(chatId: string, archived: boolean) {
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat) throw new Error("找不到会话");
+    const target = archived ? "archive" : "main";
+    chat.folderIds = [
+      ...chat.folderIds.filter((folderId) => folderId !== "main" && folderId !== "archive"),
+      target,
+    ];
+    chat.pinnedFolderIds = chat.pinnedFolderIds?.filter(
+      (folderId) => folderId !== "main" && folderId !== "archive",
+    );
+    const listOrderByFolder = { ...chat.listOrderByFolder };
+    delete listOrderByFolder.main;
+    delete listOrderByFolder.archive;
+    chat.listOrderByFolder = listOrderByFolder;
+    chat.pinned = (chat.pinnedFolderIds?.length ?? 0) > 0;
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+  }
+
+  async leaveChat(chatId: string) {
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat || (chat.kind !== "group" && chat.kind !== "channel")) throw new Error("只能退出群组或频道");
+    chat.isMember = false;
+    if (chat.management) chat.management = deriveChatManagementCapabilities(chat.management.chatType, "left");
+    chat.folderIds = [];
+    chat.pinnedFolderIds = [];
+    chat.listOrderByFolder = {};
+    chat.pinned = false;
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+  }
+
+  async deletePrivateChat(chatId: string, forEveryone = false) {
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (chat?.kind !== "direct" || (forEveryone ? chat.canDeleteForAllUsers : chat.canDeleteForSelf) !== true) {
+      throw new Error(forEveryone ? "此会话不支持为双方删除" : "此会话不支持仅为自己删除");
+    }
+    this.snapshot.messages = this.snapshot.messages.filter(message => message.chatId !== chatId);
+    Object.assign(chat, { folderIds: [], pinnedFolderIds: [], listOrderByFolder: {}, pinned: false,
+      preview: "暂无消息", unreadCount: 0, unreadMentionCount: 0, unreadReactionCount: 0 });
+    this.listener?.({ type: "chat.historyDeleted", chatId });
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+  }
+
+  async createChatFolder(title: string, chatIds: string[]) {
+    const normalized = this.folderTitle(title);
+    const nextId = Math.max(0, ...this.snapshot.folders.flatMap((folder) => {
+      const id = /^folder:(\d+)$/.exec(folder.id)?.[1];
+      return id ? [Number(id)] : [];
+    })) + 1;
+    const folder = { id: `folder:${nextId}`, title: normalized, iconName: "Custom" };
+    this.snapshot.folders.splice(this.snapshot.folders.length - 1, 0, folder);
+    for (const chatId of new Set(chatIds)) {
+      const chat = this.snapshot.chats.find((item) => item.id === chatId);
+      if (!chat) continue;
+      if (!chat.folderIds.includes(folder.id)) chat.folderIds.push(folder.id);
+      this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+    }
+    this.publishFolders();
+    return clone(folder);
+  }
+
+  async renameChatFolder(folderId: string, title: string) {
+    const folder = this.requireCustomFolder(folderId);
+    folder.title = this.folderTitle(title);
+    this.publishFolders();
+    return clone(folder);
+  }
+
+  async deleteChatFolder(folderId: string) {
+    this.requireCustomFolder(folderId);
+    this.snapshot.folders = this.snapshot.folders.filter((folder) => folder.id !== folderId);
+    for (const chat of this.snapshot.chats) {
+      if (!chat.folderIds.includes(folderId)) continue;
+      chat.folderIds = chat.folderIds.filter((id) => id !== folderId);
+      chat.pinnedFolderIds = chat.pinnedFolderIds?.filter((id) => id !== folderId);
+      if (chat.listOrderByFolder) delete chat.listOrderByFolder[folderId];
+      chat.pinned = (chat.pinnedFolderIds?.length ?? 0) > 0;
+      this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+    }
+    this.publishFolders();
+  }
+
+  async reorderChatFolders(folderIds: string[]) {
+    const reorderable = this.snapshot.folders.filter((folder) => folder.id !== "archive");
+    const uniqueIds = [...new Set(folderIds)];
+    if (
+      uniqueIds.length !== reorderable.length ||
+      uniqueIds.some((folderId) => !reorderable.some((folder) => folder.id === folderId))
+    ) {
+      throw new Error("文件夹顺序不完整");
+    }
+    const byId = new Map(reorderable.map((folder) => [folder.id, folder]));
+    const fixed = this.snapshot.folders.filter((folder) => folder.id === "archive");
+    this.snapshot.folders = [
+      ...uniqueIds.map((folderId) => byId.get(folderId)!),
+      ...fixed,
+    ];
+    this.publishFolders();
+  }
+
+  async setChatFolderMembership(folderId: string, chatId: string, included: boolean) {
+    this.requireCustomFolder(folderId);
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat) throw new Error("找不到会话");
+    const folders = new Set(chat.folderIds);
+    if (included) folders.add(folderId);
+    else folders.delete(folderId);
+    chat.folderIds = [...folders];
+    if (!included) {
+      chat.pinnedFolderIds = chat.pinnedFolderIds?.filter((id) => id !== folderId);
+      if (chat.listOrderByFolder) delete chat.listOrderByFolder[folderId];
+      chat.pinned = (chat.pinnedFolderIds?.length ?? 0) > 0;
+    }
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+  }
+
+  async getCurrentUserProfile(): Promise<ChatProfile> {
+    const user = this.snapshot.users.find((item) => item.id === this.snapshot.currentUserId);
+    if (!user) throw new Error("找不到当前账号资料");
+    return {
+      id: `user:${user.id}`,
+      kind: "self",
+      userId: user.id,
+      isBot: user.isBot,
+      title: user.displayName,
+      avatar: clone(user.avatar),
+      statusLabel: user.isBot ? "机器人" : "在线",
+      bio: this.mockCurrentUserBio,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      username: user.username,
+      phoneNumber: user.phoneNumber,
+      dataCenterId: 5,
+      dataCenterLocation: "Singapore, SG",
+      members: [],
+      canViewMembers: false,
+      groupInCommonCount: 0,
+      groupsInCommon: [],
+      profilePhotos: mockProfilePhotos(user),
+      profileAudioCount: mockProfileAudios(user).length,
+      profileAudios: mockProfileAudios(user),
+    };
+  }
+
+  async getUserProfile(userId: string): Promise<ChatProfile> {
+    const user = this.snapshot.users.find((item) => item.id === userId);
+    if (!user) throw new Error("找不到用户资料");
+    return {
+      id: `user:${user.id}`,
+      kind: user.id === this.snapshot.currentUserId ? "self" : "user",
+      userId: user.id,
+      isBot: user.isBot,
+      title: user.displayName,
+      avatar: clone(user.avatar),
+      statusLabel: user.isBot
+        ? "机器人"
+        : user.presence === "online" ? "在线" : user.lastSeenLabel ?? "离线",
+      ...mockProfileBio(user),
+      firstName: user.firstName,
+      lastName: user.lastName,
+      username: user.username,
+      phoneNumber: user.phoneNumber,
+      dataCenterId: 5,
+      dataCenterLocation: "Singapore, SG",
+      members: [],
+      canViewMembers: false,
+      groupInCommonCount: user.id === this.snapshot.currentUserId ? 0 : 2,
+      groupsInCommon: user.id === this.snapshot.currentUserId
+        ? []
+        : clone(this.snapshot.chats.filter((chat) => chat.kind === "group").slice(0, 2)),
+      profilePhotos: mockProfilePhotos(user),
+      profileAudioCount: mockProfileAudios(user).length,
+      profileAudios: mockProfileAudios(user),
+    };
+  }
+
+  async updateCurrentUserProfile(input: UpdateCurrentUserProfileInput): Promise<ChatProfile> {
+    const user = this.snapshot.users.find((item) => item.id === this.snapshot.currentUserId);
+    if (!user) throw new Error("找不到当前账号资料");
+    const firstName = identityTextField(input.firstName, 64, "名字", true);
+    const lastName = identityTextField(input.lastName, 64, "姓氏");
+    const username = input.username.trim();
+    const bio = input.bio.trim();
+    if (!firstName) throw new Error("名字不能为空");
+    if (username && (!/^[A-Za-z0-9_]{5,32}$/.test(username))) {
+      throw new Error("用户名需包含 5 至 32 个英文字母、数字或下划线");
+    }
+    user.firstName = firstName;
+    user.lastName = lastName;
+    user.displayName = `${firstName} ${lastName}`.trim();
+    user.username = username || undefined;
+    this.mockCurrentUserBio = bio;
+    this.listener?.({ type: "user.upsert", user: clone(user) });
+    return this.getCurrentUserProfile();
+  }
+
+  async setCurrentUserAvatar(file?: File): Promise<ChatProfile | undefined> {
+    if (!file) return undefined;
+    if (!/^image\/(?:jpeg|png)$/i.test(file.type)) throw new Error("请选择 JPEG 或 PNG 图片");
+    const imagePath = await previewDataUrl(file);
+    if (!imagePath) throw new Error("演示模式头像需小于 256 KB");
+    const user = this.snapshot.users.find((item) => item.id === this.snapshot.currentUserId);
+    if (!user) throw new Error("找不到当前账号资料");
+    user.avatar = { ...user.avatar, imagePath };
+    this.listener?.({ type: "user.upsert", user: clone(user) });
+    return this.getCurrentUserProfile();
+  }
+
+  async getChatProfile(chatId: string): Promise<ChatProfile> {
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat) throw new Error("找不到聊天资料");
+    if (chat.kind === "direct" || chat.kind === "saved") {
+      const userId = chat.kind === "saved" ? this.snapshot.currentUserId : chat.peerId;
+      const user = this.snapshot.users.find((item) => item.id === userId);
+      if (!user) throw new Error("找不到用户资料");
+      return {
+        id: `user:${user.id}`,
+        kind: chat.kind === "saved" ? "self" : "user",
+        chatId: chat.id,
+        userId: user.id,
+        isBot: user.isBot,
+        title: user.displayName,
+        avatar: clone(user.avatar),
+        statusLabel: user.isBot
+          ? "机器人"
+          : user.presence === "online" ? "在线" : user.lastSeenLabel ?? "离线",
+        ...mockProfileBio(user),
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username,
+        phoneNumber: user.phoneNumber,
+        dataCenterId: 5,
+        dataCenterLocation: "Singapore, SG",
+        members: [],
+        canViewMembers: false,
+        groupInCommonCount: user.id === this.snapshot.currentUserId ? 0 : 2,
+        groupsInCommon: user.id === this.snapshot.currentUserId
+          ? []
+          : clone(this.snapshot.chats.filter((item) => item.kind === "group").slice(0, 2)),
+        profilePhotos: mockProfilePhotos(user),
+        profileAudioCount: mockProfileAudios(user).length,
+        profileAudios: mockProfileAudios(user),
+      };
+    }
+    const settings = this.createdChatSettings.get(chat.id);
+    const memberUsers = settings
+      ? [
+          this.snapshot.users.find((user) => user.id === this.snapshot.currentUserId),
+          ...settings.memberUserIds.map((id) => this.snapshot.users.find((user) => user.id === id)),
+        ].filter((user): user is User => Boolean(user))
+      : this.snapshot.users.slice(0, 4);
+    const members = chat.kind === "channel" && !settings
+      ? []
+      : memberUsers.map((user, index) => ({
+          user: clone(user),
+          role: index === 0 ? "owner" as const : !settings && index === 1
+            ? "administrator" as const
+            : "member" as const,
+        }));
+    return {
+      id: `chat:${chat.id}`,
+      kind: chat.kind,
+      chatId: chat.id,
+      title: chat.title,
+      avatar: clone(chat.avatar),
+      statusLabel: settings
+        ? `${members.length} 位${chat.kind === "channel" ? "订阅者" : "成员"}`
+        : chat.kind === "channel" ? "1,248 位订阅者" : `${members.length} 位成员`,
+      bio: settings?.description || (chat.kind === "channel" ? "桌面版本更新与发布说明。" : "产品、设计与开发协作群。"),
+      username: settings?.isPublic ? settings.username : undefined,
+      memberCount: settings ? members.length : chat.kind === "channel" ? 1_248 : members.length,
+      members,
+      canViewMembers: chat.kind !== "channel" || Boolean(settings),
+      memberOffset: members.length,
+      memberHasMore: false,
+    };
+  }
+
+  async getChatProfileMembers(chatId: string, offset: number, limit = 50): Promise<ChatProfileMembersPage> {
+    const profile = await this.getChatProfile(chatId);
+    const start = Math.max(0, offset);
+    const members = profile.members.slice(start, start + Math.max(1, limit));
+    return {
+      members,
+      offset: start + members.length,
+      hasMore: start + members.length < profile.members.length,
+    };
+  }
+
+  async getChatMentionSuggestions(chatId: string, query: string, recentUserIds: readonly string[]): Promise<User[]> {
+    const management = this.chatManagement.get(chatId);
+    const users = management
+      ? management.members.filter((member) => member.status !== "left" && member.status !== "banned").map((member) => member.user)
+      : (await this.getChatProfile(chatId)).members.map((member) => member.user);
+    return clone(mentionSuggestionsFor(users, query, recentUserIds));
+  }
+
+  async getContacts(): Promise<User[]> {
+    return clone(this.snapshot.users.filter((user) => user.id !== this.snapshot.currentUserId));
+  }
+
+  async createPrivateChat(userId: string): Promise<Chat> {
+    const existing = this.snapshot.chats.find((chat) => chat.peerId === userId);
+    if (existing) return clone(existing);
+    const user = this.snapshot.users.find((item) => item.id === userId);
+    if (!user) throw new Error("找不到联系人");
+    const chat: Chat = {
+      id: `chat-contact-${user.id}`,
+      kind: "direct",
+      canDeleteForSelf: true,
+      canDeleteForAllUsers: !user.isBot,
+      isBlocked: this.blockedSenders.has(`user:${user.id}`),
+      folderIds: ["main"],
+      title: user.displayName,
+      avatar: clone(user.avatar),
+      peerId: user.id,
+      preview: "暂无消息",
+      updatedAt: new Date(0).toISOString(),
+      unreadCount: 0,
+      unreadMentionCount: 0,
+      pinned: false,
+      muted: false,
+    };
+    this.snapshot.chats.push(chat);
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+    return clone(chat);
+  }
+
+  async createChat(input: CreateChatInput): Promise<Chat> {
+    const title = identityTextField(input.title, 128, "名称", true);
+    const description = input.description?.trim() ?? "";
+    const username = input.username?.trim() ?? "";
+    if ([...description].length > 255) throw new Error("简介最多 255 个字符");
+    if (input.isPublic && !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username)) {
+      throw new Error("公开用户名需包含 5 至 32 个英文字母、数字或下划线，并以字母开头");
+    }
+    const uniqueMemberIds = [...new Set(input.memberUserIds)];
+    if (uniqueMemberIds.length > 200 || uniqueMemberIds.some((id) =>
+      !this.snapshot.users.some((user) => user.id === id) || id === this.snapshot.currentUserId)) {
+      throw new Error("初始成员列表无效");
+    }
+    const id = `chat-created-${crypto.randomUUID()}`;
+    const chat: Chat = {
+      id,
+      kind: input.kind === "channel" ? "channel" : "group",
+      isMember: true,
+      canPinMessages: true,
+      folderIds: ["main"],
+      title,
+      avatar: {
+        label: [...title][0] ?? "群",
+        color: input.kind === "channel" ? "#397a78" : "#75579a",
+      },
+      preview: input.kind === "channel" ? "频道已创建" : "群组已创建",
+      updatedAt: new Date().toISOString(),
+      unreadCount: 0,
+      unreadMentionCount: 0,
+      pinned: false,
+      muted: false,
+      management: deriveChatManagementCapabilities(
+        input.kind === "channel" ? "channel" : input.kind,
+        "owner",
+      ),
+    };
+    this.createdChatSettings.set(id, {
+      ...clone(input),
+      title,
+      description,
+      username: input.isPublic ? username : undefined,
+      memberUserIds: uniqueMemberIds,
+    });
+    this.snapshot.chats.push(chat);
+    const permissions = input.permissionTemplate === "restricted"
+      ? { ...cloneChatPermissions(DEFAULT_CHAT_PERMISSIONS), canSendVideos: false, canSendDocuments: false }
+      : cloneChatPermissions(DEFAULT_CHAT_PERMISSIONS);
+    const memberUsers = [this.snapshot.currentUserId, ...uniqueMemberIds]
+      .map((id) => this.snapshot.users.find((user) => user.id === id))
+      .filter((user): user is User => Boolean(user));
+    this.chatManagement.set(id, {
+      chatId: id,
+      members: memberUsers.map((user, index): ManagedChatMember => ({
+        user: clone(user),
+        role: index === 0 ? "owner" : "member",
+        status: index === 0 ? "owner" : "member",
+        adminRights: index === 0 ? cloneChatAdminRights(DEFAULT_CHAT_ADMIN_RIGHTS) : undefined,
+        canBeEdited: index !== 0,
+      })),
+      permissions,
+      slowModeDelay: 0,
+      capabilities: deriveChatManagementCapabilities(input.kind === "channel" ? "channel" : input.kind, "owner"),
+      ownershipTransfer: { available: true },
+      memberHasMore: false,
+    });
+    this.appendChatAudit(id, input.kind === "channel" ? "频道已创建" : "群组已创建");
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+    return clone(chat);
+  }
+
+  private appendChatAudit(chatId: string, summary: string, kind = "setting") {
+    const event: ChatEvent = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      date: new Date().toISOString(),
+      actor: clone(this.snapshot.users.find((user) => user.id === this.snapshot.currentUserId)),
+      summary,
+      kind,
+    };
+    const events = this.chatAudit.get(chatId) ?? [];
+    events.unshift(event);
+    this.chatAudit.set(chatId, events);
+  }
+
+  private async ensureChatManagement(chatId: string): Promise<ChatManagement> {
+    const existing = this.chatManagement.get(chatId);
+    if (existing) return existing;
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat || (chat.kind !== "group" && chat.kind !== "channel")) throw new Error("只有群组和频道支持成员管理");
+    const profile = await this.getChatProfile(chatId);
+    const settings = this.createdChatSettings.get(chatId);
+    const permissions = settings?.permissionTemplate === "restricted"
+      ? { ...cloneChatPermissions(DEFAULT_CHAT_PERMISSIONS), canSendVideos: false, canSendDocuments: false }
+      : cloneChatPermissions(DEFAULT_CHAT_PERMISSIONS);
+    const members: ManagedChatMember[] = profile.members.map((member, index) => ({
+      ...clone(member),
+      status: member.role,
+      adminRights: member.role === "owner" || member.role === "administrator"
+        ? cloneChatAdminRights(DEFAULT_CHAT_ADMIN_RIGHTS)
+        : undefined,
+      canBeEdited: member.role !== "owner",
+    }));
+    if (!members.some((member) => member.user.id === this.snapshot.currentUserId)) {
+      const current = this.snapshot.users.find((user) => user.id === this.snapshot.currentUserId);
+      if (current) members.unshift({ user: clone(current), role: "owner", status: "owner", adminRights: cloneChatAdminRights(DEFAULT_CHAT_ADMIN_RIGHTS) });
+    }
+    const capabilities = chat.management ?? deriveChatManagementCapabilities(
+      chat.kind === "channel" ? "channel" : chat.isForum ? "supergroup" : "basicGroup",
+      "owner",
+    );
+    if (!capabilities.canOpenManagement) throw new Error("当前账号没有群组管理权限");
+    const currentMember = members.find((member) => member.user.id === this.snapshot.currentUserId);
+    if (currentMember) {
+      currentMember.status = capabilities.status;
+      currentMember.role = capabilities.status === "owner"
+        ? "owner"
+        : capabilities.status === "administrator" ? "administrator" : "member";
+      currentMember.adminRights = capabilities.status === "administrator"
+        ? cloneChatAdminRights(capabilities.adminRights ?? DEFAULT_CHAT_ADMIN_RIGHTS)
+        : capabilities.status === "owner" ? cloneChatAdminRights(DEFAULT_CHAT_ADMIN_RIGHTS) : undefined;
+    }
+    const value: ChatManagement = {
+      chatId,
+      members,
+      memberCount: members.length,
+      permissions,
+      slowModeDelay: 0,
+      capabilities: clone(capabilities),
+      ownershipTransfer: capabilities.status === "owner" ? { available: true } : undefined,
+      memberHasMore: false,
+    };
+    this.chatManagement.set(chatId, value);
+    return value;
+  }
+
+  async getChatManagement(chatId: string, memberOffset = 0): Promise<ChatManagement> {
+    const value = await this.ensureChatManagement(chatId);
+    const offset = Math.max(0, memberOffset);
+    const limit = 50;
+    return clone({
+      ...value,
+      administratorLabels: Object.fromEntries(value.members.flatMap((member) => {
+        const label = member.customTitle ||
+          (member.status === "owner" ? "群主" : member.status === "administrator" ? "管理员" : "");
+        return label ? [[member.user.id, label]] : [];
+      })),
+      members: value.members.slice(offset, offset + limit),
+      memberOffset: offset,
+      memberHasMore: offset + limit < value.members.length,
+    });
+  }
+
+  async addChatMembers(chatId: string, userIds: string[]): Promise<void> {
+    const value = await this.ensureChatManagement(chatId);
+    if (!value.capabilities.canAddMembers) throw new Error("当前账号没有邀请成员权限");
+    const ids = [...new Set(userIds)].filter((id) => id !== this.snapshot.currentUserId);
+    for (const id of ids) {
+      const user = this.snapshot.users.find((item) => item.id === id);
+      if (!user) throw new Error("找不到要添加的联系人");
+      if (value.members.some((member) => member.user.id === id && member.status !== "left" && member.status !== "banned")) continue;
+      const member: ManagedChatMember = { user: clone(user), role: "member", status: "member" };
+      const index = value.members.findIndex((item) => item.user.id === id);
+      if (index >= 0) value.members[index] = member; else value.members.push(member);
+      this.appendChatAudit(chatId, `添加成员：${user.displayName}`, "memberJoin");
+    }
+  }
+
+  async setChatMemberStatus({ chatId, userId, status }: { chatId: string; userId: string; status: ChatMemberStatusInput }): Promise<void> {
+    const value = await this.ensureChatManagement(chatId);
+    const member = value.members.find((item) => item.user.id === userId);
+    if (!member) throw new Error("找不到群成员");
+    if (member.status === "owner") throw new Error("所有者需要使用所有权转移");
+    if (status.kind === "administrator" || member.status === "administrator") {
+      if (!value.capabilities.canPromoteMembers || member.canBeEdited === false) throw new Error("当前账号没有管理员任免权限");
+    }
+    if (status.kind === "restricted" || status.kind === "banned" || member.status === "restricted" || member.status === "banned") {
+      if (!value.capabilities.canRestrictMembers) throw new Error("当前账号没有限制成员权限");
+    }
+    const user = member.user;
+    if (status.kind === "administrator") {
+      member.status = "administrator"; member.role = "administrator";
+      member.adminRights = cloneChatAdminRights(status.rights);
+      member.canBeEdited = true;
+      this.appendChatAudit(chatId, `设置管理员：${user.displayName}`, "memberPromotion");
+    } else if (status.kind === "restricted") {
+      member.status = "restricted"; member.role = "member"; member.permissions = cloneChatPermissions(status.permissions);
+      member.untilDate = status.untilDate; member.adminRights = undefined;
+      this.appendChatAudit(chatId, `限制成员：${user.displayName}`, "memberRestriction");
+    } else if (status.kind === "banned") {
+      member.status = "banned"; member.role = "member"; member.permissions = undefined; member.adminRights = undefined;
+      member.untilDate = status.untilDate;
+      this.appendChatAudit(chatId, `封禁成员：${user.displayName}`, "memberRestriction");
+    } else {
+      member.status = "member"; member.role = "member"; member.permissions = undefined; member.adminRights = undefined; member.untilDate = undefined;
+      this.appendChatAudit(chatId, `恢复成员：${user.displayName}`, "memberJoin");
+    }
+  }
+
+  async setChatMemberTag(chatId: string, userId: string, tag: string): Promise<void> {
+    const value = await this.ensureChatManagement(chatId);
+    if (!value.capabilities.canManageTags) throw new Error("当前账号没有修改成员标签的权限");
+    const validationError = chatMemberTagError(tag);
+    if (validationError) throw new Error(validationError);
+    const member = value.members.find((item) => item.user.id === userId);
+    if (!member) throw new Error("找不到群成员");
+    member.customTitle = normalizeIdentityText(tag) || undefined;
+    this.appendChatAudit(chatId, `更新成员标签：${member.user.displayName}`, "memberTagChange");
+  }
+
+  async setChatPermissions(chatId: string, permissions: ChatPermissions): Promise<void> {
+    const value = await this.ensureChatManagement(chatId);
+    if (!value.capabilities.canManagePermissions) throw new Error("当前账号没有修改默认权限的能力");
+    value.permissions = cloneChatPermissions(permissions);
+    this.appendChatAudit(chatId, "更新群组默认发送权限");
+  }
+
+  async setChatSlowModeDelay(chatId: string, delaySeconds: number): Promise<void> {
+    if (!Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 86_400) throw new Error("慢速模式间隔无效");
+    const value = await this.ensureChatManagement(chatId);
+    if (!value.capabilities.canManageSlowMode) throw new Error("当前账号没有修改慢速模式的能力");
+    value.slowModeDelay = delaySeconds;
+    this.appendChatAudit(chatId, delaySeconds ? `设置慢速模式：${delaySeconds} 秒` : "关闭慢速模式", "setting");
+  }
+
+  async transferChatOwnership(chatId: string, userId: string, password: string): Promise<void> {
+    if (!password.trim()) throw new Error("请输入两步验证密码");
+    const value = await this.ensureChatManagement(chatId);
+    if (!value.capabilities.canTransferOwnership) throw new Error("当前账号不能转移所有权");
+    const next = value.members.find((member) => member.user.id === userId);
+    const current = value.members.find((member) => member.status === "owner");
+    if (!next || !current) throw new Error("所有者候选人无效");
+    current.status = "administrator"; current.role = "administrator"; current.adminRights = cloneChatAdminRights(DEFAULT_CHAT_ADMIN_RIGHTS);
+    next.status = "owner"; next.role = "owner"; next.adminRights = cloneChatAdminRights(DEFAULT_CHAT_ADMIN_RIGHTS);
+    value.capabilities = deriveChatManagementCapabilities(value.capabilities.chatType, "administrator", DEFAULT_CHAT_ADMIN_RIGHTS);
+    value.ownershipTransfer = undefined;
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (chat) chat.management = clone(value.capabilities);
+    this.appendChatAudit(chatId, `转移所有者给：${next.user.displayName}`, "memberPromotion");
+  }
+
+  async getChatEventLog({ chatId, query = "", fromEventId, limit = 30 }: ChatEventLogInput): Promise<ChatEventPage> {
+    const management = await this.ensureChatManagement(chatId);
+    if (!management.capabilities.canViewEventLog) throw new Error("当前账号没有查看管理日志的权限");
+    const events = (this.chatAudit.get(chatId) ?? []).filter((event) => !query.trim() || event.summary.includes(query.trim()));
+    const start = fromEventId ? Math.max(0, events.findIndex((event) => event.id === fromEventId) + 1) : 0;
+    const page = events.slice(start, start + Math.min(100, Math.max(1, limit)));
+    return { events: clone(page), nextEventId: page.at(-1)?.id, hasMore: start + page.length < events.length };
+  }
+
+  private ensureInviteLinks(chatId: string) {
+    let links = this.chatInviteLinks.get(chatId);
+    if (!links) {
+      links = [{
+        inviteLink: `https://t.me/+fardgram_${chatId.replace(/[^a-z0-9]/gi, "")}`,
+        name: "主邀请链接",
+        creatorUserId: this.snapshot.currentUserId,
+        createdAt: new Date(Date.now() - 86_400_000).toISOString(),
+        memberLimit: 0,
+        memberCount: 3,
+        expiredMemberCount: 1,
+        pendingJoinRequestCount: 2,
+        createsJoinRequest: true,
+        isPrimary: true,
+        isRevoked: false,
+      }];
+      this.chatInviteLinks.set(chatId, links);
+    }
+    if (!this.chatJoinRequests.has(chatId)) {
+      const candidates = ["u-chen", "u-jules"].map((id) => this.snapshot.users.find((user) => user.id === id)).filter((user): user is User => Boolean(user));
+      this.chatJoinRequests.set(chatId, candidates.map((user, index) => ({ user: clone(user), date: new Date(Date.now() - (index + 1) * 3_600_000).toISOString(), bio: index === 0 ? "希望加入桌面端协作" : undefined, inviteLink: links?.[0]?.inviteLink })));
+    }
+    return links;
+  }
+
+  async getChatInviteLinks({ chatId, revoked = false, offsetLink = "", limit = 30 }: GetChatInviteLinksInput): Promise<ChatInviteLinkPage> {
+    const management = await this.ensureChatManagement(chatId);
+    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有管理邀请链接的权限");
+    const all = this.ensureInviteLinks(chatId).filter((link) => link.isRevoked === revoked);
+    const start = offsetLink ? Math.max(0, all.findIndex((link) => link.inviteLink === offsetLink) + 1) : 0;
+    const links = all.slice(start, start + Math.min(100, Math.max(1, limit)));
+    return { links: clone(links), hasMore: start + links.length < all.length, nextOffsetLink: links.at(-1)?.inviteLink, nextOffsetDate: links.at(-1) ? Math.floor(Date.parse(links.at(-1)!.createdAt) / 1000) : undefined };
+  }
+
+  async createChatInviteLink(input: CreateChatInviteLinkInput): Promise<ChatInviteLink> {
+    const management = await this.ensureChatManagement(input.chatId);
+    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有管理邀请链接的权限");
+    this.ensureInviteLinks(input.chatId);
+    const name = input.name.trim();
+    if ([...name].length > 32) throw new Error("邀请链接名称最多 32 个字符");
+    const link: ChatInviteLink = {
+      inviteLink: `https://t.me/+${crypto.randomUUID().replace(/-/g, "").slice(0, 22)}`,
+      name: name || (input.subscriptionStars ? "订阅链接" : "邀请链接"),
+      creatorUserId: this.snapshot.currentUserId,
+      createdAt: new Date().toISOString(),
+      expiresAt: input.expirationDate ? new Date(input.expirationDate * 1000).toISOString() : undefined,
+      memberLimit: input.memberLimit ?? 0,
+      memberCount: 0,
+      expiredMemberCount: 0,
+      pendingJoinRequestCount: 0,
+      createsJoinRequest: input.createsJoinRequest === true,
+      isPrimary: false,
+      isRevoked: false,
+      subscriptionStars: input.subscriptionStars,
+      subscriptionPeriod: input.subscriptionStars ? 2_592_000 : undefined,
+    };
+    this.chatInviteLinks.get(input.chatId)!.unshift(link);
+    this.appendChatAudit(input.chatId, `创建邀请链接：${link.name}`, "inviteLink");
+    return clone(link);
+  }
+
+  async editChatInviteLink(input: CreateChatInviteLinkInput & { inviteLink: string }): Promise<ChatInviteLink> {
+    const management = await this.ensureChatManagement(input.chatId);
+    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有管理邀请链接的权限");
+    const link = this.ensureInviteLinks(input.chatId).find((item) => item.inviteLink === input.inviteLink);
+    if (!link || link.isRevoked) throw new Error("邀请链接不存在或已撤销");
+    link.name = input.name.trim() || link.name;
+    link.expiresAt = input.expirationDate ? new Date(input.expirationDate * 1000).toISOString() : undefined;
+    link.memberLimit = input.memberLimit ?? 0;
+    link.createsJoinRequest = input.createsJoinRequest === true;
+    link.editedAt = new Date().toISOString();
+    this.appendChatAudit(input.chatId, `编辑邀请链接：${link.name}`, "inviteLink");
+    return clone(link);
+  }
+
+  async revokeChatInviteLink(chatId: string, inviteLink: string): Promise<ChatInviteLink> {
+    const management = await this.ensureChatManagement(chatId);
+    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有管理邀请链接的权限");
+    const link = this.ensureInviteLinks(chatId).find((item) => item.inviteLink === inviteLink);
+    if (!link) throw new Error("找不到邀请链接");
+    link.isRevoked = true;
+    this.appendChatAudit(chatId, `撤销邀请链接：${link.name}`, "inviteLink");
+    return clone(link);
+  }
+
+  async getChatJoinRequests({ chatId, inviteLink, query = "", offsetUserId, limit = 30 }: GetChatJoinRequestsInput): Promise<ChatJoinRequestPage> {
+    const management = await this.ensureChatManagement(chatId);
+    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有处理入群申请的权限");
+    this.ensureInviteLinks(chatId);
+    const normalized = query.trim().toLocaleLowerCase();
+    const all = (this.chatJoinRequests.get(chatId) ?? []).filter((request) => (!inviteLink || request.inviteLink === inviteLink) && (!normalized || `${request.user.displayName} ${request.bio ?? ""}`.toLocaleLowerCase().includes(normalized)));
+    const start = offsetUserId ? Math.max(0, all.findIndex((request) => request.user.id === offsetUserId) + 1) : 0;
+    const requests = all.slice(start, start + Math.min(100, Math.max(1, limit)));
+    const last = requests.at(-1);
+    return { requests: clone(requests), totalCount: all.length, hasMore: start + requests.length < all.length, nextOffsetUserId: last?.user.id, nextOffsetDate: last ? Math.floor(Date.parse(last.date) / 1000) : undefined };
+  }
+
+  async processChatJoinRequest(chatId: string, userId: string, approve: boolean): Promise<void> {
+    const management = await this.ensureChatManagement(chatId);
+    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有处理入群申请的权限");
+    this.ensureInviteLinks(chatId);
+    const requests = this.chatJoinRequests.get(chatId) ?? [];
+    const request = requests.find((item) => item.user.id === userId);
+    if (!request) throw new Error("入群申请不存在");
+    this.chatJoinRequests.set(chatId, requests.filter((item) => item.user.id !== userId));
+    if (approve) await this.addChatMembers(chatId, [userId]);
+    this.appendChatAudit(chatId, `${approve ? "批准" : "拒绝"}入群申请：${request.user.displayName}`, "inviteLink");
+  }
+
+  async processChatJoinRequests(chatId: string, inviteLink: string | undefined, approve: boolean): Promise<void> {
+    const management = await this.ensureChatManagement(chatId);
+    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有处理入群申请的权限");
+    this.ensureInviteLinks(chatId);
+    const requests = this.chatJoinRequests.get(chatId) ?? [];
+    const selected = requests.filter((request) => !inviteLink || request.inviteLink === inviteLink);
+    this.chatJoinRequests.set(chatId, requests.filter((request) => inviteLink && request.inviteLink !== inviteLink));
+    if (approve) await this.addChatMembers(chatId, selected.map((request) => request.user.id));
+    this.appendChatAudit(chatId, `${approve ? "批量批准" : "批量拒绝"} ${selected.length} 个入群申请`, "inviteLink");
+  }
+
+  async getBotCommandSuggestions(
+    chatId: string,
+    query = "",
+    botUsername?: string,
+  ): Promise<BotCommandSuggestion[]> {
+    const username = botUsername?.replace(/^@/, "").trim() || "fardgram_bot";
+    const primaryCommands: BotCommandSuggestion[] = [
+      { botUserId: "bot:fardgram_bot", botUsername: "fardgram_bot", command: "start", description: "启动机器人或打开参数" },
+      { botUserId: "bot:fardgram_bot", botUsername: "fardgram_bot", command: "help", description: "查看帮助" },
+      { botUserId: "bot:fardgram_bot", botUsername: "fardgram_bot", command: "settings", description: "打开设置" },
+    ];
+    const groupCommands: BotCommandSuggestion[] = chatId === "chat-product" && !botUsername
+      ? [
+        ...primaryCommands.slice(0, 2),
+        { botUserId: "bot:qa_helper_bot", botUsername: "qa_helper_bot", command: "poll", description: "创建一个快速投票" },
+      ]
+      : primaryCommands;
+    const commands = botUsername
+      ? groupCommands.filter((command) => command.botUsername.toLocaleLowerCase() === username.toLocaleLowerCase())
+      : groupCommands;
+    const normalized = query.replace(/^\//, "").toLocaleLowerCase();
+    return commands.filter((command) => !normalized || command.command.startsWith(normalized));
+  }
+
+  async getCallbackQueryAnswer(
+    chatId: string,
+    messageId: string,
+    data: string,
+  ): Promise<CallbackQueryAnswer> {
+    void chatId;
+    void messageId;
+    return { text: data ? "机器人已处理操作" : undefined, showAlert: false };
+  }
+
+  async getInlineQueryResults(chatId: string, botUsername: string, query: string, offset = ""): Promise<InlineQueryResultPage> {
+    void chatId;
+    const username = botUsername.replace(/^@/, "").trim() || "fardgram_bot";
+    const all = [
+      { title: "快速摘要", description: `由 @${username} 生成的摘要`, messageText: `@${username}: ${query.trim() || "空查询"}` },
+      { title: "项目卡片", description: "包含媒体预览的结果", messageText: `项目卡片：${query.trim() || "Fardgram"}`, thumbnailUrl: "/icon.png" },
+      { title: "引用模板", description: "可继续编辑后发送", messageText: `> ${query.trim() || "输入内容"}` },
+      { title: "文件结果", description: "结果中的文件摘要", messageText: `文件：${query.trim() || "说明文档"}`, kind: "file" as const, fileName: "result.txt" },
+    ].map((item, index) => ({ ...item, id: `${username}-${index}`, kind: item.kind ?? (index === 1 ? "photo" as const : "article" as const) }));
+    const start = offset ? Number.parseInt(offset, 10) || 0 : 0;
+    const page = all.slice(start, start + 2);
+    for (const result of page) this.inlineResults.set(result.id, { botUserId: `bot:${username}`, text: result.messageText });
+    return { queryId: `mock-query-${Date.now()}`, results: clone(page), nextOffset: start + page.length < all.length ? String(start + page.length) : undefined, hasMore: start + page.length < all.length };
+  }
+
+  async sendInlineQueryResultMessage(chatId: string, botUserId: string, queryId: string, resultId: string, replyToMessageId?: string, topicId?: string): Promise<void> {
+    void queryId;
+    const result = this.inlineResults.get(resultId);
+    if (!result || result.botUserId !== botUserId) throw new Error("Inline 结果已过期");
+    await this.sendMessage({ chatId, topicId, text: result.text, replyToMessageId });
+  }
+
+  async sendBotStartMessage(chatId: string, botUserId: string, parameter = ""): Promise<void> {
+    await this.sendMessage({ chatId, text: `/start${parameter ? ` ${parameter}` : ""}` });
+    void botUserId;
+  }
+
+  async getBlockedSenders(): Promise<BlockedSender[]> {
+    return clone([...this.blockedSenders.values()]);
+  }
+
+  async setMessageSenderBlocked(senderId: string, kind: "user" | "chat", blocked: boolean): Promise<void> {
+    const key = `${kind}:${senderId}`;
+    const user = kind === "user" ? this.snapshot.users.find((item) => item.id === senderId) : undefined;
+    const targetChat = kind === "chat" ? this.snapshot.chats.find((item) => item.id === senderId) : undefined;
+    if (blocked) {
+      if (!user && !targetChat) throw new Error("找不到要屏蔽的对象");
+      this.blockedSenders.set(key, {
+        id: senderId,
+        kind,
+        title: user?.displayName ?? targetChat?.title ?? "已屏蔽对象",
+        avatar: clone(user?.avatar ?? targetChat?.avatar ?? { label: "?", color: "#73808c" }),
+        blockedAt: new Date().toISOString(),
+      });
+    } else this.blockedSenders.delete(key);
+    for (const chat of this.snapshot.chats) {
+      if (kind === "chat" ? chat.id === senderId : chat.kind === "direct" && chat.peerId === senderId) {
+        chat.isBlocked = blocked;
+        this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+      }
+    }
+  }
+
+  async getChatReportOptions(chatId: string, messageIds: string[]): Promise<ChatReportResult> {
+    return this.reportChat({ chatId, messageIds, optionId: "" });
+  }
+
+  async reportChat(input: ReportChatInput): Promise<ChatReportResult> {
+    return mockChatReport(input);
+  }
+
+  async getActiveSessions(): Promise<DeviceSession[]> { return clone(this.sessions); }
+  async terminateSession(sessionId: string): Promise<void> {
+    const session = this.sessions.find((item) => item.id === sessionId);
+    if (!session || session.isCurrent) throw new Error("不能终止当前设备");
+    this.sessions = this.sessions.filter((item) => item.id !== sessionId);
+  }
+  async terminateAllOtherSessions(): Promise<void> { this.sessions = this.sessions.filter((item) => item.isCurrent); }
+  async getPrivacySettingRules(setting: PrivacySettingKey): Promise<PrivacyRule[]> { return clone(this.privacyRules[setting]); }
+  async setPrivacySettingRules(setting: PrivacySettingKey, rules: PrivacyRule[]): Promise<void> { if (rules.length === 0 || rules.length > 10) throw new Error("隐私规则无效"); this.privacyRules[setting] = clone(rules); }
+
+  async resolveTelegramLink(url: string) {
+    const parsed = parseTelegramUrl(url);
+    if (!parsed) return undefined;
+    const inviteLink = telegramInviteLink(url);
+    if (inviteLink) {
+      const chat = this.snapshot.chats.find(candidate => candidate.id === inviteLink.split("+")[1]);
+      if (!chat || !["group", "channel"].includes(chat.kind)) throw new Error("INVITE_HASH_EXPIRED");
+      if (chat.isMember === true) return { chatId: chat.id };
+      return { kind: "chatInvite" as const, preview: {
+        inviteLink, chatId: chat.id, kind: chat.kind === "channel" ? "channel" as const : "group" as const,
+        title: chat.title, avatar: clone(chat.avatar), description: "", memberCount: chat.memberCount ?? 0,
+        createsJoinRequest: chat.joinByRequest === true, requiresSubscription: false,
+      } };
+    }
+    const stickerName = telegramStickerSetName(url);
+    if (stickerName) {
+      const stickerSet = mockStickerSets.find((set) => set.name.toLowerCase() === stickerName.toLowerCase());
+      if (!stickerSet) throw new Error("找不到贴纸包");
+      return { kind: "stickerSet" as const, stickerSet: await this.getStickerSet(stickerSet.id) };
+    }
+    const knownUnsupported = knownUnsupportedTelegramLink(parsed.href);
+    if (knownUnsupported) return knownUnsupported;
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parsed.protocol === "tg:" && parsed.hostname.toLowerCase() === "user") {
+      const userId = parsed.searchParams.get("id");
+      const user = this.snapshot.users.find((candidate) => candidate.id === userId);
+      return user
+        ? { kind: "user" as const, userId: user.id }
+        : unsupportedTelegramLink(undefined, "找不到链接中的 Telegram 用户");
+    }
+    const username = parsed.protocol === "tg:" ? parsed.searchParams.get("domain") : parts[0];
+    if (!username) return unsupportedTelegramLink("internalLinkTypeUnknownDeepLink");
+    const user = this.snapshot.users.find((candidate) => candidate.username?.toLowerCase() === username.toLowerCase());
+    const botStart = telegramBotStartParameters(parsed.href);
+    if (user?.isBot && botStart) {
+      let privateChat = this.snapshot.chats.find((candidate) => candidate.peerId === user.id);
+      if (!privateChat) {
+        privateChat = {
+          id: `chat:bot:${user.id}`,
+          kind: "direct",
+          canDeleteForSelf: true,
+          canDeleteForAllUsers: false,
+          isBlocked: this.blockedSenders.has(`user:${user.id}`),
+          folderIds: ["main"],
+          title: user.displayName,
+          avatar: clone(user.avatar),
+          peerId: user.id,
+          preview: "暂无消息",
+          updatedAt: new Date().toISOString(),
+          unreadCount: 0,
+          unreadMentionCount: 0,
+          pinned: false,
+          muted: false,
+        };
+        this.snapshot.chats.push(privateChat);
+        this.listener?.({ type: "chat.upsert", chat: clone(privateChat) });
+      }
+      return {
+        kind: "botStart" as const,
+        chatId: privateChat.id,
+        botUserId: user.id,
+        parameter: botStart.parameter,
+        autostart: !privateChat.isBlocked && this.snapshot.messages.some((message) => message.chatId === privateChat.id),
+      };
+    }
+    if (user) {
+      const privateChat = this.snapshot.chats.find((candidate) => candidate.peerId === user.id);
+      return privateChat ? { chatId: privateChat.id } : { kind: "user" as const, userId: user.id };
+    }
+    const chat = this.snapshot.chats.find((candidate) => candidate.title.toLowerCase() === username.toLowerCase());
+    return chat
+      ? { chatId: chat.id, messageId: parts[1] && /^\d+$/.test(parts[1]) ? parts[1] : parsed.searchParams.get("post") || undefined }
+      : unsupportedTelegramLink(undefined, "找不到链接中的 Telegram 会话或用户");
+  }
+
+  async refreshChatMembership(chatId: string): Promise<Chat> {
+    const chat = this.snapshot.chats.find(candidate => candidate.id === chatId);
+    if (!chat) throw new Error("CHAT_NOT_FOUND");
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+    return clone(chat);
+  }
+
+  async joinChat(input: JoinChatInput): Promise<JoinChatResult> {
+    const chatId = "chatId" in input ? input.chatId : telegramInviteLink(input.inviteLink)?.split("+")[1];
+    const chat = this.snapshot.chats.find(candidate => candidate.id === chatId);
+    if (!chat || chat.isBanned) throw new Error("CHANNEL_PRIVATE");
+    if (chat.isMember !== true && chat.joinByRequest) return { kind: "requested" };
+    chat.isMember = true;
+    chat.canSendMessages = chat.kind === "group";
+    if (!chat.folderIds.includes("main")) chat.folderIds.push("main");
+    chat.listOrderByFolder = { ...chat.listOrderByFolder, main: String(Date.now()) };
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+    return { kind: "joined", chatId: chat.id };
+  }
+
+  async searchChats(query: string, limit = 50) {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return;
+    for (const chat of this.snapshot.chats
+      .filter((item) => `${item.title} ${item.preview}`.toLocaleLowerCase().includes(normalized))
+      .slice(0, limit)) {
+      this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+    }
+  }
+
+  async searchGlobal({ query, filter, offset = "", limit = 30 }: GlobalSearchInput): Promise<GlobalSearchPage> {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) return { chats: [], messages: [], totalCount: 0 };
+    const typeMatches = (message: Message) => {
+      const content = message.content;
+      if (filter === "all") return true;
+      if (filter === "message") return ["text", "rich", "service"].includes(content.kind);
+      if (filter === "media") {
+        return content.kind === "media" &&
+          ["photo", "video", "videoNote", "animation", "sticker"].includes(content.mediaType);
+      }
+      if (filter === "file") return content.kind === "file";
+      if (content.kind !== "text") return false;
+      return content.entities?.some((entity) => entity.kind === "textUrl" || entity.kind === "url") ||
+        /https?:\/\//i.test(content.text);
+    };
+    const matches = this.snapshot.messages
+      .filter((message) => {
+        const content = message.content;
+        const fileName = content.kind === "file" || content.kind === "media"
+          ? content.fileName
+          : "";
+        const searchable = [messageContentText(content), fileName]
+          .filter(Boolean)
+          .join(" ");
+        return typeMatches(message) && messageSearchMatches(searchable, normalizedQuery);
+      })
+      .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt));
+    const start = Math.max(0, Number.parseInt(offset, 10) || 0);
+    const boundedLimit = Math.max(1, Math.min(limit, 100));
+    const messages = matches.slice(start, start + boundedLimit);
+    const next = start + messages.length;
+    const chatIds = new Set(messages.map((message) => message.chatId));
+    if (!offset) {
+      for (const chat of this.snapshot.chats) {
+        if (messageSearchMatches(`${chat.title} ${chat.preview}`, normalizedQuery)) chatIds.add(chat.id);
+      }
+    }
+    return {
+      chats: clone(this.snapshot.chats.filter((chat) => chatIds.has(chat.id))),
+      messages: clone(messages),
+      totalCount: matches.length,
+      nextOffset: next < matches.length ? String(next) : undefined,
+    };
+  }
+
+  async searchChatMessages(input: ChatMessageSearchInput): Promise<ChatMessageSearchPage> {
+    const query = input.query?.trim() ?? "";
+    const filter = input.filter ?? "all";
+    const limit = Math.max(1, Math.min(input.limit ?? 30, 100));
+    const matches = this.snapshot.messages
+      .filter((message) => message.chatId === input.chatId)
+      .filter((message) => !input.topicId || message.topicId === input.topicId)
+      .filter((message) => !input.senderId || message.senderId === input.senderId)
+      .filter((message) => {
+        const timestamp = Math.floor(Date.parse(message.sentAt) / 1000);
+        return (!input.minDate || timestamp >= input.minDate) &&
+          (!input.maxDate || timestamp <= input.maxDate);
+      })
+      .filter((message) => mockChatSearchFilterMatches(message, filter))
+      .filter((message) => !query || messageSearchMatches(messageContentText(message.content), query))
+      .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt));
+    const start = input.fromMessageId
+      ? Math.max(0, matches.findIndex((message) => message.id === input.fromMessageId))
+      : 0;
+    const messages = matches.slice(start, start + limit);
+    const nextFromMessageId = matches[start + messages.length]?.id;
+    return {
+      messages: clone(messages),
+      totalCount: matches.length,
+      nextFromMessageId,
+      hasMore: Boolean(nextFromMessageId),
+    };
+  }
+
+  async searchSharedMedia(input: SharedMediaSearchInput) {
+    const categoryMatches = (message: Message) => {
+      if (input.category === "media") {
+        return message.content.kind === "media" && ["photo", "video", "videoNote"].includes(message.content.mediaType);
+      }
+      if (input.category === "file") return message.content.kind === "file";
+      if (input.category === "audio") {
+        return message.content.kind === "media" && ["audio", "voice"].includes(message.content.mediaType);
+      }
+      const text = messageContentText(message.content);
+      return message.content.kind === "text" && (
+        message.content.entities?.some((entity) => ["url", "textUrl"].includes(entity.kind)) ||
+        /https?:\/\/\S+/i.test(text)
+      );
+    };
+    const query = input.query?.trim().toLocaleLowerCase() ?? "";
+    const all = this.snapshot.messages
+      .filter((message) => message.chatId === input.chatId && categoryMatches(message))
+      .filter((message) => !query || messageContentText(message.content).toLocaleLowerCase().includes(query))
+      .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt));
+    const cursorIndex = input.fromMessageId
+      ? all.findIndex((message) => message.id === input.fromMessageId) + 1
+      : 0;
+    const offset = Math.max(0, cursorIndex);
+    const limit = Math.max(1, Math.min(input.limit ?? 40, 100));
+    const messages = all.slice(offset, offset + limit);
+    return clone({
+      messages,
+      totalCount: all.length,
+      nextFromMessageId: messages.at(-1)?.id,
+      hasMore: offset + messages.length < all.length,
+    });
+  }
+
+  resetSyncState() {
+    this.historyOffsets.clear();
+  }
+
+  private readHistoryPage(chatId: string, topicId: string | undefined, limit: number, request?: HistoryPageRequest): ChatHistoryPage {
+    const key = topicId ? `forum:${chatId}:${topicId}` : chatId;
+    const history = this.snapshot.messages
+      .filter((message) => message.chatId === chatId && (!topicId || message.topicId === topicId))
+      .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt));
+    const anchorIndex = request?.fromMessageId ? history.findIndex(message => message.id === request.fromMessageId) : -1;
+    if (request?.purpose === "newer") {
+      const boundary = request.fromMessageId ?? "0";
+      const newer = anchorIndex >= 0 ? history.slice(0, anchorIndex) : history.filter(message =>
+        /^\d+$/.test(message.id) && /^\d+$/.test(boundary) && BigInt(message.id) > BigInt(boundary));
+      const page = newer.slice(-limit).reverse();
+      return { loadedCount: page.length, messageIds: page.map(message => message.id), messages: clone(page),
+        hasMore: newer.length > page.length, nextFromMessageId: page.at(-1)?.id ?? request.fromMessageId };
+    }
+    let offset = request ? anchorIndex + 1 : this.historyOffsets.get(key) ?? 0;
+    if (request?.fromMessageId && anchorIndex < 0) {
+      if (/^\d+$/.test(request.fromMessageId) && history.every(message => /^\d+$/.test(message.id))) {
+        const older = history.findIndex(message => BigInt(message.id) < BigInt(request.fromMessageId!));
+        offset = older < 0 ? history.length : older;
+      } else {
+        return { loadedCount: 0, messageIds: [], messages: [], hasMore: true, stalled: true, nextFromMessageId: request.fromMessageId };
+      }
+    }
+    const page = history.slice(offset, offset + limit);
+    if (!request) this.historyOffsets.set(key, offset + page.length);
+    return {
+      loadedCount: page.length,
+      hasMore: offset + page.length < history.length,
+      messageIds: page.map((message) => message.id),
+      messages: clone(page),
+      nextFromMessageId: page.at(-1)?.id ?? request?.fromMessageId,
+    };
+  }
+
+  async loadChatHistory(chatId: string, limit = 30, request?: HistoryPageRequest): Promise<ChatHistoryPage> {
+    return this.readHistoryPage(chatId, undefined, limit, request);
+  }
+
+  async getChatSponsoredMessages(chatId: string): Promise<ChatSponsoredMessages> {
+    if (chatId !== "chat-release") return { messages: [], messagesBetween: 0 };
+    return clone({
+      messages: [{
+        id: "sponsored-release-1",
+        chatId,
+        isRecommended: false,
+        canBeReported: true,
+        sponsor: {
+          url: "https://example.com/fardgram-studio",
+          info: "Fardgram Studio",
+          avatar: { label: "NS", color: "#397a78", imagePath: mockProfilePhotoUrl },
+        },
+        title: "Fardgram Studio",
+        buttonText: "View details",
+        accentColorId: 2,
+        additionalInfo: "Sponsored preview",
+        content: {
+          kind: "text",
+          text: "Build focused Telegram workflows with Fardgram Studio.",
+        },
+      }],
+      messagesBetween: 0,
+    });
+  }
+
+  async clickChatSponsoredMessage() {
+    // The mock transport has no remote impression endpoint.
+  }
+
+  private ensureForumTopics(chatId: string) {
+    const existing = this.forumTopics.get(chatId);
+    if (existing) return existing;
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat?.isForum) return [];
+    const makeTopic = (id: string, name: string, color: number, isGeneral = false, unreadCount = 0): ForumTopic => {
+      const lastMessage = this.snapshot.messages
+        .filter((message) => message.chatId === chatId && message.topicId === id)
+        .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt))[0];
+      return {
+        id,
+        chatId,
+        name,
+        iconColor: color,
+        createdAt: "2026-08-01T08:00:00.000Z",
+        isGeneral,
+        isOutgoing: isGeneral,
+        isClosed: false,
+        isHidden: false,
+        isPinned: isGeneral,
+        unreadCount,
+        unreadMentionCount: 0,
+        unreadReactionCount: 0,
+        lastReadInboxMessageId: lastMessage?.id,
+        lastReadOutboxMessageId: lastMessage?.id,
+        lastMessage: lastMessage ? clone(lastMessage) : undefined,
+        order: id === "1" ? "300" : id === "12" ? "200" : "100",
+        muted: false,
+        draft: this.drafts.get(`${chatId}:topic:${id}`) ? clone(this.drafts.get(`${chatId}:topic:${id}`)) : undefined,
+      };
+    };
+    const topics = [
+      makeTopic("1", "常规", 0x6fb9f0, true),
+      makeTopic("12", "构建与发布", 0xffd67e, false, 3),
+      makeTopic("18", "设计反馈", 0xcb86db, false, 1),
+    ];
+    this.forumTopics.set(chatId, topics);
+    return topics;
+  }
+
+  async getForumTopics(input: GetForumTopicsInput): Promise<ForumTopicPage> {
+    const all = this.ensureForumTopics(input.chatId)
+      .filter((topic) => !input.query?.trim() || topic.name.toLocaleLowerCase().includes(input.query.trim().toLocaleLowerCase()))
+      .sort((left, right) => Number(right.order) - Number(left.order));
+    const offset = input.offsetTopicId ? Math.max(0, all.findIndex((topic) => topic.id === input.offsetTopicId) + 1) : 0;
+    const limit = Math.max(1, Math.min(input.limit ?? 50, 100));
+    const topics = all.slice(offset, offset + limit);
+    const next = all[offset + topics.length];
+    return clone({
+      topics,
+      totalCount: all.length,
+      nextOffsetDate: next ? Math.floor(Date.parse(next.createdAt) / 1_000) : undefined,
+      nextOffsetMessageId: next?.lastMessage?.id,
+      nextOffsetTopicId: next?.id,
+      hasMore: Boolean(next),
+    });
+  }
+
+  async getForumTopic(chatId: string, topicId: string): Promise<ForumTopic | undefined> {
+    const topic = this.ensureForumTopics(chatId).find((candidate) => candidate.id === topicId);
+    return topic ? clone(topic) : undefined;
+  }
+
+  async loadForumTopicHistory(chatId: string, topicId: string, limit = 30, request?: HistoryPageRequest): Promise<ChatHistoryPage> {
+    return this.readHistoryPage(chatId, topicId, limit, request);
+  }
+
+  async getMessageThreadHistory(chatId: string, messageId: string, limit = 100, fromMessageId?: string): Promise<import("./types").MessageThreadHistoryPage> {
+    const boundedLimit = Math.max(1, Math.min(limit, 100));
+    const root = this.snapshot.messages.find((message) =>
+      message.chatId === chatId && message.id === messageId
+    );
+    const comments = this.snapshot.messages
+      .filter((message) => {
+        if (message.isChannelPost) return false;
+        if (message.chatId === chatId && message.topicId === messageId) return true;
+        if (message.replyTo?.kind !== "message") return false;
+        if (message.replyTo.messageId !== messageId) return false;
+        const origin = message.replyTo.origin;
+        return message.replyTo.chatId === chatId ||
+          (origin?.kind === "channel" && origin.chatId === chatId);
+      })
+      .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt));
+    const all = [...comments, ...(root ? [root] : [])];
+    const start = fromMessageId ? all.findIndex(message => message.id === fromMessageId) : 0;
+    const messages = start < 0 ? [] : all.slice(start, start + boundedLimit);
+    const nextFromMessageId = messages.at(-1)?.id;
+    return { messages: clone(messages), nextFromMessageId, hasMore: Boolean(nextFromMessageId && nextFromMessageId !== fromMessageId) };
+  }
+
+  async getMessageThread(chatId: string, messageId: string) {
+    const root = this.snapshot.messages.find((message) =>
+      message.chatId === chatId && message.id === messageId,
+    );
+    if (!root) return undefined;
+    const comments = this.snapshot.messages
+      .filter((message) => {
+        if (message.isChannelPost || message.replyTo?.kind !== "message") return false;
+        if (message.replyTo.messageId !== messageId) return false;
+        const origin = message.replyTo.origin;
+        return message.replyTo.chatId === chatId ||
+          (origin?.kind === "channel" && origin.chatId === chatId);
+      })
+      .sort((left, right) => Date.parse(left.sentAt) - Date.parse(right.sentAt));
+    return clone({ chatId, messageId, messages: [root, ...comments] });
+  }
+
+  async createForumTopic(input: CreateForumTopicInput): Promise<ForumTopic> {
+    const topics = this.ensureForumTopics(input.chatId);
+    const id = String(100 + topics.length);
+    const topic: ForumTopic = {
+      id,
+      chatId: input.chatId,
+      name: identityTextField(input.name, 128, "话题名称", true),
+      iconColor: input.iconColor ?? 0x6fb9f0,
+      createdAt: new Date().toISOString(),
+      isGeneral: false,
+      isOutgoing: true,
+      isClosed: false,
+      isHidden: false,
+      isPinned: false,
+      unreadCount: 0,
+      unreadMentionCount: 0,
+      unreadReactionCount: 0,
+      order: String(Date.now()),
+      muted: false,
+    };
+    topics.unshift(topic);
+    this.listener?.({ type: "forumTopics.changed", chatId: input.chatId });
+    return clone(topic);
+  }
+
+  async editForumTopic(chatId: string, topicId: string, name: string) {
+    const topic = this.ensureForumTopics(chatId).find((candidate) => candidate.id === topicId);
+    if (!topic) throw new Error("找不到话题");
+    topic.name = identityTextField(name, 128, "话题名称", true);
+    this.listener?.({ type: "forumTopics.changed", chatId });
+  }
+
+  async setForumTopicClosed(chatId: string, topicId: string, closed: boolean) {
+    const topic = this.ensureForumTopics(chatId).find((candidate) => candidate.id === topicId);
+    if (!topic) throw new Error("找不到话题");
+    topic.isClosed = closed;
+    this.listener?.({ type: "forumTopics.changed", chatId });
+  }
+
+  async setForumTopicPinned(chatId: string, topicId: string, pinned: boolean) {
+    const topic = this.ensureForumTopics(chatId).find((candidate) => candidate.id === topicId);
+    if (!topic) throw new Error("找不到话题");
+    topic.isPinned = pinned;
+    this.listener?.({ type: "forumTopics.changed", chatId });
+  }
+
+  async getMessageContext(chatId: string, messageId: string, limit = 31) {
+    const history = this.snapshot.messages
+      .filter((message) => message.chatId === chatId)
+      .sort((left, right) => Date.parse(left.sentAt) - Date.parse(right.sentAt));
+    const targetIndex = history.findIndex((message) => message.id === messageId);
+    if (targetIndex < 0) return [];
+    const boundedLimit = Math.max(1, Math.min(limit, 100));
+    const start = Math.max(0, targetIndex - Math.floor((boundedLimit - 1) / 2));
+    const context = history.slice(start, start + boundedLimit);
+    return clone(context);
+  }
+
+  async getMessage(chatId: string, messageId: string) {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === chatId && item.id === messageId,
+    );
+    return message ? clone(message) : undefined;
+  }
+
+  async getRawMessage(chatId: string, messageId: string) {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === chatId && item.id === messageId,
+    );
+    if (!message) return undefined;
+    return JSON.stringify({
+      "@type": "message",
+      id: message.id,
+      chat_id: message.chatId,
+      sender_id: message.senderId,
+      is_outgoing: message.outgoing,
+      date: Math.floor(Date.parse(message.sentAt) / 1_000),
+      content: message.content,
+    }, null, 2);
+  }
+
+  async getMessageProperties(chatId: string, messageId: string): Promise<MessagePermissions> {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === chatId && item.id === messageId,
+    );
+    if (!message) throw new Error("找不到消息");
+    if (message.permissions) return clone({ canReport: !message.outgoing && !message.isLocallyDeleted, ...message.permissions });
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    const management = this.chatManagement.get(chatId);
+    const canPin = chat?.kind === "direct" || chat?.kind === "saved"
+      ? true
+      : management
+        ? management.capabilities.status === "owner" ||
+          (management.capabilities.status === "administrator"
+            ? management.capabilities.adminRights?.canPinMessages === true
+            : management.permissions.canPinMessages === true)
+        : chat?.canPinMessages === true;
+    return clone({
+      canReport: !message.outgoing && !message.isLocallyDeleted,
+      canReply: true,
+      canEdit: message.outgoing && isEditableMessageContent(message.content),
+      canDeleteOnlyForSelf: !message.outgoing,
+      canDeleteForAllUsers: message.outgoing,
+      canForward: true,
+      canPin,
+    });
+  }
+
+  async setMessageReaction(input: SetMessageReactionInput) {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === input.chatId && item.id === input.messageId,
+    );
+    if (!message) throw new Error("消息不存在");
+    const interaction = message.interaction ?? {
+      viewCount: 0,
+      forwardCount: 0,
+      replyCount: 0,
+      reactions: [],
+    };
+    const reactions = [...interaction.reactions];
+    const index = reactions.findIndex(
+      (reaction) => reaction.type.kind === "emoji" && reaction.type.emoji === input.emoji,
+    );
+    if (index >= 0) {
+      const current = reactions[index];
+      const totalCount = Math.max(0, current.totalCount + (input.chosen ? 1 : -1));
+      if (totalCount === 0) reactions.splice(index, 1);
+      else reactions[index] = {
+        ...current,
+        chosen: input.chosen,
+        totalCount,
+        recentSenderIds: [
+          ...(input.chosen ? [this.snapshot.currentUserId] : []),
+          ...current.recentSenderIds.filter((id) => id !== this.snapshot.currentUserId),
+        ].slice(0, 3),
+      };
+    } else if (input.chosen) {
+      reactions.push({
+        type: { kind: "emoji", emoji: input.emoji },
+        totalCount: 1,
+        chosen: true,
+        recentSenderIds: [this.snapshot.currentUserId],
+      });
+    }
+    message.interaction = { ...interaction, reactions };
+    this.listener?.({ type: "message.upsert", message: clone(message) });
+  }
+
+  async getMessageReactionSenders(input: GetMessageReactionSendersInput) {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === input.chatId && item.id === input.messageId,
+    );
+    if (!message) throw new Error("消息不存在");
+    if (message.interaction?.canGetAddedReactions === false) {
+      throw new Error("Telegram 未提供完整回应名单");
+    }
+    const reaction = message.interaction?.reactions.find((candidate) => {
+      if (candidate.type.kind !== input.type.kind) return false;
+      if (candidate.type.kind === "emoji" && input.type.kind === "emoji") {
+        return candidate.type.emoji === input.type.emoji;
+      }
+      if (candidate.type.kind === "customEmoji" && input.type.kind === "customEmoji") {
+        return candidate.type.customEmojiId === input.type.customEmojiId;
+      }
+      return candidate.type.kind === "paid";
+    });
+    if (!reaction) return { totalCount: 0, senders: [] };
+    const offset = Math.max(0, Number.parseInt(input.offset ?? "0", 10) || 0);
+    const limit = Math.max(1, Math.min(input.limit ?? 100, 100));
+    const senderIds = reaction.recentSenderIds.slice(offset, offset + limit);
+    const nextOffset = offset + senderIds.length < reaction.recentSenderIds.length
+      ? String(offset + senderIds.length)
+      : undefined;
+    return {
+      totalCount: reaction.totalCount,
+      senders: senderIds.map((senderId, index) => ({
+        senderId,
+        type: reaction.type,
+        outgoing: senderId === this.snapshot.currentUserId,
+        addedAt: new Date(Date.parse(message.sentAt) + index * 1_000).toISOString(),
+      })),
+      nextOffset,
+    };
+  }
+
+  async getChatAdministratorLabels(chatId: string): Promise<Record<string, string>> {
+    const profile = await this.getChatProfile(chatId);
+    return Object.fromEntries(profile.members.flatMap((member) => {
+      const label = member.role === "owner"
+        ? "群主"
+        : member.role === "administrator" ? "管理员" : "";
+      return label ? [[member.user.id, label]] : [];
+    }));
+  }
+
+  async setPollAnswer(input: SetPollAnswerInput) {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === input.chatId && item.id === input.messageId,
+    );
+    if (!message || message.content.kind !== "poll") throw new Error("投票不存在");
+    const poll = message.content;
+    if (poll.isClosed || poll.restrictionReason) throw new Error(poll.restrictionReason ?? "投票已结束");
+    const positions = [...new Set(input.optionPositions)].sort((left, right) => left - right);
+    if ((!poll.allowsMultipleAnswers && positions.length > 1) ||
+      positions.some((position) => !poll.options[position])) throw new Error("投票选项无效");
+    const previouslyVoted = poll.options.some((option) => option.chosen);
+    const nowVoted = positions.length > 0;
+    const nextTotal = Math.max(0, poll.totalVoterCount + (nowVoted ? 1 : 0) - (previouslyVoted ? 1 : 0));
+    poll.options = poll.options.map((option) => {
+      const chosen = positions.includes(option.position);
+      const voterCount = Math.max(0, option.voterCount + (chosen ? 1 : 0) - (option.chosen ? 1 : 0));
+      return {
+        ...option,
+        chosen,
+        beingChosen: false,
+        voterCount,
+        votePercentage: nextTotal > 0 ? Math.round(voterCount * 100 / nextTotal) : 0,
+      };
+    });
+    poll.totalVoterCount = nextTotal;
+    poll.canSeeResults = true;
+    this.listener?.({ type: "message.upsert", message: clone(message) });
+  }
+
+  async getPinnedMessages(chatId: string) {
+    return clone(this.snapshot.messages
+      .filter((message) => message.chatId === chatId && message.isPinned)
+      .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt)));
+  }
+
+  async pinMessage(input: PinMessageInput) {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === input.chatId && item.id === input.messageId,
+    );
+    if (!message) throw new Error("找不到需要置顶的消息");
+    if (!(await this.getMessageProperties(input.chatId, input.messageId)).canPin) {
+      throw new Error("当前账号没有置顶消息的权限");
+    }
+    message.isPinned = true;
+    delete message.permissions;
+    this.listener?.({ type: "message.upsert", message: clone(message) });
+  }
+
+  async unpinMessage(chatId: string, messageId: string) {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === chatId && item.id === messageId,
+    );
+    if (!message) throw new Error("找不到需要取消置顶的消息");
+    if (!(await this.getMessageProperties(chatId, messageId)).canPin) {
+      throw new Error("当前账号没有置顶消息的权限");
+    }
+    message.isPinned = false;
+    delete message.permissions;
+    this.listener?.({ type: "message.upsert", message: clone(message) });
+  }
+
+  async setChatMessageAutoDeleteTime(input: SetChatMessageAutoDeleteTimeInput) {
+    if (!Number.isSafeInteger(input.messageAutoDeleteTime) ||
+      input.messageAutoDeleteTime < 0 || input.messageAutoDeleteTime > 31_536_000 ||
+      (input.messageAutoDeleteTime !== 0 && input.messageAutoDeleteTime % 86_400 !== 0)) {
+      throw new Error("自动删除时间无效");
+    }
+    const chat = this.snapshot.chats.find((item) => item.id === input.chatId);
+    if (!chat) throw new Error("找不到会话");
+    chat.messageAutoDeleteTime = input.messageAutoDeleteTime;
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+  }
+
+  async getEmojiPickerCatalog(): Promise<EmojiPickerCatalog> {
+    return clone({
+      recentStickers: this.recentStickerAssets.get(this.accountState.activeAccountId) ?? mockStickerSets[0].stickers.slice(0, 4),
+      stickerSets: mockStickerSets.filter((set) => this.installedStickerIds().has(set.id))
+        .map(({ stickers: _stickers, ...summary }) => ({ ...summary, isInstalled: true, isArchived: false })),
+      savedAnimations: mockSavedAnimations,
+    });
+  }
+
+  async getStickerSet(stickerSetId: string) {
+    const stickerSet = mockStickerSets.find((candidate) => candidate.id === stickerSetId);
+    if (!stickerSet) throw new Error("找不到贴纸包");
+    return clone({ ...stickerSet, isInstalled: this.installedStickerIds().has(stickerSetId), isArchived: false });
+  }
+
+  async addStickerSet(stickerSetId: string) {
+    await this.setStickerInstalled(stickerSetId, true);
+  }
+
+  async removeStickerSet(stickerSetId: string) {
+    await this.setStickerInstalled(stickerSetId, false);
+  }
+
+  private async setStickerInstalled(stickerSetId: string, installed: boolean) {
+    await this.getStickerSet(stickerSetId);
+    const ids = this.installedStickerIds();
+    if (installed) ids.add(stickerSetId);
+    else ids.delete(stickerSetId);
+    this.listener?.({ type: "stickerSet.updated", stickerSet: await this.getStickerSet(stickerSetId) });
+    this.listener?.({ type: "emoji.catalogChanged", installedStickerSetIds: [...ids] });
+  }
+
+  async getStickerOutline(fileId: number) {
+    const asset = mockStickerSets.flatMap((set) => set.stickers).find((asset) => asset.fileId === fileId);
+    const width = asset?.width ?? 512;
+    const height = asset?.height ?? 512;
+    return `M${width * 0.1} ${height * 0.5}C${width * 0.1} 0 ${width * 0.9} 0 ${width * 0.9} ${height * 0.5}C${width * 0.9} ${height} ${width * 0.1} ${height} ${width * 0.1} ${height * 0.5}Z`;
+  }
+
+  async searchStickers(query: string, _chatId: string) {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return [];
+    return clone(mockStickerSets.flatMap((stickerSet) => stickerSet.stickers)
+      .filter((asset) =>
+        asset.emoji?.includes(normalized) ||
+        asset.id.toLocaleLowerCase().includes(normalized)
+      ));
+  }
+
+  async loadEmojiAsset(asset: EmojiPickerAsset) {
+    return asset.previewPath ?? asset.localPath ?? asset.previewDataUrl;
+  }
+
+  async sendSticker(input: SendEmojiAssetInput) {
+    this.appendEmojiAsset(input, "sticker");
+    const accountId = this.accountState.activeAccountId;
+    const recent = this.recentStickerAssets.get(accountId) ?? mockStickerSets[0].stickers.slice(0, 4);
+    this.recentStickerAssets.set(accountId, [input.asset, ...recent.filter((asset) => asset.fileId !== input.asset.fileId)].slice(0, 100));
+    this.listener?.({ type: "emoji.catalogChanged" });
+  }
+
+  async sendAnimation(input: SendEmojiAssetInput) {
+    this.appendEmojiAsset(input, "animation");
+  }
+
+  async getProxySettings() {
+    return structuredClone(this.proxySettings);
+  }
+
+  async saveProxySettings(settings: ProxySettings) {
+    this.proxySettings = structuredClone(settings);
+  }
+
+  async testProxy(_settings: ProxySettings) {
+    return 42;
+  }
+
+  async discoverProxies(): Promise<DiscoveredProxy[]> {
+    return [
+      {
+        id: "smart-1",
+        name: "MTProto (cloudflare.com)",
+        endpoint: {
+          type: "mtproto",
+          server: "149.154.175.50",
+          port: 443,
+          secret: "ee000000000000000000000000000000007777772e636c6f7564666c6172652e636f6d",
+          username: "",
+          password: "",
+          httpOnly: false,
+        },
+        latencyMs: 120,
+        isFakeTls: true,
+        sniDomain: "www.cloudflare.com",
+      },
+      {
+        id: "smart-2",
+        name: "MTProto (google.com)",
+        endpoint: {
+          type: "mtproto",
+          server: "149.154.167.51",
+          port: 443,
+          secret: "ee111111111111111111111111111111117777772e676f6f676c652e636f6d",
+          username: "",
+          password: "",
+          httpOnly: false,
+        },
+        latencyMs: 185,
+        isFakeTls: true,
+        sniDomain: "www.google.com",
+      },
+    ];
+  }
+
+  async applyDiscoveredProxies(proxies: DiscoveredProxy[], activeId?: string): Promise<ProxySettings> {
+    const profiles = proxies.map((p, index) => ({
+      id: p.id,
+      name: p.sniDomain ? `⚡ ${p.sniDomain} (${p.latencyMs}ms)` : `⚡ Proxy ${index + 1}`,
+      endpoint: p.endpoint,
+    }));
+    this.proxySettings = {
+      ...this.proxySettings,
+      mode: "custom",
+      profiles: profiles.length > 0 ? profiles : this.proxySettings.profiles,
+      activeProfileId: activeId ?? profiles[0]?.id ?? this.proxySettings.activeProfileId,
+      autoSwitch: true,
+    };
+    return structuredClone(this.proxySettings);
+  }
+
+  async quickConnectBestProxy(): Promise<ProxySettings> {
+    const discovered = await this.discoverProxies();
+    return this.applyDiscoveredProxies(discovered);
+  }
+
+  async getStorageSettings() {
+    return structuredClone(this.storageSettings);
+  }
+
+  async saveStorageSettings(settings: StorageSettings) {
+    this.storageSettings = structuredClone(settings);
+    return structuredClone(this.storageSettings);
+  }
+
+  async getStorageInventory(): Promise<StorageLayer[]> {
+    return [];
+  }
+
+  async removeMigrationBackup(_id: string) {
+    return 0;
+  }
+
+  async getCacheUsage() {
+    return clone(this.cacheUsage);
+  }
+
+  async clearMediaCache(input: CacheCleanupInput) {
+    const keyByCategory = {
+      image: "images",
+      video: "videos",
+      audio: "audio",
+      document: "documents",
+      other: "other",
+    } as const;
+    let removedBytes = 0;
+    let removedFiles = 0;
+    for (const category of input.categories) {
+      const key = keyByCategory[category];
+      removedBytes += this.cacheUsage[key].bytes;
+      removedFiles += this.cacheUsage[key].files;
+      this.cacheUsage[key] = { bytes: 0, files: 0 };
+    }
+    this.cacheUsage.total = {
+      bytes: Math.max(0, this.cacheUsage.total.bytes - removedBytes),
+      files: Math.max(0, this.cacheUsage.total.files - removedFiles),
+    };
+    return {
+      removedBytes,
+      removedFiles,
+      skippedProtectedFiles: input.protectedPaths.length > 0 ? 1 : 0,
+      failedFiles: 0,
+      usage: clone(this.cacheUsage),
+    };
+  }
+
+  async sendMessage({ chatId, topicId, text, entities, replyToMessageId, replyQuote, clearDraft = true }: SendMessageInput) {
+    const replyTarget = replyToMessageId
+      ? this.snapshot.messages.find(
+          (message) => message.chatId === chatId && message.topicId === topicId && message.id === replyToMessageId,
+        )
+      : undefined;
+    if (replyToMessageId && !replyTarget) throw new Error("找不到需要回复的消息");
+    const replySourceText = replyTarget?.content.kind === "text"
+      ? replyTarget.content.text
+      : replyTarget?.content.kind === "media" || replyTarget?.content.kind === "file"
+        ? replyTarget.content.caption
+        : undefined;
+    if (
+      replyQuote &&
+      (!replySourceText || replySourceText.slice(
+        replyQuote.position,
+        replyQuote.position + replyQuote.text.length,
+      ) !== replyQuote.text)
+    ) throw new Error("引用内容与原消息不匹配");
+    this.appendMessage({
+      id: crypto.randomUUID(),
+      chatId,
+      topicId,
+      senderId: this.snapshot.currentUserId,
+      outgoing: true,
+      sentAt: new Date().toISOString(),
+      delivery: "sent",
+      replyTo: replyTarget
+        ? {
+            kind: "message",
+            chatId,
+            messageId: replyTarget.id,
+            quote: replyQuote?.text,
+            content: clone(replyTarget.content),
+          }
+        : undefined,
+      content: { kind: "text", text, ...(entities?.length ? { entities } : {}) },
+    });
+    if (clearDraft) await this.setChatDraft({ chatId, topicId, text: "" });
+  }
+
+  async editMessage({ chatId, messageId, text, entities, showCaptionAboveMedia }: EditMessageInput) {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === chatId && item.id === messageId,
+    );
+    if (!message) throw new Error("找不到需要编辑的消息");
+    if (!isEditableMessageContent(message.content)) throw new Error("不能编辑此消息");
+    message.content = isCaptionContent(message.content)
+      ? { ...message.content, caption: text || undefined, captionEntities: entities?.length ? entities : undefined,
+          showCaptionAboveMedia: showCaptionAboveMedia ?? message.content.showCaptionAboveMedia }
+      : { kind: "text", text, ...(entities?.length ? { entities } : {}) };
+    message.editedAt = new Date().toISOString();
+    delete message.permissions;
+    this.listener?.({ type: "message.upsert", message: clone(message) });
+    this.refreshChatPreview(chatId);
+  }
+
+  async deleteMessage({ chatId, messageId }: DeleteMessageInput) {
+    const index = this.snapshot.messages.findIndex(
+      (item) => item.chatId === chatId && item.id === messageId,
+    );
+    if (index < 0) throw new Error("找不到需要删除的消息");
+    this.snapshot.messages.splice(index, 1);
+    this.listener?.({ type: "message.remove", chatId, messageId });
+    this.refreshChatPreview(chatId);
+  }
+
+  async forwardMessages({ fromChatId, toChatId, toTopicId, messageIds }: ForwardMessagesInput): Promise<ForwardMessagesResult> {
+    const uniqueMessageIds = [...new Set(messageIds)];
+    const selected = uniqueMessageIds
+      .map((messageId) => this.snapshot.messages.find(
+        (message) => message.chatId === fromChatId && message.id === messageId,
+      ))
+      .filter((message): message is Message => Boolean(message));
+    if (selected.length === 0) throw new Error("请选择要转发的消息");
+    if (selected.length > 100) throw new Error("单次最多转发 100 条消息");
+    if (selected.length !== uniqueMessageIds.length) throw new Error("部分待转发消息已不存在");
+    if (!this.snapshot.chats.some((chat) => chat.id === toChatId)) {
+      throw new Error("找不到转发目标会话");
+    }
+
+    const now = Date.now();
+    for (const [index, source] of selected.entries()) {
+      this.appendMessage({
+        ...clone(source),
+        id: crypto.randomUUID(),
+        chatId: toChatId,
+        topicId: toTopicId,
+        senderId: this.snapshot.currentUserId,
+        outgoing: true,
+        sentAt: new Date(now + index).toISOString(),
+        delivery: "sent",
+        editedAt: undefined,
+        replyTo: undefined,
+        permissions: undefined,
+        forwardInfo: source.forwardInfo ? clone(source.forwardInfo) : {
+          origin: { kind: "user", userId: source.senderId },
+          sentAt: source.sentAt,
+          source: {
+            chatId: fromChatId,
+            messageId: source.id,
+            senderId: source.senderId,
+            outgoing: source.outgoing,
+          },
+        },
+        interaction: undefined,
+        canRetry: undefined,
+      });
+    }
+    return { forwardedCount: selected.length, failedMessageIds: [] };
+  }
+
+  async sendMediaCopy({ chatId, topicId, content }: SendMediaCopyInput) {
+    inputMediaCopy(content);
+    this.appendMessage({
+      id: crypto.randomUUID(), chatId, topicId, senderId: this.snapshot.currentUserId,
+      outgoing: true, sentAt: new Date().toISOString(), delivery: "sent", content: clone(content),
+    });
+  }
+
+  async setChatDraft({ chatId, topicId, text, entities, replyToMessageId, replyQuote }: SetChatDraftInput) {
+    if (!this.snapshot.chats.some((chat) => chat.id === chatId)) {
+      throw new Error("找不到需要保存草稿的会话");
+    }
+    const draft = hasChatDraftContent({ text, replyToMessageId })
+      ? {
+          chatId,
+          topicId,
+          text,
+          ...(entities?.length ? { entities } : {}),
+          replyToMessageId,
+          replyQuote: replyToMessageId ? replyQuote : undefined,
+          updatedAt: new Date().toISOString(),
+        }
+      : undefined;
+    const key = topicId ? `${chatId}:topic:${topicId}` : chatId;
+    if (draft) this.drafts.set(key, draft);
+    else this.drafts.delete(key);
+    this.listener?.({ type: "chat.draftChanged", chatId, draft: clone(draft) });
+  }
+
+  async setChatTyping(_chatId: string, _typing: boolean, _topicId?: string) {}
+
+  async downloadFile(fileId: number, _fileName: string) {
+    this.updateFileTransfer(fileId, {
+      isDownloading: false,
+      isDownloaded: true,
+      canDownload: false,
+      progress: 1,
+    });
+  }
+
+  async cancelFileDownload(fileId: number) {
+    this.updateFileTransfer(fileId, {
+      isDownloading: false,
+      isDownloaded: false,
+      canDownload: true,
+      progress: undefined,
+    });
+  }
+
+  async openFile(_sourcePath: string) {
+    return;
+  }
+
+  async saveFileToDownloads(_sourcePath: string, _fileName: string) {
+    return;
+  }
+
+  async saveFileAs(_sourcePath: string, _fileName: string) {
+    return true;
+  }
+
+  async openDownloadDirectory() {
+    return;
+  }
+
+  async cacheFile(_fileId: number, _priority?: number) {
+    return;
+  }
+
+  async resolveRemoteFile(_remoteId: string): Promise<MessageFileState | undefined> {
+    return undefined;
+  }
+
+  async recoverFile(fileId: number, _priority?: number) {
+    this.updateFileTransfer(fileId, {
+      isDownloading: true,
+      isDownloaded: false,
+      canDownload: true,
+      progress: 0,
+    });
+  }
+
+  async streamFile() {
+    return "/mock-video.mp4";
+  }
+
+  async suspendFileStream() {
+    return;
+  }
+
+  async retryMessage(chatId: string, messageId: string) {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === chatId && item.id === messageId,
+    );
+    if (!message) throw new Error("找不到需要重试的消息");
+    message.delivery = "sent";
+    message.canRetry = false;
+    this.listener?.({ type: "message.upsert", message: clone(message) });
+  }
+
+  async sendFile({ chatId, topicId, file }: SendFileInput) {
+    if (!file) return false;
+    return this.sendFiles({
+      chatId,
+      topicId,
+      attachments: [{
+        file,
+        kind: file.type.startsWith("image/") ? "photo" : "document",
+      }],
+    });
+  }
+
+  async sendFiles({
+    chatId,
+    topicId,
+    attachments,
+    caption,
+    captionEntities,
+    replyToMessageId,
+    replyQuote,
+    onGroupAccepted,
+  }: SendFilesInput) {
+    if (attachments.length === 0) return false;
+    for (const [groupIndex, group] of groupOutgoingAttachments(attachments).entries()) {
+      const albumId = group.length > 1 ? `mock-album-${crypto.randomUUID()}` : undefined;
+      const captionIndex = outgoingAlbumCaptionIndex(group);
+      for (const [index, attachment] of group.entries()) {
+        const { file, kind } = attachment;
+        const isMedia = kind !== "document";
+        const preview = kind === "photo" ? await previewDataUrl(file) : undefined;
+        this.appendMessage({
+          id: crypto.randomUUID(),
+          chatId,
+          topicId,
+          mediaAlbumId: albumId,
+          senderId: this.snapshot.currentUserId,
+          outgoing: true,
+          sentAt: new Date().toISOString(),
+          delivery: "sent",
+          replyTo: replyToMessageId
+            ? {
+                kind: "message",
+                chatId,
+                messageId: replyToMessageId,
+                quote: replyQuote?.text,
+                content: clone(this.snapshot.messages.find(
+                  (message) => message.chatId === chatId && message.id === replyToMessageId,
+                )?.content),
+              }
+            : undefined,
+          content: isMedia
+            ? {
+                kind: "media",
+                mediaType: kind,
+                fileName: file.name,
+                sizeLabel: readableFileSize(file.size),
+                previewDataUrl: preview,
+                width: attachment.width,
+                height: attachment.height,
+                duration: attachment.duration,
+                caption: groupIndex === 0 && index === captionIndex ? caption : undefined,
+                captionEntities: groupIndex === 0 && index === captionIndex ? captionEntities : undefined,
+                showCaptionAboveMedia: attachment.showCaptionAboveMedia,
+              }
+            : {
+                kind: "file",
+                fileName: file.name,
+                sizeLabel: readableFileSize(file.size),
+                caption: groupIndex === 0 && index === captionIndex ? caption : undefined,
+                captionEntities: groupIndex === 0 && index === captionIndex ? captionEntities : undefined,
+              },
+        });
+      }
+      await onGroupAccepted?.(group);
+    }
+    return true;
+  }
+
+  async cancelFileUpload(chatId: string, messageId: string) {
+    await this.deleteMessage({ chatId, messageId, revoke: true });
+  }
+
+  async markChatRead(chatId: string) {
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat || chat.unreadCount === 0) return;
+    const latestIncomingMessage = this.snapshot.messages
+      .filter((message) => message.chatId === chatId && !message.outgoing)
+      .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt))[0];
+    chat.unreadCount = 0;
+    chat.lastReadInboxMessageId = latestIncomingMessage?.id ?? chat.lastReadInboxMessageId;
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+  }
+
+  async markForumTopicRead(chatId: string, topicId: string, messageId: string) {
+    const topic = this.ensureForumTopics(chatId).find((item) => item.id === topicId);
+    if (!topic || !this.snapshot.messages.some((message) => message.id === messageId && message.topicId === topicId)) return;
+    topic.unreadCount = 0;
+    topic.lastReadInboxMessageId = messageId;
+    this.listener?.({ type: "forumTopics.changed", chatId });
+  }
+
+  async markMessageThreadRead(_chatId: string, _messageIds: string[]) {
+    // Thread views never clear the linked group's unrelated unread state.
+  }
+
+  async markMessageAttentionRead(chatId: string, messageIds: string[]) {
+    const requestedIds = new Set(messageIds);
+    const readMessages = this.snapshot.messages.filter(
+      (message) => message.chatId === chatId && requestedIds.has(message.id) && message.containsUnreadMention,
+    );
+    const mentionCount = readMessages.filter((message) => message.containsUnreadMention).length;
+    for (const message of readMessages) {
+      message.containsUnreadMention = false;
+      this.listener?.({ type: "message.upsert", message: clone(message) });
+    }
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat || readMessages.length === 0) return;
+    chat.unreadMentionCount = Math.max(0, chat.unreadMentionCount - mentionCount);
+    this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+  }
+
+  async viewChannelMessages(_chatId: string, _messageIds: string[]) {}
+
+  async markAllChatReactionsRead(chatId: string) {
+    const readMessages = this.snapshot.messages.filter(
+      (message) => message.chatId === chatId && message.containsUnreadReaction,
+    );
+    for (const message of readMessages) {
+      message.containsUnreadReaction = false;
+      message.unreadReactions = [];
+      this.listener?.({ type: "message.upsert", message: clone(message) });
+    }
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (chat) {
+      chat.unreadReactionCount = 0;
+      this.listener?.({ type: "chat.upsert", chat: clone(chat) });
+    }
+    for (const topic of this.ensureForumTopics(chatId)) topic.unreadReactionCount = 0;
+    if (readMessages.some((message) => message.topicId)) {
+      this.listener?.({ type: "forumTopics.changed", chatId });
+    }
+  }
+
+  private appendMessage(message: Message) {
+    const chat = this.snapshot.chats.find((item) => item.id === message.chatId);
+    if (chat?.kind === "channel" && message.outgoing && !message.replyTo) {
+      message = { ...message, isChannelPost: true,
+        interaction: message.interaction ?? { viewCount: 0, forwardCount: 0, replyCount: 0, reactions: [] } };
+    }
+    this.snapshot.messages.push(message);
+    this.listener?.({ type: "message.upsert", message: clone(message), animateEntrance: true });
+
+    if (!chat) return;
+
+    const updatedChat: Chat = {
+      ...chat,
+      preview: messagePreviewText(message.content),
+      previewSenderId: message.senderId,
+      updatedAt: message.sentAt,
+      unreadCount: 0,
+      unreadMentionCount: 0,
+    };
+    Object.assign(chat, updatedChat);
+    this.listener?.({ type: "chat.upsert", chat: clone(updatedChat) });
+  }
+
+  private appendEmojiAsset(
+    input: SendEmojiAssetInput,
+    mediaType: "sticker" | "animation",
+  ) {
+    const replyTarget = input.replyToMessageId
+      ? this.snapshot.messages.find(
+          (message) => message.chatId === input.chatId && message.id === input.replyToMessageId,
+        )
+      : undefined;
+    this.appendMessage({
+      id: crypto.randomUUID(),
+      chatId: input.chatId,
+      topicId: input.topicId,
+      senderId: this.snapshot.currentUserId,
+      outgoing: true,
+      sentAt: new Date().toISOString(),
+      delivery: "sent",
+      replyTo: replyTarget
+        ? {
+            kind: "message",
+            chatId: input.chatId,
+            messageId: replyTarget.id,
+            quote: input.replyQuote?.text,
+            content: clone(replyTarget.content),
+          }
+        : undefined,
+      content: {
+        kind: "media",
+        mediaType,
+        fileId: input.asset.fileId,
+        stickerSetId: mediaType === "sticker" ? input.asset.stickerSetId : undefined,
+        fileName: input.asset.fileName,
+        sizeLabel: mediaType === "sticker" ? "贴纸" : "GIF",
+        mimeType: input.asset.mimeType,
+        previewDataUrl: input.asset.previewDataUrl,
+        localPath: input.asset.localPath,
+        thumbnailPath: input.asset.previewPath,
+        width: input.asset.width,
+        height: input.asset.height,
+        canDownload: false,
+        isDownloaded: true,
+      },
+    });
+  }
+
+  private updateFileTransfer(
+    fileId: number,
+    patch: {
+      canDownload: boolean;
+      isDownloading: boolean;
+      isDownloaded: boolean;
+      progress?: number;
+    },
+  ) {
+    for (const message of this.snapshot.messages) {
+      const content = message.content;
+      if ((content.kind !== "file" && content.kind !== "media") || content.fileId !== fileId) {
+        continue;
+      }
+      message.content = { ...content, ...patch };
+      this.listener?.({ type: "message.upsert", message: clone(message) });
+    }
+  }
+
+  private refreshChatPreview(chatId: string) {
+    const chat = this.snapshot.chats.find((item) => item.id === chatId);
+    if (!chat) return;
+    const latest = this.snapshot.messages
+      .filter((message) => message.chatId === chatId)
+      .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt))[0];
+    if (!latest) return;
+    const updatedChat: Chat = {
+      ...chat,
+      preview: messagePreviewText(latest.content),
+      previewSenderId: latest.senderId,
+      updatedAt: latest.sentAt,
+    };
+    Object.assign(chat, updatedChat);
+    this.listener?.({ type: "chat.upsert", chat: clone(updatedChat) });
+  }
+
+  private cacheKey() {
+    return this.accountState.activeAccountId === "default"
+      ? CACHE_KEY
+      : `${CACHE_KEY}:${this.accountState.activeAccountId}`;
+  }
+
+  private pinnedOrderKey() {
+    return this.accountState.activeAccountId === "default"
+      ? PINNED_ORDER_KEY
+      : `${PINNED_ORDER_KEY}:${this.accountState.activeAccountId}`;
+  }
+
+  private loadPinnedOrders(): Record<string, string[]> {
+    const serialized = browserStorage()?.getItem(this.pinnedOrderKey());
+    if (!serialized) return {};
+    try {
+      return JSON.parse(serialized) as Record<string, string[]>;
+    } catch {
+      return {};
+    }
+  }
+
+  private restorePinnedOrders() {
+    for (const [chatListId, chatIds] of Object.entries(this.loadPinnedOrders())) {
+      const rankBase = BigInt(chatIds.length);
+      for (const [index, chatId] of chatIds.entries()) {
+        const chat = this.snapshot.chats.find((item) => item.id === chatId);
+        if (!chat) continue;
+        chat.listOrderByFolder = {
+          ...chat.listOrderByFolder,
+          [chatListId]: String(rankBase - BigInt(index)),
+        };
+      }
+    }
+  }
+
+  private persistAccountState() {
+    browserStorage()?.setItem(ACCOUNT_STATE_KEY, JSON.stringify(this.accountState));
+  }
+
+  private publishReadySnapshot() {
+    for (const user of this.snapshot.users) {
+      this.listener?.({ type: "user.upsert", user: clone(user) });
+    }
+    this.listener?.({ type: "currentUser.changed", userId: this.snapshot.currentUserId });
+    this.listener?.({ type: "folders.replaced", folders: clone(this.snapshot.folders) });
+    this.listener?.({ type: "chats.upserted", chats: clone(this.snapshot.chats) });
+  }
+}

@@ -1,0 +1,186 @@
+# Focus ownership
+
+The visible message editor is the default typing destination. Explicit search,
+text selection, menus, dialogs, and keyboard navigation retain their own focus.
+An OS window becoming active does not itself identify a message editor.
+
+## Tab behavior
+
+Every app window cancels the native Tab default in the shared WebView key guard,
+including Shift+Tab and modified Tab keys delivered to the page. The event still
+reaches application handlers: plain Tab explicitly accepts the active mention or
+bot-command suggestion. With no available suggestion, it leaves text, selection,
+and focus unchanged. Completion must not depend on `defaultPrevented` being false;
+the guard has already canceled browser traversal. Existing IME checks still prevent
+completion during composition.
+
+Tab does not traverse settings, forms, dialogs, menus, or media controls. Dialogs
+do not cycle focus with Tab, and menus do not dismiss on Tab. Pointer interactions,
+explicit focus requests, menu arrow navigation, and Escape retain their behavior.
+
+## Configurable shortcuts
+
+`shortcuts/shortcuts.ts` declares action IDs, labels, defaults and key normalization.
+Preferences persist bindings and synchronize them with the standalone settings
+window. Navigation dispatch lives in `useAppShortcuts`; it only consumes a matching
+combination, and preserves composition, active dialogs and menus. A usable cached
+workspace accepts navigation while the transport reconnects. Tab remains reserved
+for explicit completion and cannot be assigned to a navigation action.
+
+The recorder consumes keys before editor/search commands and the WebView guard.
+Escape, blur, switching controls and unmount invalidate pending checks. Saving
+checks application duplicates and reserved keys, then probes Windows RegisterHotKey
+on a dedicated thread and immediately unregisters it. These are foreground app
+shortcuts; the probe never installs a persistent global binding. The probe detects
+registered global hotkeys at that instant, not arbitrary keyboard hooks or later
+registrations. Unsupported environments and native errors must not report success.
+
+Folder buttons and shortcuts change only the sidebar folder and close search;
+the open conversation, draft, reading position and forum topic remain in place,
+including for empty folders and late list data. No per-folder chat selection is
+remembered. After a folder change, the first previous/next chat shortcut selects
+the current first row, even when the retained chat belongs to that folder. Later
+shortcuts move from the selected chat; an explicit sidebar chat click also resumes
+navigation from that row. Selecting the same folder does not reset navigation.
+Actual chat changes share the sidebar conversation entry path. The folder order
+matches the rail; chat order uses the sidebar sorter, with no wrap at either
+boundary. The shortcut cursor is transient and resets across account switches.
+
+## Conversation editors
+
+`useComposerFocus` gives each editor an owner tied to its account and conversation
+identity, including a forum topic or discussion thread. The concrete editor node is
+also checked, so an old operation cannot target a replacement through a reused ref.
+Disabling or unmounting an owner revokes pending requests and clears its timers.
+
+- `request()` follows an explicit user action such as replying or inserting Emoji.
+- Latest/return, pinned-message, reply-preview and attention jumps return typing
+  to the current editor, retaining its selection. Silent-send toggles do the same.
+  These returns use the existing owner and interaction checks; a subsequent
+  search or conversation change takes precedence.
+- Explicit multi-select cancellation commits the editor remount before requesting
+  focus. Routine selection clearing (including asynchronous forwarding) does not
+  make this request. Cancellation does not take focus from another surface.
+- Emoji toggle, Escape and hover dismissals return focus only while that picker's
+  controls or trigger still own it. Passive hovering and outside clicks preserve
+  the user's current input destination.
+- `request({ reason: "entry" })` defaults to the editor after navigation when focus
+  is unclaimed or still on a chat row. It preserves native selections and the
+  existing forced-colors keyboard behavior.
+- Window return only restores unclaimed focus or retains the current editor.
+  Search fields, buttons, reading controls, and selected text take precedence.
+- `capture()` must be called **before** asynchronous work. Invoke its returned
+  callback after completion; subsequent pointer, keyboard, composition, or focus
+  activity invalidates it. Business callbacks that clear reply/edit state do not
+  independently request focus.
+- External previews can capture a return that waits for the main window to regain
+  focus. Re-activation of the unchanged opener does not revoke that return;
+  pointer, keyboard, composition, or focus on another element still does.
+  Conversation video windows capture before any stream lookup, just like photo
+  and outgoing attachment previews. In-app modals can remember their originating
+  editor while allowing interactions inside the modal; return is still restricted
+  to that editor.
+- Replying from a native message menu waits for the main window to activate
+  before focusing its conversation editor. A newer user operation revokes the
+  pending return, as it does for media windows.
+
+All editor focus requests use `preventScroll`. A cursor change is applied only
+when its corresponding focus request remains valid. Requests do not run in a
+hidden/unfocused document, during composition, behind an active modal, or against
+an unavailable input.
+
+The shared composer uses a Tiptap/ProseMirror text block with Telegram entities as
+marks. Its DOM adapter exposes UTF-16 text offsets to existing mention insertion
+and focus callers. Newlines occupy one position, including clipboard input.
+Restored drafts start with a collapsed selection at the end; routine focus returns
+preserve the current selection. Native and browser format menus retain the range
+that opened them and return through the same focus owner.
+
+With an empty composer, the configurable "Edit the previous message" shortcut
+(Ctrl+R by default) chooses the latest editable outgoing
+message intersecting that editor's current message viewport. Virtual overscan and
+offscreen history do not qualify. Permission loading is bounded to those visible
+candidates; subsequent input, scrolling, navigation, or unmounting cancels the
+pending intent. Replies and attachment drafts retain their input behavior;
+ArrowUp keeps its ordinary cursor or suggestion navigation. During editing, the
+same shortcut or Escape cancels and restores the previous draft. Enter submits
+the edit (Shift+Enter retains newline insertion), comparing the current text and
+formatting entities with the original only at submission. Unchanged content,
+including edits reverted to the original, exits without an edit/send request.
+Composer Ctrl+Shift+M/X/U/B/Q/K shortcuts are local to this editor.
+Formatting runs in ProseMirror's key handler and maps the visible DOM selection
+before applying a mark; `selectionchange` may still be queued. React capture must
+not consume these shortcuts against a stale selection. The editor and WebView
+guard share physical letter matching, with `key` as a fallback.
+Active IME composition owns its keys. Placeholder visibility follows the live
+editor document and is suppressed from composition start, including empty preedit;
+updating that visibility must never replace the composing document.
+
+Composer surfaces follow the same order in ordinary chats and discussions:
+outbox status, reply or edit context, staged attachments, then the editor.
+Connection feedback floats above that stack, without consuming pointer input or
+changing timeline/editor geometry as the network recovers. Text can wrap within
+the conversation width; foreground choosers remain above this passive feedback.
+Editing temporarily hides staged attachments and preserves their draft; attachment
+sending cannot consume the edit text. Choosers anchor above the actual editor height
+and fit below the owning conversation header. Only the foreground chooser handles
+selection keys; opening the emoji picker suspends text suggestions until it closes.
+Constrained attachment grids scroll without shrinking cards or hiding send controls.
+
+Draft synchronization compares text entities by their content, independent of object
+field order and entity order from the editor or native mapper. Matching server echoes
+acknowledge local drafts without discarding staged attachments. While newer local text
+is pending, rejected stale echoes (including empty drafts) cannot clear attachments;
+accepted remote draft replacements retain the existing attachment cleanup behavior.
+
+Mention candidates combine actual authors from the current chat's loaded history,
+search results and discussion messages with TDLib's `chatMembersFilterMention`
+results. Local authors remain available while the remote request is pending, empty
+or fails; membership-list visibility does not decide whether a known author can
+be mentioned. Forward origins, mention entities and globally cached users do not
+establish chat scope. Preserve the server's mention eligibility and name matching,
+including non-member commenters and names matched through aliases or transliteration.
+Incoming messages update local matches without restarting the remote query. Query
+completion caches and late responses remain scoped to the current chat and account.
+
+Before native text sends, draft writes, edits or attachment captions, resolve mention
+IDs through TDLib `getUser` and its `have_access` flag. Frontend cached authors are
+display hints, not proof of native access. If needed, restore at most three known
+authored message references with `getMessage`, then try the user's known public
+username while verifying that it still resolves to the same user ID. Recovery does
+not publish history, mark messages read, change focus or remove mention entities.
+Concurrent lookups share pending work within the account; completed lookups are
+not treated as permanent access. Account changes cancel pending sends, and newer
+drafts or clears supersede delayed draft preparation, independently per topic.
+
+`data-composer-scope` marks ordinary conversations and discussion panels. The
+shared pointer handler processes only the nearest scope. A discussion isolates
+the channel header, timeline, and post editor with `inert`; the covered channel
+editor must never receive comment text or Enter.
+When the scope's editor already has focus, pointer down on a non-selectable
+background preserves that focus and selection, and pointer up skips restoration.
+Selectable message text and interactive controls retain their native pointer
+behavior. An unfocused editor still receives focus after an eligible blank click.
+
+## Modal surfaces
+
+`useModalFocus` owns initial focus, programmatic focus containment, and return.
+Only the active modal handles Escape. Its sibling branches are made inert,
+including newly mounted background content. Nested
+dialogs isolate siblings rather than their own ancestors. Portaled context menus
+retain their keyboard interaction. Standalone settings retain their window chrome.
+
+Isolation is released when the exit begins. A delayed unmount cannot move focus
+over a newer user operation. Temporarily suspending/hiding a parent for a nested
+dialog does not consume that parent's eventual return. Prefer the invoking control;
+an editor-related modal can supply a return bound to its originating editor.
+
+## Verification
+
+`tests/e2e/focus.e2e.ts` and `tests/e2e/focus-actions.e2e.ts` cover typing destination,
+delayed completion, background isolation, window return, selections, caret position,
+and exit races. Existing
+composer, message action, discussion, media, report, motion, and account suites
+cover their integrations. Browser tests run headless with muted audio and Mock
+transport. Real WebView2 activation, Alt+Tab, native previews, and OS IME still
+require Windows acceptance against the packaged build.

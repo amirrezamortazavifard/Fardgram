@@ -1,0 +1,328 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import type {
+  Chat,
+  ForwardMessagesResult,
+  Message,
+  MessagePermissions,
+} from "../telegram/types";
+
+export interface ForwardTargetSelection {
+  chat: Chat;
+  topicId?: string;
+}
+
+interface MessageForwardingOptions {
+  chatId?: string;
+  conversationIdentity?: string;
+  messages: Message[];
+  messagesById: Map<string, Message>;
+  targets: Chat[];
+  getTargetsSnapshot?: () => Chat[];
+  onSelectionCancelled?: () => void;
+  onLoadMessageProperties: (
+    chatId: string,
+    messageId: string,
+  ) => Promise<MessagePermissions | undefined>;
+  onForwardMessages: (
+    fromChatId: string,
+    messageIds: string[],
+    toChatId: string,
+    toTopicId?: string,
+    description?: string,
+  ) => Promise<ForwardMessagesResult | undefined>;
+}
+
+export const forwardTargetKey = (target: Pick<ForwardTargetSelection, "chat" | "topicId">) =>
+  `${target.chat.id}\u0000${target.topicId ?? ""}`;
+
+export const useMessageForwarding = ({
+  chatId,
+  conversationIdentity,
+  messages,
+  messagesById,
+  targets,
+  getTargetsSnapshot,
+  onSelectionCancelled,
+  onLoadMessageProperties,
+  onForwardMessages,
+}: MessageForwardingOptions) => {
+  const [selectionActive, setSelectionActive] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [forwardMessageIds, setForwardMessageIds] = useState<string[]>([]);
+  const [initialTargetId, setInitialTargetId] = useState<string>();
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState(false);
+  const [pendingTargetId, setPendingTargetId] = useState<string>();
+  const [targetSnapshot, setTargetSnapshot] = useState<Chat[]>(() => getTargetsSnapshot?.() ?? targets);
+  const selectionPermissionRequestsRef = useRef(new Set<string>());
+  const operationGenerationRef = useRef(0);
+
+  const captureTargets = useCallback(
+    () => getTargetsSnapshot?.() ?? targets,
+    [getTargetsSnapshot, targets],
+  );
+
+  const filteredTargets = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    return normalized
+      ? targetSnapshot.filter((target) => target.title.toLocaleLowerCase().includes(normalized))
+      : targetSnapshot;
+  }, [query, targetSnapshot]);
+
+  useEffect(() => {
+    setSelectionActive(false);
+    setSelectedIds(new Set());
+    setLoadingIds(new Set());
+    setDialogOpen(false);
+    setForwardMessageIds([]);
+    setInitialTargetId(undefined);
+    setQuery("");
+    setPending(false);
+    setPendingTargetId(undefined);
+    setTargetSnapshot(captureTargets());
+    selectionPermissionRequestsRef.current.clear();
+    return () => { operationGenerationRef.current += 1; };
+  }, [conversationIdentity ?? chatId]);
+
+  useEffect(() => {
+    setSelectedIds((current) => {
+      const available = new Set([...current].filter((messageId) => messagesById.has(messageId)));
+      return available.size === current.size ? current : available;
+    });
+    setForwardMessageIds((current) => {
+      const available = current.filter((messageId) => messagesById.has(messageId));
+      return available.length === current.length ? current : available;
+    });
+  }, [messagesById]);
+
+  const clearSelection = useCallback(() => {
+    setSelectionActive(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const cancelSelection = useCallback(() => {
+    // Cancelling remounts the editor. Its new node must exist before requesting focus.
+    flushSync(clearSelection);
+    onSelectionCancelled?.();
+  }, [clearSelection, onSelectionCancelled]);
+
+  useEffect(() => {
+    if (!selectionActive) return;
+    const closeWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (dialogOpen && !pending) {
+        setDialogOpen(false);
+        setForwardMessageIds([]);
+        setInitialTargetId(undefined);
+        setQuery("");
+      } else if (!pending) {
+        cancelSelection();
+      }
+    };
+    document.addEventListener("keydown", closeWithKeyboard);
+    return () => document.removeEventListener("keydown", closeWithKeyboard);
+  }, [cancelSelection, dialogOpen, pending, selectionActive]);
+
+  const startSelection = useCallback((message?: Message) => {
+    setTargetSnapshot(captureTargets());
+    setDialogOpen(false);
+    setForwardMessageIds([]);
+    setInitialTargetId(undefined);
+    setQuery("");
+    setSelectionActive(true);
+    setSelectedIds(message ? new Set([message.id]) : new Set());
+  }, [captureTargets]);
+
+  const toggleSelection = useCallback(async (message: Message) => {
+    if (selectedIds.has(message.id)) {
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(message.id);
+        return next;
+      });
+      return;
+    }
+    if (selectedIds.size >= 100 || loadingIds.has(message.id)) return;
+
+    // A locally archived deletion no longer exists in TDLib, so asking for
+    // operation properties would return 400. It remains selectable because
+    // the local copy is still valid input for text copy/forward fallback.
+    let permissions = message.isLocallyDeleted
+      ? { canForward: true } as MessagePermissions
+      : message.permissions;
+    if (!permissions) {
+      setLoadingIds((current) => new Set(current).add(message.id));
+      permissions = await onLoadMessageProperties(message.chatId, message.id);
+      setLoadingIds((current) => {
+        const next = new Set(current);
+        next.delete(message.id);
+        return next;
+      });
+    }
+    if (!permissions?.canForward) return;
+    setSelectedIds((current) => current.size >= 100
+      ? current
+      : new Set(current).add(message.id));
+  }, [loadingIds, onLoadMessageProperties, selectedIds]);
+
+  const selectMessages = useCallback(async (range: Message[]) => {
+    if (range.length === 0) return;
+    const candidates = range.filter((message) => message.content.kind !== "service" &&
+      message.content.kind !== "unsupported" &&
+      !message.isRemoving &&
+      message.permissions?.canForward !== false);
+    if (candidates.length === 0) return;
+
+    const unresolved = candidates.filter((message) => !message.isLocallyDeleted && !message.permissions &&
+      !selectionPermissionRequestsRef.current.has(message.id));
+    const resolvedPermissions = new Map<string, MessagePermissions | undefined>();
+    if (unresolved.length > 0) {
+      unresolved.forEach((message) => selectionPermissionRequestsRef.current.add(message.id));
+      setLoadingIds((current) => new Set([...current, ...unresolved.map((message) => message.id)]));
+      const permissions = await Promise.all(unresolved.map(async (message) => ({
+        message,
+        permissions: await onLoadMessageProperties(message.chatId, message.id),
+      })));
+      setLoadingIds((current) => {
+        const next = new Set(current);
+        unresolved.forEach((message) => next.delete(message.id));
+        return next;
+      });
+      permissions.forEach(({ message, permissions }) => {
+        selectionPermissionRequestsRef.current.delete(message.id);
+        resolvedPermissions.set(message.id, permissions);
+      });
+    }
+    const permitted = candidates.filter((message) =>
+      message.isLocallyDeleted || (message.permissions ?? resolvedPermissions.get(message.id))?.canForward === true
+    );
+    if (permitted.length === 0) return;
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const message of permitted) {
+        if (next.size >= 100) break;
+        next.add(message.id);
+      }
+      return next;
+    });
+  }, [onLoadMessageProperties]);
+
+  const orderedMessageIds = useCallback((messageIds: Iterable<string>) => {
+    const requested = new Set(messageIds);
+    return messages
+      .filter((message) => requested.has(message.id))
+      .map((message) => message.id)
+      .slice(0, 100);
+  }, [messages]);
+
+  const openDialogForMessages = useCallback((
+    messageIds: Iterable<string>,
+    targetId?: string,
+  ) => {
+    const ordered = orderedMessageIds(messageIds);
+    if (ordered.length === 0 || pending) return;
+    setTargetSnapshot(captureTargets());
+    setForwardMessageIds(ordered);
+    setInitialTargetId(targetId);
+    setQuery("");
+    setDialogOpen(true);
+  }, [captureTargets, orderedMessageIds, pending]);
+
+  const openSelectedDialog = useCallback(() => {
+    openDialogForMessages(selectedIds);
+  }, [openDialogForMessages, selectedIds]);
+
+  const quickForward = useCallback(async (
+    messageIds: Iterable<string>,
+    target: Chat,
+  ) => {
+    const ordered = orderedMessageIds(messageIds);
+    if (!chatId || ordered.length === 0 || pending) return;
+    if (target.isForum) {
+      openDialogForMessages(ordered, target.id);
+      return;
+    }
+    const generation = operationGenerationRef.current;
+    setPending(true);
+    setPendingTargetId(target.id);
+    await onForwardMessages(chatId, ordered, target.id);
+    if (generation !== operationGenerationRef.current) return;
+    setPending(false);
+    setPendingTargetId(undefined);
+  }, [chatId, onForwardMessages, openDialogForMessages, orderedMessageIds, pending]);
+
+  const confirm = useCallback(async (
+    selectedTargets: ForwardTargetSelection[],
+    description: string,
+  ) => {
+    if (!chatId || pending || forwardMessageIds.length === 0 || selectedTargets.length === 0) return;
+    const generation = operationGenerationRef.current;
+    setPending(true);
+    const failedMessageIds = new Set<string>();
+    for (const target of selectedTargets) {
+      setPendingTargetId(forwardTargetKey(target));
+      const result = await onForwardMessages(
+        chatId,
+        forwardMessageIds,
+        target.chat.id,
+        target.topicId,
+        description.trim() || undefined,
+      );
+      if (generation !== operationGenerationRef.current) return;
+      if (!result) {
+        forwardMessageIds.forEach((messageId) => failedMessageIds.add(messageId));
+        // A cancelled account batch must not start another target on the new account.
+        break;
+      } else {
+        result.failedMessageIds.forEach((messageId) => failedMessageIds.add(messageId));
+      }
+    }
+    setPending(false);
+    setPendingTargetId(undefined);
+    setDialogOpen(false);
+    setForwardMessageIds([]);
+    setInitialTargetId(undefined);
+    setQuery("");
+    if (!selectionActive) return;
+    if (failedMessageIds.size > 0) {
+      setSelectedIds(failedMessageIds);
+      return;
+    }
+    clearSelection();
+  }, [chatId, clearSelection, forwardMessageIds, onForwardMessages, pending, selectionActive]);
+
+  const closeDialog = useCallback(() => {
+    if (pending) return;
+    setDialogOpen(false);
+    setForwardMessageIds([]);
+    setInitialTargetId(undefined);
+    setQuery("");
+  }, [pending]);
+
+  return {
+    selectedIds,
+    loadingIds,
+    selectionMode: selectionActive,
+    dialogOpen,
+    forwardMessageIds,
+    initialTargetId,
+    query,
+    pending,
+    pendingTargetId,
+    filteredTargets,
+    clearSelection,
+    cancelSelection,
+    startSelection,
+    toggleSelection,
+    selectMessages,
+    openDialogForMessages,
+    openSelectedDialog,
+    quickForward,
+    closeDialog,
+    setQuery,
+    confirm,
+  };
+};

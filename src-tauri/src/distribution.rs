@@ -1,0 +1,334 @@
+use serde::Serialize;
+use std::{
+    env, fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
+use tauri::{AppHandle, Manager};
+
+const PORTABLE_MARKER: &str = ".fardgram-portable";
+const PORTABLE_DATA_DIRECTORY: &str = "data";
+const PORTABLE_CONFIG_DIRECTORY: &str = "config";
+const PORTABLE_WEBVIEW_DIRECTORY: &str = "webview";
+const RELEASE_PROBE_PREFIX: &str = "--fardgram-release-probe=";
+const REQUIRED_RUNTIME_FILES: &[&str] = &[
+    "tdjson.dll",
+    "libcrypto-3-x64.dll",
+    "libssl-3-x64.dll",
+    "z.dll",
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DistributionKind {
+    Installed,
+    Portable,
+    Unknown,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleaseProbe {
+    schema_version: u32,
+    distribution: DistributionKind,
+    version: &'static str,
+    runtime_verified: bool,
+}
+
+fn kind_for_directory(directory: &Path) -> DistributionKind {
+    if directory.join(PORTABLE_MARKER).is_file() {
+        DistributionKind::Portable
+    } else {
+        DistributionKind::Installed
+    }
+}
+
+pub fn current_kind() -> DistributionKind {
+    env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(kind_for_directory))
+        .unwrap_or(DistributionKind::Unknown)
+}
+
+pub fn supports_native_updater() -> bool {
+    !cfg!(debug_assertions) && current_kind() == DistributionKind::Installed
+}
+
+fn program_directory() -> Result<PathBuf, String> {
+    env::current_exe()
+        .map_err(|error| format!("Unable to resolve executable path: {error}"))?
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "Executable path has no parent directory".to_string())
+}
+
+fn portable_data_directory_for(program_directory: &Path) -> PathBuf {
+    program_directory.join(PORTABLE_DATA_DIRECTORY)
+}
+
+fn portable_data_directory() -> Result<PathBuf, String> {
+    Ok(portable_data_directory_for(&program_directory()?))
+}
+
+fn persistent_directory<Portable, Installed>(
+    kind: DistributionKind,
+    portable_directory: Portable,
+    installed_directory: Installed,
+) -> Result<PathBuf, String>
+where
+    Portable: FnOnce() -> Result<PathBuf, String>,
+    Installed: FnOnce() -> Result<PathBuf, String>,
+{
+    if kind == DistributionKind::Portable {
+        portable_directory()
+    } else {
+        installed_directory()
+    }
+}
+
+pub fn app_config_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    persistent_directory(
+        current_kind(),
+        || Ok(portable_data_directory()?.join(PORTABLE_CONFIG_DIRECTORY)),
+        || {
+            app.path()
+                .app_config_dir()
+                .map_err(|error| format!("Unable to resolve app config directory: {error}"))
+        },
+    )
+}
+
+pub fn app_data_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    persistent_directory(current_kind(), portable_data_directory, || {
+        app.path()
+            .app_data_dir()
+            .map_err(|error| format!("Unable to resolve app data directory: {error}"))
+    })
+}
+
+pub fn webview_data_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    persistent_directory(
+        current_kind(),
+        || Ok(portable_data_directory()?.join(PORTABLE_WEBVIEW_DIRECTORY)),
+        || {
+            app.path()
+                .app_local_data_dir()
+                .map_err(|error| format!("Unable to resolve local app data directory: {error}"))
+        },
+    )
+}
+
+pub fn default_tdlib_cache_path(app: &AppHandle) -> Result<PathBuf, String> {
+    if current_kind() == DistributionKind::Portable {
+        Ok(portable_data_directory()?.join("tdlib"))
+    } else {
+        app.path()
+            .app_local_data_dir()
+            .map(|directory| directory.join("tdlib"))
+            .map_err(|error| format!("Unable to resolve local app data directory: {error}"))
+    }
+}
+
+fn tdlib_cache_template(kind: DistributionKind, identifier: &str) -> String {
+    if kind == DistributionKind::Portable {
+        Path::new(PORTABLE_DATA_DIRECTORY)
+            .join("tdlib")
+            .display()
+            .to_string()
+    } else {
+        Path::new("%LOCALAPPDATA%")
+            .join(identifier)
+            .join("tdlib")
+            .display()
+            .to_string()
+    }
+}
+
+pub fn default_tdlib_cache_template(app: &AppHandle) -> String {
+    tdlib_cache_template(current_kind(), &app.config().identifier)
+}
+
+fn requested_probe_path() -> Option<PathBuf> {
+    env::args().find_map(|argument| {
+        argument
+            .strip_prefix(RELEASE_PROBE_PREFIX)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    })
+}
+
+fn probe_for_directory(directory: &Path) -> Result<ReleaseProbe, String> {
+    let runtime_directory = directory.join("tdlib");
+    let runtime_verified = REQUIRED_RUNTIME_FILES
+        .iter()
+        .all(|file| runtime_directory.join(file).is_file());
+    if !runtime_verified {
+        return Err("Release runtime dependencies are incomplete".to_string());
+    }
+    Ok(ReleaseProbe {
+        schema_version: 1,
+        distribution: kind_for_directory(directory),
+        version: env!("CARGO_PKG_VERSION"),
+        runtime_verified,
+    })
+}
+
+fn write_release_probe(output: &Path) -> Result<(), String> {
+    if !output.is_absolute() || output.extension().and_then(|value| value.to_str()) != Some("json")
+    {
+        return Err("Release probe output must be an absolute JSON path".to_string());
+    }
+    let executable =
+        env::current_exe().map_err(|_| "Unable to resolve the release executable".to_string())?;
+    let directory = executable
+        .parent()
+        .ok_or_else(|| "Release executable has no parent directory".to_string())?;
+    let probe = probe_for_directory(directory)?;
+    let payload = serde_json::to_vec(&probe)
+        .map_err(|_| "Unable to serialize release probe result".to_string())?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)
+        .map_err(|_| "Unable to create release probe result".to_string())?;
+    file.write_all(&payload)
+        .and_then(|_| file.write_all(b"\n"))
+        .and_then(|_| file.sync_all())
+        .map_err(|_| "Unable to write release probe result".to_string())
+}
+
+pub fn run_release_probe_if_requested() -> bool {
+    let Some(output) = requested_probe_path() else {
+        return false;
+    };
+    if let Err(error) = write_release_probe(&output) {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+    true
+}
+
+#[tauri::command]
+pub fn fardgram_distribution_kind() -> DistributionKind {
+    current_kind()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn test_directory() -> std::path::PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        env::temp_dir().join(format!("fardgram-distribution-{suffix}"))
+    }
+
+    #[test]
+    fn portable_marker_disables_native_updates() {
+        let directory = test_directory();
+        fs::create_dir_all(&directory).expect("test directory should be created");
+        assert_eq!(kind_for_directory(&directory), DistributionKind::Installed);
+
+        fs::write(directory.join(PORTABLE_MARKER), "Fardgram portable\n")
+            .expect("portable marker should be created");
+        assert_eq!(kind_for_directory(&directory), DistributionKind::Portable);
+
+        fs::remove_dir_all(directory).expect("test directory should be removed");
+    }
+
+    #[test]
+    fn portable_directories_stay_inside_the_distribution() {
+        let directory = test_directory();
+        let portable = portable_data_directory_for(&directory);
+        let installed = directory.join("installed");
+
+        assert_eq!(
+            portable.join(PORTABLE_CONFIG_DIRECTORY),
+            directory.join("data").join("config")
+        );
+        assert_eq!(
+            portable.join(PORTABLE_WEBVIEW_DIRECTORY),
+            directory.join("data").join("webview")
+        );
+        assert_eq!(portable.join("tdlib"), directory.join("data").join("tdlib"));
+        assert_eq!(
+            tdlib_cache_template(DistributionKind::Portable, "ignored"),
+            Path::new("data").join("tdlib").display().to_string()
+        );
+        assert_eq!(
+            tdlib_cache_template(DistributionKind::Installed, "dev.fardgram.desktop"),
+            Path::new("%LOCALAPPDATA%")
+                .join("dev.fardgram.desktop")
+                .join("tdlib")
+                .display()
+                .to_string()
+        );
+
+        assert_eq!(
+            persistent_directory(
+                DistributionKind::Portable,
+                || Ok(portable.clone()),
+                || Ok(installed.clone())
+            )
+            .unwrap(),
+            portable
+        );
+        assert_eq!(
+            persistent_directory(
+                DistributionKind::Installed,
+                || Ok(directory.join(PORTABLE_DATA_DIRECTORY)),
+                || Ok(installed.clone())
+            )
+            .unwrap(),
+            installed
+        );
+    }
+
+    #[test]
+    fn installed_path_errors_are_ignored_only_for_portable_builds() {
+        assert_eq!(
+            persistent_directory(
+                DistributionKind::Portable,
+                || Ok(PathBuf::from("portable")),
+                || Err("installed unavailable".to_string())
+            )
+            .unwrap(),
+            PathBuf::from("portable")
+        );
+        assert!(
+            persistent_directory(
+                DistributionKind::Installed,
+                || Ok(PathBuf::from("portable")),
+                || Err("installed unavailable".to_string())
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn release_probe_requires_complete_runtime_without_exposing_paths() {
+        let directory = test_directory();
+        let runtime = directory.join("tdlib");
+        fs::create_dir_all(&runtime).expect("runtime directory should be created");
+        for file in REQUIRED_RUNTIME_FILES {
+            fs::write(runtime.join(file), b"runtime").expect("runtime file should be created");
+        }
+
+        let probe = probe_for_directory(&directory).expect("release probe should pass");
+        let payload = serde_json::to_string(&probe).expect("release probe should serialize");
+        assert_eq!(probe.distribution, DistributionKind::Installed);
+        assert!(probe.runtime_verified);
+        assert!(!payload.contains(directory.to_string_lossy().as_ref()));
+
+        fs::remove_file(runtime.join(REQUIRED_RUNTIME_FILES[0]))
+            .expect("runtime file should be removed");
+        assert!(probe_for_directory(&directory).is_err());
+        fs::remove_dir_all(directory).expect("test directory should be removed");
+    }
+}

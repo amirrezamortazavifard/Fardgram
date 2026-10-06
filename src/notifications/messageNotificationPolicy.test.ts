@@ -1,0 +1,259 @@
+import { describe, expect, it } from "vitest";
+import {
+  MessageNotificationStreamTracker,
+  isMessageStreaming,
+  isMessageConversationMuted,
+  isMessageInActiveConversation,
+  notificationPresentation,
+  shouldNotifyMessage,
+} from "./messageNotificationPolicy";
+
+const incomingMessage = {
+  chatKind: "direct" as const,
+  outgoing: false,
+  notificationsEnabled: true,
+  muted: false,
+  activeConversation: false,
+  appVisible: true,
+  messageId: "120",
+  sentAt: "2026-08-19T02:30:00.000Z",
+  lastReadInboxMessageId: "119",
+  notBeforeMs: Date.parse("2026-08-19T02:29:50.000Z"),
+};
+
+describe("message notification policy", () => {
+  it("notifies every incoming message from an unmuted conversation", () => {
+    expect(shouldNotifyMessage(incomingMessage)).toBe(true);
+  });
+
+  it("never notifies messages received in Saved Messages", () => {
+    expect(shouldNotifyMessage({ ...incomingMessage, chatKind: "saved" })).toBe(false);
+  });
+
+  it.each(["group", "channel"] as const)("requires confirmed membership for %s notifications", (chatKind) => {
+    expect(shouldNotifyMessage({ ...incomingMessage, chatKind, isMember: false })).toBe(false);
+    expect(shouldNotifyMessage({ ...incomingMessage, chatKind })).toBe(false);
+    expect(shouldNotifyMessage({ ...incomingMessage, chatKind, isMember: true })).toBe(true);
+  });
+
+  it("suppresses unknown chats without requiring membership for private chats", () => {
+    expect(shouldNotifyMessage({ ...incomingMessage, chatKind: undefined })).toBe(false);
+    expect(shouldNotifyMessage({ ...incomingMessage, isMember: false })).toBe(true);
+  });
+
+  it("suppresses outgoing, globally disabled, explicitly muted, and visible active messages", () => {
+    expect(shouldNotifyMessage({ ...incomingMessage, outgoing: true })).toBe(false);
+    expect(shouldNotifyMessage({
+      ...incomingMessage,
+      notificationsEnabled: false,
+    })).toBe(false);
+    expect(shouldNotifyMessage({ ...incomingMessage, muted: true })).toBe(false);
+    expect(shouldNotifyMessage({
+      ...incomingMessage,
+      activeConversation: true,
+    })).toBe(false);
+  });
+
+  it("suppresses incomplete bot stream messages until the rich content is full", () => {
+    expect(isMessageStreaming({
+      isPending: true,
+      content: { kind: "text", text: "partial" },
+    })).toBe(true);
+    expect(isMessageStreaming({
+      content: { kind: "rich", blocks: [], text: "partial", isRtl: false, isFull: false },
+    })).toBe(true);
+    expect(isMessageStreaming({
+      content: { kind: "rich", blocks: [], text: "complete", isRtl: false, isFull: true },
+    })).toBe(false);
+    expect(shouldNotifyMessage({ ...incomingMessage, streaming: true })).toBe(false);
+  });
+
+  it("releases one notification after a live rich message finishes streaming", () => {
+    const tracker = new MessageNotificationStreamTracker();
+    const partial = {
+      id: "120",
+      chatId: "bot",
+      senderId: "bot-user",
+      outgoing: false,
+      sentAt: incomingMessage.sentAt,
+      delivery: "sent" as const,
+      content: {
+        kind: "rich" as const,
+        blocks: [],
+        text: "partial",
+        isRtl: false,
+        isFull: false,
+      },
+    };
+    expect(tracker.consume("account", partial, true)).toBe(false);
+    expect(tracker.consume("account", { ...partial, content: {
+      ...partial.content,
+      text: "incremental",
+    } }, false)).toBe(false);
+    const complete = { ...partial, content: {
+      ...partial.content,
+      text: "complete",
+      isFull: true,
+    } };
+    expect(tracker.consume("account", complete, false)).toBe(true);
+    expect(tracker.consume("account", complete, false)).toBe(false);
+  });
+
+  it("clears deferred state when completion is also marked live", () => {
+    const tracker = new MessageNotificationStreamTracker();
+    const partial = {
+      id: "120",
+      chatId: "bot",
+      senderId: "bot-user",
+      outgoing: false,
+      sentAt: incomingMessage.sentAt,
+      delivery: "sent" as const,
+      content: {
+        kind: "rich" as const,
+        blocks: [],
+        text: "partial",
+        isRtl: false,
+        isFull: false,
+      },
+    };
+    expect(tracker.consume("account", partial, true)).toBe(false);
+    const complete = { ...partial, content: { ...partial.content, isFull: true } };
+    expect(tracker.consume("account", complete, true)).toBe(true);
+    expect(tracker.consume("account", complete, false)).toBe(false);
+  });
+
+  it("ignores pending bot drafts and releases the distinct final live message", () => {
+    const tracker = new MessageNotificationStreamTracker();
+    const pending = {
+      id: "pending:bot:0:1",
+      chatId: "bot",
+      senderId: "bot-user",
+      outgoing: false,
+      sentAt: incomingMessage.sentAt,
+      delivery: "sent" as const,
+      isPending: true,
+      content: { kind: "text" as const, text: "partial" },
+    };
+    expect(tracker.consume("account", pending, true)).toBe(false);
+    tracker.remove("account", pending.chatId, [pending.id]);
+    expect(tracker.consume("account", {
+      ...pending,
+      id: "121",
+      isPending: false,
+      content: { kind: "text", text: "complete" },
+    }, true)).toBe(true);
+  });
+
+  it("still notifies for the selected conversation while the app is hidden", () => {
+    expect(shouldNotifyMessage({
+      ...incomingMessage,
+      activeConversation: true,
+      appVisible: false,
+    })).toBe(true);
+  });
+
+  it("matches only the displayed topic inside forum conversations", () => {
+    expect(isMessageInActiveConversation({
+      messageChatId: "forum",
+      messageTopicId: "topic-a",
+      activeChatId: "forum",
+      activeTopicId: "topic-a",
+      forum: true,
+    })).toBe(true);
+    expect(isMessageInActiveConversation({
+      messageChatId: "forum",
+      messageTopicId: "topic-b",
+      activeChatId: "forum",
+      activeTopicId: "topic-a",
+      forum: true,
+    })).toBe(false);
+    expect(isMessageInActiveConversation({
+      messageChatId: "forum",
+      messageTopicId: "topic-a",
+      activeChatId: "forum",
+      forum: true,
+    })).toBe(false);
+  });
+
+  it("matches a selected non-forum chat without a topic", () => {
+    expect(isMessageInActiveConversation({
+      messageChatId: "direct",
+      activeChatId: "direct",
+      forum: false,
+    })).toBe(true);
+    expect(isMessageInActiveConversation({
+      messageChatId: "other",
+      activeChatId: "direct",
+      forum: false,
+    })).toBe(false);
+  });
+
+  it("applies forum chat mute state only when the topic inherits it", () => {
+    expect(isMessageConversationMuted({
+      chatMuted: true,
+      topic: { muted: false, useDefaultMuteFor: true },
+    })).toBe(true);
+    expect(isMessageConversationMuted({
+      chatMuted: true,
+      topic: { muted: false, useDefaultMuteFor: false },
+    })).toBe(false);
+    expect(isMessageConversationMuted({
+      chatMuted: false,
+      topic: { muted: true, useDefaultMuteFor: false },
+    })).toBe(true);
+    expect(isMessageConversationMuted({ chatMuted: true })).toBe(true);
+  });
+
+  it("suppresses messages already covered by the Telegram read cursor", () => {
+    expect(shouldNotifyMessage({
+      ...incomingMessage,
+      messageId: "119",
+    })).toBe(false);
+    expect(shouldNotifyMessage({
+      ...incomingMessage,
+      messageId: "118",
+    })).toBe(false);
+  });
+
+  it("does not replay historical updates received during startup", () => {
+    expect(shouldNotifyMessage({
+      ...incomingMessage,
+      messageId: "121",
+      sentAt: "2026-08-19T02:00:00.000Z",
+    })).toBe(false);
+    expect(shouldNotifyMessage({
+      ...incomingMessage,
+      messageId: "121",
+      sentAt: "2026-08-19T02:29:59.000Z",
+    })).toBe(true);
+  });
+
+  it("redacts both the chat title and message when previews are disabled", () => {
+    expect(notificationPresentation({
+      showPreview: false,
+      chatTitle: "Private chat",
+      messageText: "secret body",
+    })).toEqual({ title: "Fardgram", body: "收到一条新消息" });
+  });
+
+  it("uses safe fallbacks for empty preview content", () => {
+    expect(notificationPresentation({
+      showPreview: true,
+      chatTitle: " ",
+      messageText: " ",
+    })).toEqual({ title: "Fardgram", body: "收到一条新消息" });
+  });
+
+  it("identifies forum topics and prefixes group messages with the sender", () => {
+    expect(notificationPresentation({
+      showPreview: true,
+      chatTitle: "产品讨论",
+      topicTitle: "构建与发布",
+      senderName: "林然",
+      messageText: "候选包已上传",
+    })).toEqual({
+      title: "产品讨论 · 构建与发布",
+      body: "林然：候选包已上传",
+    });
+  });
+});

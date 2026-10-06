@@ -1,0 +1,1018 @@
+import { mediaStreamOwner, type MediaStreamOwner } from "../media/mediaStream";
+import { activeNativeAccount, nativeAttachmentsAvailable, persistNativeBlob, MAX_ATTACHMENT_BATCH_BYTES } from "../store/nativeBlobs";
+import { inputTextEntityType } from "./tdlibTextEntities";
+import { translate } from "../i18n";
+import { inputMediaCopy } from "./mediaCopy";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { FileDownloadQueue } from "./fileDownloadQueue";
+import type {
+  PreparedPastedAttachment,
+  PreparedPastedFile,
+} from "./tdRequestBroker";
+import {
+  asTdObject,
+  asTdObjects,
+  fileDetails,
+  mapTdMessageProperties,
+  mapTdMessageReactionSenders,
+  serializeTdObject,
+  tdId,
+  tdStickerSetId,
+  tdLocalFilePath,
+  tdNumber,
+  tdStickerMimeType,
+  type TdObject,
+} from "./tdlibMapper";
+import {
+  formattedTextObject,
+  forumTopicObject,
+  inputMessageText,
+  messageSendOptions,
+  numericId,
+} from "./tdlibRequests";
+import { hasChatDraftContent } from "./chatDraft";
+import { classifySendError } from "./sendErrors";
+import {
+  groupOutgoingAttachments,
+  inspectOutgoingAttachment,
+  prepareHighQualityPhoto,
+} from "../media/outgoingAttachments";
+import type {
+  DeleteMessageInput,
+  EditMessageInput,
+  EmojiPickerAsset,
+  EmojiPickerCatalog,
+  ForwardMessagesInput,
+  ForwardMessagesResult,
+  GetMessageReactionSendersInput,
+  Message,
+  MessageFileState,
+  MessagePermissions,
+  MessageReplyQuote,
+  MessageTextEntity,
+  PinMessageInput,
+  SendEmojiAssetInput,
+  SendFileInput,
+  SendFilesInput,
+  SendMessageInput,
+  SendMediaCopyInput,
+  SetChatDraftInput,
+  SetChatMessageAutoDeleteTimeInput,
+  SetMessageReactionInput,
+  SetPollAnswerInput,
+  StickerSet,
+  StickerSetSummary,
+  StreamFileInput,
+} from "./types";
+
+const MAX_PINNED_MESSAGE_PAGES = 100;
+
+const inputTextQuoteEntityType = (entity: MessageTextEntity) =>
+  ["bold", "italic", "underline", "strikethrough", "spoiler", "customEmoji", "dateTime"].includes(entity.kind)
+    ? inputTextEntityType(entity) : undefined;
+
+const inputTextQuoteObject = (replyQuote?: MessageReplyQuote): TdObject | null => {
+  if (!replyQuote || replyQuote.text.length === 0 ||
+    !Number.isSafeInteger(replyQuote.position) || replyQuote.position < 0) return null;
+  const entities = (replyQuote.entities ?? []).flatMap((entity) => {
+    const type = inputTextQuoteEntityType(entity);
+    return type && entity.offset >= 0 && entity.length > 0 &&
+      entity.offset + entity.length <= replyQuote.text.length
+      ? [{ offset: entity.offset, length: entity.length, type }]
+      : [];
+  });
+  return {
+    "@type": "inputTextQuote",
+    text: { "@type": "formattedText", text: replyQuote.text, entities },
+    position: replyQuote.position,
+  };
+};
+
+const inputMessageReplyTarget = (
+  replyToMessageId?: string,
+  replyQuote?: MessageReplyQuote,
+) => replyToMessageId
+  ? {
+      "@type": "inputMessageReplyToMessage",
+      message_id: numericId(replyToMessageId),
+      quote: inputTextQuoteObject(replyQuote),
+      checklist_task_id: 0,
+      poll_option_id: "",
+    }
+  : null;
+
+const emojiPreviewDataUrl = (value: unknown) => {
+  const minithumbnail = asTdObject(value);
+  return typeof minithumbnail?.data === "string" && minithumbnail.data
+    ? `data:image/jpeg;base64,${minithumbnail.data}`
+    : undefined;
+};
+
+const stickerFileName = (mimeType?: string) => {
+  if (mimeType === "video/webm") return "sticker.webm";
+  if (mimeType === "application/x-tgsticker") return "sticker.tgs";
+  return "sticker.webp";
+};
+
+const mapEmojiSticker = (
+  value: unknown,
+  fallbackStickerSetId?: string,
+): EmojiPickerAsset | undefined => {
+  const sticker = asTdObject(value);
+  const file = asTdObject(sticker?.sticker);
+  const fileId = tdNumber(file?.id);
+  if (!sticker || fileId === undefined) return undefined;
+  const thumbnail = asTdObject(sticker.thumbnail);
+  const thumbnailFile = asTdObject(thumbnail?.file);
+  const mimeType = tdStickerMimeType(sticker.format);
+  return {
+    id: `sticker:${tdId(sticker.id) || fileId}`,
+    kind: "sticker",
+    fileId,
+    stickerSetId: tdStickerSetId(sticker.set_id) ?? fallbackStickerSetId,
+    previewFileId: tdNumber(thumbnailFile?.id),
+    emoji: typeof sticker.emoji === "string" ? sticker.emoji : undefined,
+    fileName: stickerFileName(mimeType),
+    mimeType,
+    previewMimeType: asTdObject(thumbnail?.format)?.["@type"] === "thumbnailFormatJpeg" ? "image/jpeg" : "image/webp",
+    localPath: tdLocalFilePath(file),
+    previewPath: tdLocalFilePath(thumbnailFile),
+    previewDataUrl: emojiPreviewDataUrl(sticker.minithumbnail),
+    width: tdNumber(sticker.width),
+    height: tdNumber(sticker.height),
+  };
+};
+
+const mapEmojiAnimation = (value: unknown): EmojiPickerAsset | undefined => {
+  const animation = asTdObject(value);
+  const file = asTdObject(animation?.animation);
+  const fileId = tdNumber(file?.id);
+  if (!animation || fileId === undefined) return undefined;
+  const thumbnail = asTdObject(animation.thumbnail);
+  const thumbnailFile = asTdObject(thumbnail?.file);
+  return {
+    id: `animation:${fileId}`,
+    kind: "animation",
+    fileId,
+    previewFileId: tdNumber(thumbnailFile?.id),
+    fileName: typeof animation.file_name === "string" && animation.file_name
+      ? animation.file_name
+      : "animation.mp4",
+    mimeType: typeof animation.mime_type === "string" ? animation.mime_type : undefined,
+    previewMimeType: "image/jpeg",
+    localPath: tdLocalFilePath(file),
+    previewPath: tdLocalFilePath(thumbnailFile),
+    previewDataUrl: emojiPreviewDataUrl(animation.minithumbnail),
+    width: tdNumber(animation.width),
+    height: tdNumber(animation.height),
+    duration: tdNumber(animation.duration),
+  };
+};
+
+const mapStickerSetSummary = (value: unknown): StickerSetSummary | undefined => {
+  const stickerSet = asTdObject(value);
+  const id = tdId(stickerSet?.id);
+  if (!stickerSet || !id) return undefined;
+  return {
+    id,
+    title: typeof stickerSet.title === "string" ? stickerSet.title : translate("贴纸包"),
+    name: typeof stickerSet.name === "string" ? stickerSet.name : "",
+    size: tdNumber(stickerSet.size) ?? asTdObjects(stickerSet.stickers).length,
+    isInstalled: stickerSet.is_installed === true,
+    isArchived: stickerSet.is_archived === true,
+    covers: asTdObjects(stickerSet.covers ?? stickerSet.stickers)
+      .map((sticker) => mapEmojiSticker(sticker, id))
+      .filter((asset): asset is EmojiPickerAsset => Boolean(asset)),
+  };
+};
+
+export const mapEmojiStickerSet = (value: unknown): StickerSet | undefined => {
+  const raw = asTdObject(value);
+  const summary = mapStickerSetSummary(raw);
+  if (!summary || !raw) return undefined;
+  return {
+    ...summary,
+    stickers: asTdObjects(raw.stickers)
+      .map((sticker) => mapEmojiSticker(sticker, summary.id))
+      .filter((asset): asset is EmojiPickerAsset => Boolean(asset)),
+  };
+};
+
+export interface TauriMessageMediaServiceContext {
+  sessionGeneration: () => number;
+  prepareMentions: (chatId: string, text: string, entities?: MessageTextEntity[]) => Promise<void>;
+  recoverFile: (fileId: number) => Promise<unknown>;
+  request: (request: TdObject) => Promise<TdObject>;
+  rawMessages: Map<string, Map<string, TdObject>>;
+  emitMessage: (raw?: TdObject, animateEntrance?: boolean) => void;
+  emitMessages: (rawMessages: TdObject[], notify?: boolean) => Message[];
+  mapMessage: (raw: TdObject) => Message | undefined;
+  ensureReplyContent: (raw: TdObject) => void;
+  patchMessage: (chatId: string, messageId: string, patch: TdObject) => void;
+  refreshChat: (chatId: string) => Promise<TdObject>;
+  fileDownloads: FileDownloadQueue;
+  pendingDownloads: Map<number, PendingDownload>;
+  updateFile: (file?: TdObject) => void;
+  requestPreparedFile: (chatId: string, topicId?: string) => Promise<boolean>;
+  requestPreparedPastedFiles: (
+    chatId: string,
+    files: PreparedPastedAttachment[],
+    caption?: string,
+    captionEntities?: MessageTextEntity[],
+    topicId?: string,
+    replyToMessageId?: string,
+    replyQuote?: { text: string; position: number },
+    disableNotification?: boolean,
+  ) => Promise<boolean>;
+}
+
+export interface PendingDownload {
+  fileName: string;
+  promise: Promise<string>;
+  resolve: (path: string) => void;
+  reject: (error: Error) => void;
+}
+
+export class TauriMessageMediaService {
+  private readonly activeStreams = new Map<number, MediaStreamOwner & { generation: number }>();
+  private readonly pendingDrafts = new Map<string, symbol>();
+
+  constructor(private readonly context: TauriMessageMediaServiceContext) {}
+
+  async getMessageContext(chatId: string, messageId: string, limit = 31) {
+    const boundedLimit = Math.max(1, Math.min(limit, 100));
+    const newerCount = Math.min(49, Math.floor((boundedLimit - 1) / 2));
+    const requestContext = (onlyLocal: boolean) => this.context.request({
+      "@type": "getChatHistory",
+      chat_id: numericId(chatId),
+      from_message_id: numericId(messageId),
+      offset: -newerCount,
+      limit: boundedLimit,
+      only_local: onlyLocal,
+    });
+    // TDLib may already have the target in its local database even when the
+    // frontend Store has not hydrated this chat.  Probe local state only when
+    // this transport has observed messages for the chat; a genuinely cold chat
+    // goes straight to the remote request and pays no extra round trip.
+    const knownLocally = (this.context.rawMessages.get(chatId)?.size ?? 0) > 0;
+    const localResult = knownLocally ? await requestContext(true) : undefined;
+    const localMessages = localResult ? asTdObjects(localResult.messages) : [];
+    const result = localMessages.some((raw) => tdId(raw.id) === messageId)
+      ? localResult!
+      : await requestContext(false);
+    const rawMessages = asTdObjects(result.messages);
+    // The caller commits this navigation window after validating its request.
+    // Publishing here would mutate the visible list before navigation owns it.
+    return this.context.emitMessages(rawMessages, false);
+  }
+
+  async getMessageThreadHistory(chatId: string, messageId: string, limit = 100, fromMessageId?: string) {
+    const boundedLimit = Math.max(1, Math.min(limit, 100));
+    const result = await this.context.request({
+      "@type": "getMessageThreadHistory",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
+      from_message_id: fromMessageId ? numericId(fromMessageId) : 0,
+      offset: 0,
+      limit: boundedLimit,
+    });
+    const rawMessages = asTdObjects(result.messages);
+    const nextFromMessageId = tdId(rawMessages.at(-1)?.id);
+    // A short page is valid; offset=0 includes the cursor itself on later pages.
+    // The store owns publication after checking the current account.
+    const messages = this.context.emitMessages(rawMessages, false);
+    return { messages, nextFromMessageId, hasMore: Boolean(nextFromMessageId && nextFromMessageId !== fromMessageId) };
+  }
+
+  async getMessageThread(chatId: string, messageId: string) {
+    const result = await this.context.request({
+      "@type": "getMessageThread",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
+    });
+    const rawMessages = asTdObjects(result.messages);
+    const threadChatId = tdId(result.chat_id) ?? chatId;
+    const messages = this.context.emitMessages(rawMessages, false);
+    const threadMessageId = tdId(result.message_thread_id) ?? messageId;
+    return {
+      chatId: threadChatId,
+      messageId: threadMessageId,
+      messages,
+    };
+  }
+
+  async getMessage(chatId: string, messageId: string) {
+    const generation = this.context.sessionGeneration();
+    const raw = await this.context.request({
+      "@type": "getMessage",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
+    });
+    if (generation !== this.context.sessionGeneration()) return undefined;
+    const message = this.context.mapMessage(raw);
+    if (!message || message.chatId !== chatId || message.id !== messageId) return undefined;
+    return this.context.emitMessages([raw], false)[0];
+  }
+
+  async getRawMessage(chatId: string, messageId: string) {
+    let raw = this.context.rawMessages.get(chatId)?.get(messageId);
+    if (!raw) {
+      const requested = await this.context.request({
+        "@type": "getMessage",
+        chat_id: numericId(chatId),
+        message_id: numericId(messageId),
+      });
+      if (tdId(requested.chat_id) !== chatId || tdId(requested.id) !== messageId) {
+        return undefined;
+      }
+      if (!this.context.emitMessages([requested], false).length) return undefined;
+      raw = this.context.rawMessages.get(chatId)?.get(messageId) ?? requested;
+    }
+    if (!this.context.mapMessage(raw)) return undefined;
+    return serializeTdObject(raw);
+  }
+
+  async getMessageProperties(chatId: string, messageId: string): Promise<MessagePermissions> {
+    const properties = await this.context.request({
+      "@type": "getMessageProperties",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
+    });
+    return mapTdMessageProperties(properties);
+  }
+
+  async setMessageReaction(input: SetMessageReactionInput) {
+    const request = {
+      "@type": input.chosen ? "addMessageReaction" : "removeMessageReaction",
+      chat_id: numericId(input.chatId),
+      message_id: numericId(input.messageId),
+      reaction_type: { "@type": "reactionTypeEmoji", emoji: input.emoji },
+    } as TdObject;
+    if (input.chosen) {
+      request.is_big = false;
+      request.update_recent_reactions = true;
+    }
+    await this.context.request(request);
+  }
+
+  async getMessageReactionSenders(input: GetMessageReactionSendersInput) {
+    if (input.type.kind === "paid") {
+      throw new Error(translate("付费回应不提供成员列表"));
+    }
+    const limit = Math.max(1, Math.min(input.limit ?? 100, 100));
+    const reactionType = input.type.kind === "emoji"
+      ? { "@type": "reactionTypeEmoji", emoji: input.type.emoji }
+      : { "@type": "reactionTypeCustomEmoji", custom_emoji_id: numericId(input.type.customEmojiId) };
+    const result = await this.context.request({
+      "@type": "getMessageAddedReactions",
+      chat_id: numericId(input.chatId),
+      message_id: numericId(input.messageId),
+      reaction_type: reactionType,
+      offset: input.offset ?? "",
+      limit,
+    });
+    return mapTdMessageReactionSenders(result);
+  }
+
+  async setPollAnswer(input: SetPollAnswerInput) {
+    const optionPositions = [...new Set(input.optionPositions)].sort((left, right) => left - right);
+    if (optionPositions.length > 100 || optionPositions.some(
+      (position) => !Number.isSafeInteger(position) || position < 0 || position > 99,
+    )) throw new Error(translate("投票选项无效"));
+    await this.context.request({
+      "@type": "setPollAnswer",
+      chat_id: numericId(input.chatId),
+      message_id: numericId(input.messageId),
+      option_ids: optionPositions,
+    });
+    const refreshed = await this.context.request({
+      "@type": "getMessage",
+      chat_id: numericId(input.chatId),
+      message_id: numericId(input.messageId),
+    });
+    if (tdId(refreshed.chat_id) === input.chatId && tdId(refreshed.id) === input.messageId) {
+      this.context.emitMessage(refreshed);
+    }
+  }
+
+  async getPinnedMessages(chatId: string) {
+    const known = [...(this.context.rawMessages.get(chatId)?.values() ?? [])]
+      .filter((raw) => raw.is_pinned === true)
+      .map((raw) => this.context.mapMessage(raw))
+      .filter((message): message is Message => Boolean(message));
+    const pinnedById = new Map(known.map((message) => [message.id, message]));
+    try {
+      let fromMessageId = 0;
+      const seenCursors = new Set<number>();
+      for (let page = 0; page < MAX_PINNED_MESSAGE_PAGES; page += 1) {
+        const result = await this.context.request({
+          "@type": "searchChatMessages",
+          chat_id: numericId(chatId),
+          topic_id: null,
+          query: "",
+          sender_id: null,
+          from_message_id: fromMessageId,
+          offset: 0,
+          limit: 100,
+          filter: { "@type": "searchMessagesFilterPinned" },
+        });
+        for (const raw of asTdObjects(result.messages)) {
+          const pinnedRaw = { ...raw, is_pinned: true };
+          const message = this.context.mapMessage(pinnedRaw);
+          if (!message || message.chatId !== chatId) continue;
+          pinnedById.set(message.id, message);
+        }
+        const nextFromMessageId = tdNumber(result.next_from_message_id) ?? 0;
+        if (nextFromMessageId === 0 || seenCursors.has(nextFromMessageId)) break;
+        seenCursors.add(nextFromMessageId);
+        fromMessageId = nextFromMessageId;
+      }
+    } catch {
+      // Fall back to the latest pinned message on older TDLib deployments.
+    }
+    if (pinnedById.size === 0) try {
+      const raw = await this.context.request({
+        "@type": "getChatPinnedMessage",
+        chat_id: numericId(chatId),
+      });
+      const pinned = this.context.mapMessage(raw);
+      if (pinned && pinned.chatId === chatId) {
+        pinnedById.set(pinned.id, { ...pinned, isPinned: true });
+      }
+    } catch {
+      // Chats without a pinned message return an ordinary TDLib error.
+    }
+    return [...pinnedById.values()]
+      .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt));
+  }
+
+  async pinMessage(input: PinMessageInput) {
+    await this.context.request({
+      "@type": "pinChatMessage",
+      chat_id: numericId(input.chatId),
+      message_id: numericId(input.messageId),
+      disable_notification: input.disableNotification,
+      only_for_self: input.onlyForSelf,
+    });
+    this.context.patchMessage(input.chatId, input.messageId, { is_pinned: true });
+  }
+
+  async unpinMessage(chatId: string, messageId: string) {
+    await this.context.request({
+      "@type": "unpinChatMessage",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
+    });
+    this.context.patchMessage(chatId, messageId, { is_pinned: false });
+  }
+
+  async setChatMessageAutoDeleteTime(input: SetChatMessageAutoDeleteTimeInput) {
+    if (!Number.isSafeInteger(input.messageAutoDeleteTime) ||
+      input.messageAutoDeleteTime < 0 || input.messageAutoDeleteTime > 31_536_000 ||
+      (input.messageAutoDeleteTime !== 0 && input.messageAutoDeleteTime % 86_400 !== 0)) {
+      throw new Error(translate("自动删除时间无效"));
+    }
+    await this.context.request({
+      "@type": "setChatMessageAutoDeleteTime",
+      chat_id: numericId(input.chatId),
+      message_auto_delete_time: input.messageAutoDeleteTime,
+    });
+    await this.context.refreshChat(input.chatId);
+  }
+
+  async getEmojiPickerCatalog(): Promise<EmojiPickerCatalog> {
+    const stickerType = { "@type": "stickerTypeRegular" };
+    const [recent, installed, saved] = await Promise.all([
+      this.context.request({ "@type": "getRecentStickers", is_attached: false }),
+      this.context.request({ "@type": "getInstalledStickerSets", sticker_type: stickerType }),
+      this.context.request({ "@type": "getSavedAnimations" }),
+    ]);
+    return {
+      recentStickers: asTdObjects(recent.stickers)
+        .map((sticker) => mapEmojiSticker(sticker))
+        .filter((asset): asset is EmojiPickerAsset => Boolean(asset)),
+      stickerSets: asTdObjects(installed.sets)
+        .map(mapStickerSetSummary)
+        .filter((stickerSet): stickerSet is StickerSetSummary => Boolean(stickerSet)),
+      savedAnimations: asTdObjects(saved.animations)
+        .map(mapEmojiAnimation)
+        .filter((asset): asset is EmojiPickerAsset => Boolean(asset)),
+    };
+  }
+
+  async getStickerSet(stickerSetId: string): Promise<StickerSet> {
+    if (!/^[1-9]\d*$/.test(stickerSetId)) throw new Error(translate("无效的贴纸包标识符"));
+    const response = await this.context.request({ "@type": "getStickerSet", set_id: stickerSetId });
+    const stickerSet = mapEmojiStickerSet(response);
+    if (!stickerSet) throw new Error(translate("找不到贴纸包"));
+    return stickerSet;
+  }
+
+  async addStickerSet(stickerSetId: string) {
+    return this.setStickerSetInstalled(stickerSetId, true);
+  }
+
+  async removeStickerSet(stickerSetId: string) {
+    return this.setStickerSetInstalled(stickerSetId, false);
+  }
+
+  private async setStickerSetInstalled(stickerSetId: string, installed: boolean) {
+    if (!/^[1-9]\d*$/.test(stickerSetId)) throw new Error(translate("无效的贴纸包标识符"));
+    await this.context.request({
+      "@type": "changeStickerSet",
+      set_id: stickerSetId,
+      is_installed: installed,
+      is_archived: false,
+    });
+  }
+
+  async searchStickers(query: string, chatId: string): Promise<EmojiPickerAsset[]> {
+    const response = await this.context.request({
+      "@type": "getStickers",
+      sticker_type: { "@type": "stickerTypeRegular" },
+      query,
+      limit: 100,
+      chat_id: numericId(chatId),
+    });
+    return asTdObjects(response.stickers)
+      .map((sticker) => mapEmojiSticker(sticker))
+      .filter((asset): asset is EmojiPickerAsset => Boolean(asset));
+  }
+
+  async loadEmojiAsset(asset: EmojiPickerAsset) {
+    if (asset.localPath) return asset.localPath;
+    await this.context.fileDownloads.cache(asset.fileId, 28);
+    const file = await this.context.request({ "@type": "getFile", file_id: asset.fileId });
+    return tdLocalFilePath(file);
+  }
+
+  async sendSticker(input: SendEmojiAssetInput) {
+    const response = await this.context.request({
+      "@type": "sendMessage",
+      chat_id: numericId(input.chatId),
+      topic_id: forumTopicObject(input.topicId),
+      reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
+      options: messageSendOptions(input.disableNotification),
+      reply_markup: null,
+      input_message_content: {
+        "@type": "inputMessageSticker",
+        sticker: {
+          "@type": "inputSticker",
+          sticker: { "@type": "inputFileId", id: input.asset.fileId },
+          thumbnail: null,
+          width: input.asset.width ?? 0,
+          height: input.asset.height ?? 0,
+        },
+        emoji: input.asset.emoji ?? "",
+      },
+    });
+    if (response["@type"] === "message") this.context.emitMessage(response, true);
+  }
+
+  async sendAnimation(input: SendEmojiAssetInput) {
+    const response = await this.context.request({
+      "@type": "sendMessage",
+      chat_id: numericId(input.chatId),
+      topic_id: forumTopicObject(input.topicId),
+      reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
+      options: messageSendOptions(input.disableNotification),
+      reply_markup: null,
+      input_message_content: {
+        "@type": "inputMessageAnimation",
+        animation: {
+          "@type": "inputAnimation",
+          animation: { "@type": "inputFileId", id: input.asset.fileId },
+          thumbnail: null,
+          added_sticker_file_ids: [],
+          duration: input.asset.duration ?? 0,
+          width: input.asset.width ?? 0,
+          height: input.asset.height ?? 0,
+        },
+        caption: formattedTextObject(""),
+        show_caption_above_media: false,
+        has_spoiler: false,
+      },
+    });
+    if (response["@type"] === "message") this.context.emitMessage(response, true);
+  }
+
+  async sendMessage(input: SendMessageInput) {
+    const generation = this.context.sessionGeneration();
+    await this.context.prepareMentions(input.chatId, input.text, input.entities).catch(error => {
+      throw classifySendError(error, true);
+    });
+    const text = await this.formattedTextInput(input.text, input.entities);
+    if (generation !== this.context.sessionGeneration()) throw new Error(translate("账号已切换，发送已取消"));
+    const response = await this.context.request({
+      "@type": "sendMessage",
+      chat_id: numericId(input.chatId),
+      topic_id: forumTopicObject(input.topicId),
+      reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
+      options: messageSendOptions(input.disableNotification),
+      reply_markup: null,
+      input_message_content: inputMessageText(text, input.clearDraft !== false),
+    }).catch(error => { throw classifySendError(error); });
+    if (generation === this.context.sessionGeneration() && response["@type"] === "message") this.context.emitMessage(response, true);
+  }
+
+  async getStickerOutline(fileId: number): Promise<string> {
+    const response = await this.context.request({
+      "@type": "getStickerOutlineSvgPath",
+      sticker_file_id: fileId,
+      for_animated_emoji: false,
+      for_clicked_animated_emoji_message: false,
+    });
+    return typeof response.text === "string" ? response.text : "";
+  }
+
+  async editMessage(input: EditMessageInput) {
+    const generation = this.context.sessionGeneration();
+    await this.context.prepareMentions(input.chatId, input.text, input.entities);
+    const text = await this.formattedTextInput(input.text, input.entities);
+    if (generation !== this.context.sessionGeneration()) throw new Error(translate("账号已切换，发送已取消"));
+    const response = await this.context.request(input.contentType === "caption" ? {
+      "@type": "editMessageCaption",
+      chat_id: numericId(input.chatId),
+      message_id: numericId(input.messageId),
+      reply_markup: null,
+      caption: text,
+      show_caption_above_media: input.showCaptionAboveMedia === true,
+    } : {
+      "@type": "editMessageText",
+      chat_id: numericId(input.chatId),
+      message_id: numericId(input.messageId),
+      reply_markup: null,
+      input_message_content: inputMessageText(text, false),
+    });
+    if (generation === this.context.sessionGeneration() && response["@type"] === "message") this.context.emitMessage(response);
+  }
+
+  async deleteMessage(input: DeleteMessageInput) {
+    await this.context.request({
+      "@type": "deleteMessages",
+      chat_id: numericId(input.chatId),
+      message_ids: [numericId(input.messageId)],
+      revoke: input.revoke,
+    });
+  }
+
+  async forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult> {
+    const generation = this.context.sessionGeneration();
+    const messageIds = [...new Set(input.messageIds.map(numericId))]
+      .sort((left, right) => left - right);
+    if (messageIds.length === 0) throw new Error(translate("请选择要转发的消息"));
+    if (messageIds.length > 100) throw new Error(translate("单次最多转发 100 条消息"));
+    const response = await this.context.request({
+      "@type": "forwardMessages",
+      chat_id: numericId(input.toChatId),
+      topic_id: forumTopicObject(input.toTopicId),
+      from_chat_id: numericId(input.fromChatId),
+      message_ids: messageIds,
+      options: null,
+      send_copy: false,
+      remove_caption: false,
+    });
+    const forwarded = Array.isArray(response.messages) ? response.messages : [];
+    if (generation !== this.context.sessionGeneration()) throw new Error(translate("账号已切换，发送已取消"));
+    const failedMessageIds: string[] = [];
+    let forwardedCount = 0;
+    for (const [index, messageId] of messageIds.entries()) {
+      const message = asTdObject(forwarded[index]);
+      if (message?.["@type"] === "message") {
+        this.context.emitMessage(message);
+        forwardedCount += 1;
+      } else {
+        failedMessageIds.push(String(messageId));
+      }
+    }
+    return { forwardedCount, failedMessageIds };
+  }
+
+  async sendMediaCopy(input: SendMediaCopyInput) {
+    const generation = this.context.sessionGeneration();
+    await this.context.prepareMentions(input.chatId, input.content.caption ?? "", input.content.captionEntities);
+    if (generation !== this.context.sessionGeneration()) throw new Error(translate("账号已切换，发送已取消"));
+    const response = await this.context.request({
+      "@type": "sendMessage",
+      chat_id: numericId(input.chatId),
+      topic_id: forumTopicObject(input.topicId),
+      reply_to: null,
+      options: null,
+      reply_markup: null,
+      input_message_content: inputMediaCopy(input.content),
+    });
+    if (generation === this.context.sessionGeneration() && response["@type"] === "message") {
+      this.context.emitMessage(response, true);
+    }
+  }
+
+  async setChatDraft(input: SetChatDraftInput) {
+    const generation = this.context.sessionGeneration();
+    const key = `${input.chatId}:${input.topicId ?? ""}`;
+    const revision = Symbol();
+    this.pendingDrafts.set(key, revision);
+    try {
+      await this.context.prepareMentions(input.chatId, input.text, input.entities);
+      if (generation !== this.context.sessionGeneration()) throw new Error(translate("账号已切换，发送已取消"));
+      // A cleared or edited draft must win over an older reference lookup.
+      if (this.pendingDrafts.get(key) !== revision) return;
+      await this.sendChatDraft(input);
+    } catch (error) {
+      if (this.pendingDrafts.get(key) === revision) throw error;
+    } finally {
+      if (this.pendingDrafts.get(key) === revision) this.pendingDrafts.delete(key);
+    }
+  }
+
+  private async sendChatDraft(input: SetChatDraftInput) {
+    const hasDraft = hasChatDraftContent(input);
+    await this.context.request({
+      "@type": "setChatDraftMessage",
+      chat_id: numericId(input.chatId),
+      topic_id: forumTopicObject(input.topicId),
+      draft_message: hasDraft
+        ? {
+            "@type": "draftMessage",
+            reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
+            date: Math.floor(Date.now() / 1000),
+            content: {
+              "@type": "draftMessageContentText",
+              text: formattedTextObject(input.text, input.entities),
+              link_preview_options: null,
+            },
+            effect_id: 0,
+            suggested_post_info: null,
+          }
+        : null,
+    });
+  }
+
+  async setChatTyping(chatId: string, typing: boolean, topicId?: string) {
+    await this.context.request({
+      "@type": "sendChatAction",
+      chat_id: numericId(chatId),
+      topic_id: forumTopicObject(topicId),
+      business_connection_id: "",
+      action: typing ? { "@type": "chatActionTyping" } : null,
+    });
+  }
+
+  async downloadFile(fileId: number, fileName: string, sourcePath?: string) {
+    if (sourcePath) return invoke<string>("telegram_save_downloaded_file", { sourcePath, fileName });
+    this.context.fileDownloads.allow(fileId);
+    const existing = this.context.pendingDownloads.get(fileId);
+    if (existing) return existing.promise;
+    let resolveDownload!: (path: string) => void;
+    let rejectDownload!: (error: Error) => void;
+    const promise = new Promise<string>((resolve, reject) => {
+      resolveDownload = resolve;
+      rejectDownload = reject;
+    });
+    this.context.pendingDownloads.set(fileId, {
+      fileName,
+      promise,
+      resolve: resolveDownload,
+      reject: rejectDownload,
+    });
+    const cachedDownload = this.context.fileDownloads.get(fileId);
+    if (cachedDownload) this.context.fileDownloads.promote(fileId);
+    const download = cachedDownload ?? this.context.fileDownloads.cache(fileId, 24);
+    void download.catch((error: unknown) => {
+      const pending = this.context.pendingDownloads.get(fileId);
+      if (!pending) return;
+      this.context.pendingDownloads.delete(fileId);
+      pending.reject(error instanceof Error ? error : new Error(String(error)));
+    });
+    return promise;
+  }
+
+  async cancelFileDownload(fileId: number) {
+    const pending = this.context.pendingDownloads.get(fileId);
+    if (pending) {
+      this.context.pendingDownloads.delete(fileId);
+      pending.reject(new Error(translate("文件下载已取消")));
+    }
+    this.context.fileDownloads.suppress(fileId);
+    await this.context.request({
+      "@type": "cancelDownloadFile",
+      file_id: fileId,
+      only_if_pending: false,
+    });
+  }
+
+  async openFile(sourcePath: string) {
+    await invoke("telegram_open_cached_file", { sourcePath });
+  }
+
+  async saveFileToDownloads(sourcePath: string, fileName: string) {
+    await invoke("telegram_save_downloaded_file", { sourcePath, fileName });
+  }
+
+  async saveFileAs(sourcePath: string, fileName: string) {
+    return invoke<boolean>("telegram_save_cached_file_as", { sourcePath, fileName });
+  }
+
+  async openDownloadDirectory() {
+    await invoke("telegram_open_download_directory");
+  }
+
+  cacheFile(fileId: number, priority = 16) {
+    return this.context.fileDownloads.cache(fileId, priority);
+  }
+
+  releaseFile(fileId: number) {
+    this.context.fileDownloads.release(fileId);
+  }
+
+  async resolveRemoteFile(remoteId: string): Promise<MessageFileState | undefined> {
+    const generation = this.context.sessionGeneration();
+    const raw = await this.context.request({ "@type": "getRemoteFile", remote_file_id: remoteId, file_type: null });
+    if (generation !== this.context.sessionGeneration() || raw["@type"] !== "file") return undefined;
+    const file = fileDetails(raw);
+    if (file.fileId === undefined || file.fileId <= 0) return undefined;
+    return { ...file, fileId: file.fileId };
+  }
+
+  async recoverFile(fileId: number, priority = 32) {
+    const generation = this.context.sessionGeneration();
+    this.context.fileDownloads.allow(fileId);
+    await this.context.recoverFile(fileId);
+    // A recovery response may arrive after account logout/switch. Never put a
+    // file owned by the previous TDLib session back into the new queue.
+    if (generation !== this.context.sessionGeneration()) {
+      throw new Error("TDLib session superseded");
+    }
+    await this.context.fileDownloads.cache(fileId, priority);
+  }
+
+  async streamFile({ fileId, size, mimeType }: StreamFileInput) {
+    // A preview stream owns the TDLib range request. Drop an opportunistic
+    // queued cache request for the same file so the two requests cannot move
+    // the file cursor or cancel each other.
+    const ownsFile = !this.context.pendingDownloads.has(fileId);
+    if (ownsFile) this.context.fileDownloads.suppress(fileId);
+    const generation = this.context.sessionGeneration();
+    let owner: MediaStreamOwner;
+    try {
+      owner = await invoke<MediaStreamOwner>("telegram_register_media_stream", {
+        fileId,
+        size,
+        mimeType: mimeType ?? "video/mp4",
+        preserveDownload: !ownsFile,
+      });
+    } catch (error) {
+      if (ownsFile && generation === this.context.sessionGeneration()) this.context.fileDownloads.allow(fileId);
+      throw error;
+    }
+    if (generation !== this.context.sessionGeneration()) {
+      await invoke("telegram_suspend_media_stream", { fileId, ...owner }).catch(() => undefined);
+      throw new Error("TDLib session superseded");
+    }
+    this.activeStreams.set(fileId, { ...owner, generation });
+    return `${convertFileSrc(String(fileId), "fardgram-media")}?session=${owner.session}&lease=${owner.lease}`;
+  }
+
+  async suspendFileStream(fileId: number, source?: string) {
+    const stored = this.activeStreams.get(fileId);
+    const owner = mediaStreamOwner(source) ?? stored;
+    if (stored && !source && stored.generation !== this.context.sessionGeneration()) {
+      this.activeStreams.delete(fileId);
+      return;
+    }
+    if (!stored || !owner || owner.lease === stored.lease) this.activeStreams.delete(fileId);
+    // Native arbitration releases the exact lease and keeps a full download alive.
+    await invoke("telegram_suspend_media_stream", { fileId, ...(owner ? { session: owner.session, lease: owner.lease } : {}) }).catch(() => undefined);
+    if (!owner && !this.context.pendingDownloads.has(fileId)) {
+      await this.context.request({ "@type": "cancelDownloadFile", file_id: fileId, only_if_pending: false });
+    }
+  }
+
+  async retryMessage(chatId: string, messageId: string) {
+    const response = await this.context.request({
+      "@type": "resendMessages",
+      chat_id: numericId(chatId),
+      message_ids: [numericId(messageId)],
+      quote: null,
+      paid_message_star_count: 0,
+    });
+    for (const message of asTdObjects(response.messages)) this.context.emitMessage(message);
+  }
+
+  async sendFile(input: SendFileInput) {
+    return input.file
+      ? this.sendFiles({
+          chatId: input.chatId,
+          topicId: input.topicId,
+          attachments: [await inspectOutgoingAttachment(input.file)],
+        })
+      : this.context.requestPreparedFile(input.chatId, input.topicId);
+  }
+
+  async sendFiles(input: SendFilesInput) {
+    if (input.attachments.length === 0) return false;
+    if (input.attachments.reduce((sum, attachment) => sum + attachment.file.size + (attachment.thumbnail?.size ?? 0), 0) > MAX_ATTACHMENT_BATCH_BYTES) {
+      throw new Error(translate("附件总大小超过离线发件箱单批次上限 512 MB"));
+    }
+    const generation = this.context.sessionGeneration();
+    await this.context.prepareMentions(input.chatId, input.caption ?? "", input.captionEntities).catch(error => {
+      throw classifySendError(error, true);
+    });
+    if (generation !== this.context.sessionGeneration()) throw new Error(translate("账号已切换，发送已取消"));
+    const groups = groupOutgoingAttachments(input.attachments);
+    let captionPending = input.caption;
+    let captionEntitiesPending = input.captionEntities;
+    for (const group of groups) {
+      const files = await Promise.all(group.map(this.preparePastedAttachment));
+      if (generation !== this.context.sessionGeneration()) throw new Error(translate("账号已切换，发送已取消"));
+      const sent = await this.context.requestPreparedPastedFiles(
+        input.chatId,
+        files,
+        captionPending,
+        captionEntitiesPending,
+        input.topicId,
+        input.replyToMessageId,
+        input.replyQuote
+          ? { text: input.replyQuote.text, position: input.replyQuote.position }
+          : undefined,
+        input.disableNotification,
+      ).catch(error => { throw classifySendError(error); });
+      if (!sent) return false;
+      await input.onGroupAccepted?.(group);
+      captionPending = undefined;
+      captionEntitiesPending = undefined;
+    }
+    return true;
+  }
+
+  async cancelFileUpload(chatId: string, messageId: string) {
+    await this.context.request({
+      "@type": "deleteMessages",
+      chat_id: numericId(chatId),
+      message_ids: [numericId(messageId)],
+      revoke: true,
+    });
+  }
+
+  private async formattedTextInput(text: string, entities?: MessageTextEntity[]) {
+    const fallback = formattedTextObject(text, entities);
+    const hasMarkdown = /(?:\*\*[^*]+\*\*|\*[^*\n]+\*|__[^_]+__|_[^_\n]+_|~~[^~]+~~|\|\|[^|]+\|\||`[^`]+`|^\s{0,3}(?:#{1,6}\s|>|[-+*]\s|\d+\.\s)|\[[^\]]+\]\([^)]+\)|\|[^\n]+\|)/m.test(text);
+    if (!hasMarkdown) return fallback;
+    try {
+      const parsed = await this.context.request({
+        "@type": "parseMarkdown",
+        text: fallback,
+      });
+      return parsed["@type"] === "formattedText" && typeof parsed.text === "string"
+        ? {
+            "@type": "formattedText",
+            text: parsed.text,
+            entities: Array.isArray(parsed.entities) ? parsed.entities : [],
+          }
+        : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private preparePastedFile = async (file: File): Promise<PreparedPastedFile> => {
+    if (nativeAttachmentsAvailable()) {
+      const blob = await persistNativeBlob(file, await activeNativeAccount());
+      return { name: file.name, mimeType: file.type || "application/octet-stream", blobToken: blob.token };
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const chunks: string[] = [];
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));
+    }
+    return {
+      name: file.name,
+      mimeType: file.type || "application/octet-stream",
+      dataBase64: btoa(chunks.join("")),
+    };
+  };
+
+  private preparePastedAttachment = async (
+    attachment: SendFilesInput["attachments"][number],
+  ): Promise<PreparedPastedAttachment> => {
+    const file = attachment.kind === "photo"
+      ? await prepareHighQualityPhoto(attachment.file)
+      : attachment.file;
+    return {
+      ...await this.preparePastedFile(file),
+      kind: attachment.kind,
+      width: attachment.width,
+      height: attachment.height,
+      duration: attachment.duration,
+      title: attachment.title,
+      performer: attachment.performer,
+      thumbnail: attachment.thumbnail
+        ? await this.preparePastedFile(attachment.thumbnail)
+        : undefined,
+      fallback: file === attachment.file
+        ? undefined
+        : await this.preparePastedFile(attachment.file),
+      hasSpoiler: attachment.hasSpoiler,
+      showCaptionAboveMedia: attachment.showCaptionAboveMedia,
+    };
+  };
+}

@@ -1,0 +1,5585 @@
+import { messageCanBeSaved, messageExpired } from "../telegram/messageLifecycle";
+import { isInDeletedHistory } from "../telegram/deletedHistory";
+import { chatJoinError, chatJoinKey } from "../telegram/chatJoin";
+import { canPostToChannel } from "../telegram/chatManagement";
+import { initializeAccountMetadata, flushAccountMetadata } from "./accountMetadata";
+import { removeAccountLocalBlocks } from "./localUserBlocks";
+import { removeAccountActivity } from "./conversationActivity";
+import { removeAccountDownloads } from "../utils/downloadManager";
+import { translate } from "../i18n";
+import { isCaptionContent } from "../telegram/messageContent";
+import { retainedMessageQuote, retainHydratedContent } from "../telegram/retainedMessages";
+import { senderNameForMessage } from "../components/conversationMessages";
+import { MessageFileIndex } from "./messageFileIndex";
+import { bindMessageFile, updateMessageFile } from "../telegram/messageFileState";
+import { MediaFileRestorer } from "./mediaFileRestorer";
+import { SyncRetryQueue } from "../telegram/syncRetryQueue";
+import { ConversationHistory } from "./conversationHistory";
+import { useStore } from "zustand";
+import { createStore } from "zustand/vanilla";
+import { isTauri } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
+import { createTelegramTransport } from "../telegram/createTransport";
+import type { TelegramTransport } from "../telegram/transport";
+import type {
+  CachedTelegramSnapshot,
+  Chat,
+  ChatFolder,
+  ChatManagement,
+  ChatManagementCapabilities,
+  ChatDraft,
+  ForwardMessagesResult,
+  Message,
+  MessagePermissions,
+  QueuedOutgoingMessage,
+  TelegramEvent,
+  TelegramAccountState,
+  User,
+} from "../telegram/types";
+import { connectionPresentation } from "../telegram/connectionState";
+import {
+  accountStatePatch,
+  currentAccountRegistration,
+  preserveUserAvatarMedia,
+  shouldDiscardUnregisteredAccount,
+} from "./telegramStore.accounts";
+import { cachedSnapshotFrom, migrateCachedSnapshot, migrateLocalUnsentState } from "./telegramStore.cache";
+import {
+  DRAFT_SYNC_DELAY_MS,
+  DraftSyncController,
+  draftForSync,
+  draftSignature,
+} from "./telegramStore.drafts";
+import {
+  messageMapFrom,
+  findIndexedMessage,
+  replaceMessage,
+  upsertMessages as mergeMessages,
+  withEmojiReaction,
+} from "./telegramStore.messages";
+import { messagesWithOutbox, outboxItemId } from "./telegramStore.outbox";
+import {
+  filterAndSortChats,
+  isChatPinnedInFolder,
+} from "./telegramStore.selectors";
+import { FOLDER_DIRECT_CHAT_LIMIT, isFolderChatEligible } from "../utils/folderChatSelection";
+import type {
+  MessageChangeEvent,
+  MessageChangeListener,
+  TelegramState,
+} from "./telegramStore.types";
+import {
+  getActiveConversationTraceId,
+  logPerformance,
+  isPerformanceMonitoringEnabled,
+  markConversationSwitch,
+} from "../utils/performanceMonitor";
+import { markMessageEntrance, transferMessageEntrance } from "../utils/messageEntrance";
+import { trimComposerFormattedText } from "../utils/composerMentions";
+import { protectedCachePaths } from "./cacheProtection";
+import { HISTORY_MESSAGE_LIMIT, retainedHistoryMessages, type HistoryRetentionViewport } from "./historyRetention";
+import { emptyGlobalSearch } from "./globalSearchState";
+import { emptyChatMessageSearch } from "./chatMessageSearchState";
+import { emptyProfileState } from "./profileState";
+import { createSearchController } from "./telegramStore.search";
+import { createProfileController } from "./telegramStore.profile";
+import { createOutboxController, outboxRetryState } from "./telegramStore.outboxController";
+import { RetryableSendError } from "../telegram/sendErrors";
+import { createForumController } from "./telegramStore.forum";
+import { createSessionController } from "./telegramStore.session";
+import { createEmojiPickerController } from "./telegramStore.emoji";
+import { SharedMediaIndex } from "./sharedMediaIndex";
+import {
+  attachmentOutbox,
+  describeOutgoingAttachments,
+} from "./attachmentOutbox";
+import { inspectOutgoingAttachment } from "../media/outgoingAttachments";
+import { recordConversationSentMessages } from "./conversationActivity";
+import { localUserBlocksStore } from "./localUserBlocks";
+import { messageHasUnreadLocalBlockedReaction, messageHasVisibleUnreadReaction } from "../utils/localBlockedReactions";
+import { preferencesStore } from "./preferencesStore";
+import { motionLifecycleTiming } from "../utils/motionTokens";
+import { recordConversationMessage, conversationTraceKind } from "../utils/conversationTrace";
+
+export type {
+  ChatFilter,
+  ChatListState,
+  HistoryState,
+  MessageChangeEvent,
+  MessageChangeListener,
+  RuntimePhase,
+  TelegramState,
+} from "./telegramStore.types";
+export { filterAndSortChats, selectVisibleChats } from "./telegramStore.selectors";
+
+const CACHE_WRITE_DELAY_MS = 10_000;
+const CACHE_WRITE_MAX_DELAY_MS = 60_000;
+const CACHE_WRITE_IDLE_TIMEOUT_MS = 1_500;
+
+const normalizedUsername = (user?: Pick<User, "username">) =>
+  user?.username?.trim().replace(/^@/, "").toLocaleLowerCase() || undefined;
+
+const usernameIndexForUsers = (users: Iterable<User>) => {
+  const index = new Map<string, string>();
+  for (const user of users) {
+    const username = normalizedUsername(user);
+    if (username) index.set(username, user.id);
+  }
+  return index;
+};
+
+type ChatManagementCapabilityKey = keyof Pick<ChatManagementCapabilities,
+  | "canOpenManagement"
+  | "canAddMembers"
+  | "canPromoteMembers"
+  | "canRestrictMembers"
+  | "canManagePermissions"
+  | "canManageSlowMode"
+  | "canTransferOwnership"
+  | "canManageInvites"
+  | "canManageAllInvites"
+  | "canViewEventLog"
+  | "canChangeInfo"
+  | "canManageTags"
+>;
+const FORUM_TOPICS_REFRESH_TTL_MS = 10_000;
+const FORUM_TOPICS_CHANGE_COALESCE_MS = 500;
+
+const errorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return fallback;
+};
+
+const topicKey = (chatId: string, topicId?: string) => topicId ? `${chatId}:topic:${topicId}` : chatId;
+
+const diagnosticChatHash = (chatId: string) => {
+  // FNV-1a keeps diagnostics correlatable without persisting a chat identifier.
+  let hash = 2_166_136_261;
+  for (let index = 0; index < chatId.length; index += 1) {
+    hash ^= chatId.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return hash >>> 0;
+};
+
+const unreadCountBucket = (count: number) =>
+  count <= 0 ? 0 : count < 10 ? 1 : count < 100 ? 2 : count < 1_000 ? 3 : 4;
+
+const canArchiveDeletedMessage = (message: Message | undefined) => Boolean(
+  message && !message.outgoing && !message.isLocallyDeleted && messageCanBeSaved(message),
+);
+
+const archiveMediaFileId = (message: Message) =>
+  !message.outgoing &&
+  message.content.kind === "media" &&
+  (message.content.mediaType === "photo" || message.content.mediaType === "sticker") &&
+  message.content.fileId !== undefined &&
+  message.content.canDownload !== false
+    ? message.content.fileId
+    : undefined;
+
+const migrateMessageChatId = (message: Message, fromChatId: string, toChatId: string): Message => {
+  const replyTo = message.replyTo?.kind === "message"
+    ? {
+        ...message.replyTo,
+        ...(message.replyTo.chatId === fromChatId ? { chatId: toChatId } : {}),
+        origin: message.replyTo.origin && (message.replyTo.origin.kind === "chat" || message.replyTo.origin.kind === "channel")
+          ? {
+              ...message.replyTo.origin,
+              ...(message.replyTo.origin.chatId === fromChatId ? { chatId: toChatId } : {}),
+            }
+          : message.replyTo.origin,
+      }
+    : message.replyTo?.kind === "story" && message.replyTo.chatId === fromChatId
+      ? { ...message.replyTo, chatId: toChatId }
+      : message.replyTo;
+  const forwardInfo = message.forwardInfo
+    ? {
+        ...message.forwardInfo,
+        origin: message.forwardInfo.origin && (message.forwardInfo.origin.kind === "chat" || message.forwardInfo.origin.kind === "channel")
+          ? {
+              ...message.forwardInfo.origin,
+              ...(message.forwardInfo.origin.chatId === fromChatId ? { chatId: toChatId } : {}),
+            }
+          : message.forwardInfo.origin,
+        source: message.forwardInfo.source
+          ? {
+              ...message.forwardInfo.source,
+              ...(message.forwardInfo.source.chatId === fromChatId ? { chatId: toChatId } : {}),
+            }
+          : message.forwardInfo.source,
+      }
+    : message.forwardInfo;
+  return {
+    ...message,
+    chatId: toChatId,
+    replyTo,
+    forwardInfo,
+  };
+};
+
+const migrateChatKey = (key: string, fromChatId: string, toChatId: string) =>
+  key === fromChatId
+    ? toChatId
+    : key.startsWith(`${fromChatId}:topic:`)
+      ? `${toChatId}${key.slice(fromChatId.length)}`
+      : key;
+
+const reloadCurrentApplication = () => {
+  if (typeof window === "undefined") return;
+  if (isTauri()) {
+    void emit("fardgram://reload-application").catch(() => window.location.reload());
+    return;
+  }
+  window.location.reload();
+};
+
+export const createTelegramStore = (
+  transport: TelegramTransport,
+  reloadApplication: () => void = reloadCurrentApplication,
+) =>
+  createStore<TelegramState>((set, get) => {
+    const sharedMediaIndex = new SharedMediaIndex();
+    let cacheTimer: ReturnType<typeof setTimeout> | undefined;
+    let cacheIdleCallback: number | undefined;
+    let cacheDirtySince: number | undefined;
+    let cacheWrite = Promise.resolve();
+    let accountTransition = false;
+    let accountGeneration = 0;
+    const chatJoinTargets = new Map<string, string>();
+    const pendingPinnedReorders = new Map<string, {
+      serverOrders: Map<string, string | undefined>;
+      optimisticOrders: Map<string, string>;
+    }>();
+    const withListOrder = (chat: Chat, listId: string, order: string | undefined): Chat => {
+      const listOrderByFolder = { ...chat.listOrderByFolder };
+      if (order === undefined) delete listOrderByFolder[listId];
+      else listOrderByFolder[listId] = order;
+      return { ...chat, listOrderByFolder };
+    };
+    const chatsWithServerOrders = (chats: Map<string, Chat>) => {
+      if (pendingPinnedReorders.size === 0) return chats;
+      const result = new Map(chats);
+      for (const [listId, reorder] of pendingPinnedReorders) {
+        for (const [chatId, order] of reorder.serverOrders) {
+          const chat = result.get(chatId);
+          if (chat) result.set(chatId, withListOrder(chat, listId, order));
+        }
+      }
+      return result;
+    };
+    let pendingFolderReorder: {
+      generation: number;
+      order: string[];
+      serverFolders?: ChatFolder[];
+    } | undefined;
+    let syncGeneration = 0;
+    let hasConnected = false;
+    const syncRetries = new SyncRetryQueue(() =>
+      get().authorization.kind === "ready" && get().connectionStatus === "online");
+    // Conversation work has a shorter lifetime than the authenticated account.
+    // Keep it separate so a fast chat switch can retire pending navigation work
+    // without tearing down the whole TDLib session.
+    let conversationGeneration = 0;
+    const advanceConversationGeneration = () => {
+      conversationGeneration += 1;
+      return conversationGeneration;
+    };
+    let registeredAccountKey: string | undefined;
+    let accountRegistration = Promise.resolve();
+    const readTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const readRequestChains = new Map<string, Promise<void>>();
+    const forumTopicsRefreshedAt = new Map<string, number>();
+    const groupManagementLoads = new Map<string, Promise<ChatManagement | undefined>>();
+    const chatAdministratorLabelLoads = new Map<string, Promise<Record<string, string>>>();
+    let chatAdministratorLabelsGeneration = 0;
+    const typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const removalTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const removalDeadlines = new WeakMap<Message, number>();
+    const localAttachmentDraftGenerations = new Map<string, number>();
+    const liveAttentionCandidates = new Set<string>();
+    // Visibility observers can fire repeatedly before TDLib publishes the mention-read update.
+    const attentionReadRequests = new Set<string>();
+    const acknowledgedAttentionMessages = new Set<string>();
+    const seenReactionMessageIds = new Map<string, Set<string>>();
+    const reactionAttentionLoads = new Map<string, Promise<void>>();
+    const mentionAttentionLoads = new Map<string, Promise<void>>();
+    const reactionReadRequests = new Set<string>();
+    const blockedReactionReadRequests = new Set<string>();
+    let attentionReadGeneration = 0;
+    const messageChangeListeners = new Set<MessageChangeListener>();
+    const retainedMessages = new MessageFileIndex(message => message.isLocallyDeleted === true);
+    const messageFiles = new MessageFileIndex();
+    // A late history/context/cache response must not undo a committed removal.
+    // Keep IDs until the account is cleared; raw TDLib caches are evictable.
+    const removedMessageIds = new Set<string>();
+    const deletedHistory = new Map<string, string>();
+    const historyDeletionVersions = new Map<string, number>();
+    const acceptsMessage = (message: Message) => !removedMessageIds.has(`${message.chatId}:${message.id}`) &&
+      !isInDeletedHistory(message.id, deletedHistory.get(message.chatId));
+    const upsertMessages = (current: Message[], incoming: Message[]) =>
+      mergeMessages(current, incoming.filter(acceptsMessage));
+    const upsertMessage = (current: Message[], incoming: Message) => upsertMessages(current, [incoming]);
+    const publishMessageChange = (event: MessageChangeEvent) => {
+      if (event.type === "evict") {
+        messageFiles.remove(event.chatId, event.messageIds);
+        for (const listener of messageChangeListeners) listener(event);
+        return;
+      }
+      if (event.type === "reset") retainedMessages.reset(event.messages);
+      else if (event.type === "remove") retainedMessages.remove(event.chatId, event.messageIds);
+      else if (event.type === "replace") {
+        retainedMessages.remove(event.message.chatId, [event.oldMessageId]);
+        retainedMessages.upsert([event.message]);
+      } else {
+        // Publish the committed values to downstream indexes as well. History
+        // may have lost a race to a deletion or a newer content revision.
+        event = {
+          ...event,
+          messages: event.messages.filter(acceptsMessage).map(message =>
+            findIndexedMessage(get().messages.get(message.chatId) ?? [], message.id) ?? message),
+          liveMessages: event.liveMessages.filter(message => acceptsMessage(message) && !message.isLocallyDeleted &&
+            !retainedMessages.get(message.chatId, message.id)),
+        };
+        retainedMessages.upsert(event.messages);
+      }
+      if (event.type === "reset") messageFiles.reset(event.messages);
+      else if (event.type === "remove") messageFiles.remove(event.chatId, event.messageIds);
+      else if (event.type === "replace") {
+        messageFiles.remove(event.message.chatId, [event.oldMessageId]);
+        messageFiles.upsert([event.message]);
+      } else messageFiles.upsert(event.messages);
+      if (event.type === "upsert") {
+        const liveIds = new Set(event.liveMessages.map(message => `${message.chatId}:${message.id}`));
+        for (const message of event.messages) recordConversationMessage(message.chatId, message.id,
+          conversationTraceKind.messageUpsert, message, {
+            live: liveIds.has(`${message.chatId}:${message.id}`),
+            isBot: get().users.get(message.senderId)?.isBot === true, batchCount: event.messages.length,
+          });
+      } else if (event.type === "replace") {
+        recordConversationMessage(event.message.chatId, event.message.id, conversationTraceKind.messageUpsert, event.message);
+      }
+      for (const listener of messageChangeListeners) listener(event);
+    };
+    const messageLocation = (messageId: string, preferredChatId?: string) => {
+      if (preferredChatId) {
+        const preferredMessages = get().messages.get(preferredChatId) ?? [];
+        const preferredMessage = preferredMessages.find((message) => message.id === messageId);
+        if (preferredMessage) {
+          return {
+            chatId: preferredChatId,
+            messages: preferredMessages,
+            message: preferredMessage,
+          };
+        }
+      }
+      for (const [chatId, messages] of get().messages) {
+        const message = messages.find((candidate) => candidate.id === messageId);
+        if (message) return { chatId, messages, message };
+      }
+      return undefined;
+    };
+    const managementCapabilitiesFor = (chatId: string) => {
+      const loaded = get().groupManagement;
+      return loaded?.chatId === chatId
+        ? loaded.capabilities
+        : get().chats.get(chatId)?.management;
+    };
+    const requireManagementCapability = (
+      chatId: string,
+      capability: ChatManagementCapabilityKey,
+      message: string,
+    ) => {
+      if (managementCapabilitiesFor(chatId)?.[capability] === true) return true;
+      set({ operationError: message });
+      return false;
+    };
+    const deleteScopeAllowed = (permissions: MessagePermissions, revoke: boolean) => revoke
+      ? permissions.canDeleteForAllUsers
+      : permissions.canDeleteOnlyForSelf;
+    const verifyDeleteScope = async (chatId: string, messageIds: string[], revoke: boolean) => {
+      const permissions = await Promise.all(
+        messageIds.map((messageId) => transport.getMessageProperties(chatId, messageId)),
+      );
+      if (permissions.every((value) => deleteScopeAllowed(value, revoke))) return true;
+      set({
+        operationError: revoke
+          ? translate("部分消息当前不能为所有人删除")
+          : translate("部分消息当前不能仅对你删除"),
+      });
+      return false;
+    };
+    const verifyPinPermission = async (chatId: string, messageId: string) => {
+      try {
+        const permissions = await transport.getMessageProperties(chatId, messageId);
+        if (permissions.canPin === true) return true;
+      } catch (error) {
+        set({ operationError: errorMessage(error, translate("无法读取置顶权限")) });
+        return false;
+      }
+      set({ operationError: translate("当前账号没有置顶消息的权限") });
+      return false;
+    };
+    const pinOperationError = (error: unknown, fallback: string) => {
+      const detail = error instanceof Error ? error.message : String(error ?? "");
+      return /CHAT_ADMIN_REQUIRED|CHAT_WRITE_FORBIDDEN|not enough rights/i.test(detail)
+        ? translate("当前账号没有置顶消息的权限")
+        : errorMessage(error, fallback);
+    };
+    const messageEventKey = (message: Message) => `${message.chatId}:${message.id}`;
+    const messageHasPrimaryAttention = (message: Message) => {
+      if (message.containsUnreadMention === true) return true;
+      const reply = message.replyTo?.kind === "message" ? message.replyTo : undefined;
+      if (!reply) return false;
+      const replyChatId = reply.chatId ?? message.chatId;
+      const repliedMessage = reply.messageId
+        ? get().messages.get(replyChatId)?.find((candidate) => candidate.id === reply.messageId)
+        : undefined;
+      return reply.outgoing === true || repliedMessage?.outgoing === true;
+    };
+    const removeUnreadAttention = (chatId: string, messageIds: Iterable<string>) => {
+      const removedIds = new Set(messageIds);
+      if (removedIds.size === 0) return;
+      const unreadAttentionMessageIds = new Map(get().unreadAttentionMessageIds);
+      const remaining = (unreadAttentionMessageIds.get(chatId) ?? [])
+        .filter((messageId) => !removedIds.has(messageId));
+      if (remaining.length > 0) unreadAttentionMessageIds.set(chatId, remaining);
+      else unreadAttentionMessageIds.delete(chatId);
+      set({ unreadAttentionMessageIds });
+    };
+    const addUnreadServerAttention = (messages: Message[]) => {
+      const unreadAttentionMessageIds = new Map(get().unreadAttentionMessageIds);
+      const blockedSenderIds = localBlockedReactionUserIds();
+      let changed = false;
+      for (const message of messages) {
+        if (message.isLocallyDeleted || message.isRemoving) continue;
+        if (!message.containsUnreadMention && !messageHasVisibleUnreadReaction(message, blockedSenderIds)) continue;
+        const current = unreadAttentionMessageIds.get(message.chatId) ?? [];
+        if (current.includes(message.id)) continue;
+        unreadAttentionMessageIds.set(message.chatId, [...current, message.id]);
+        changed = true;
+      }
+      if (changed) set({ unreadAttentionMessageIds });
+    };
+    const clearUnreadMentionAttention = (chatId: string) => {
+      const currentMessages = get().messages.get(chatId) ?? [];
+      const mentions = currentMessages.filter(message => message.containsUnreadMention);
+      if (mentions.length === 0) return;
+      const messages = new Map(get().messages);
+      messages.set(chatId, currentMessages.map(message => message.containsUnreadMention
+        ? { ...message, containsUnreadMention: false }
+        : message));
+      set({ messages });
+      removeUnreadAttention(chatId, mentions.filter(message => !message.containsUnreadReaction).map(message => message.id));
+    };
+    const clearUnreadReactionAttention = (chatId: string) => {
+      const currentMessages = get().messages.get(chatId) ?? [];
+      const reactionIds = currentMessages
+        .filter((message) => message.containsUnreadReaction === true)
+        .map((message) => message.id);
+      if (reactionIds.length === 0) return;
+      const messages = new Map(get().messages);
+      messages.set(chatId, currentMessages.map((message) => message.containsUnreadReaction === true
+        ? { ...message, containsUnreadReaction: false }
+        : message));
+      set({ messages });
+      const removableIds = reactionIds.filter((messageId) => {
+        const message = messages.get(chatId)?.find((candidate) => candidate.id === messageId);
+        return !message || (!message.containsUnreadMention && (
+          acknowledgedAttentionMessages.has(`${chatId}:${messageId}`) ||
+          !messageHasPrimaryAttention(message)));
+      });
+      removeUnreadAttention(chatId, removableIds);
+      seenReactionMessageIds.delete(chatId);
+    };
+    const localBlockedReactionUserIds = () => new Set(
+      localUserBlocksStore.getState().users
+        .filter((user) => user.accountId === get().activeAccountId)
+        .map((user) => user.userId),
+    );
+    const clearChatReactionUnreadState = (chatId: string) => {
+      clearUnreadReactionAttention(chatId);
+      const chats = new Map(get().chats);
+      const chat = chats.get(chatId);
+      if (chat && (chat.unreadReactionCount ?? 0) > 0) {
+        chats.set(chatId, { ...chat, unreadReactionCount: 0 });
+      }
+      const forumTopics = new Map(get().forumTopics);
+      if (forumTopics.has(chatId)) {
+        forumTopics.set(chatId, (forumTopics.get(chatId) ?? []).map((topic) => ({
+          ...topic,
+          unreadReactionCount: 0,
+        })));
+      }
+      set({ chats, forumTopics });
+    };
+    const markBlockedChatReactionsRead = (chatId: string, pendingMessages: readonly Message[] = []): Promise<void> => {
+      if (get().authorization.kind !== "ready" || blockedReactionReadRequests.has(chatId) ||
+        reactionReadRequests.has(chatId)) return Promise.resolve();
+      const blockedSenderIds = localBlockedReactionUserIds();
+      const currentMessages = new Map((get().messages.get(chatId) ?? []).map(message => [message.id, message]));
+      for (const message of pendingMessages) currentMessages.set(message.id, message);
+      const unreadMessages = [...currentMessages.values()].filter(message => message.containsUnreadReaction);
+      if (
+        unreadMessages.length < expectedUnreadReactionCount(chatId) ||
+        unreadMessages.some(message => messageHasVisibleUnreadReaction(message, blockedSenderIds))
+      ) return Promise.resolve();
+      const requestGeneration = attentionReadGeneration;
+      blockedReactionReadRequests.add(chatId);
+      reactionReadRequests.add(chatId);
+      return transport.markAllChatReactionsRead(chatId)
+        .then(() => {
+          if (requestGeneration !== attentionReadGeneration) return;
+          clearChatReactionUnreadState(chatId);
+          set({ operationError: undefined });
+          scheduleCacheWrite();
+        })
+        .catch((error) => {
+          if (requestGeneration !== attentionReadGeneration) return;
+          set({ operationError: errorMessage(error, translate("无法更新屏蔽回应的已读状态")) });
+        })
+        .finally(() => {
+          if (requestGeneration !== attentionReadGeneration) return;
+          blockedReactionReadRequests.delete(chatId);
+          reactionReadRequests.delete(chatId);
+        });
+    };
+    const queueBlockedReactionReads = (messages: readonly Message[]) => {
+      const blockedSenderIds = localBlockedReactionUserIds();
+      if (blockedSenderIds.size === 0) return;
+      const pendingByChat = new Map<string, Message[]>();
+      for (const message of messages) {
+        if (messageHasUnreadLocalBlockedReaction(message, blockedSenderIds)) {
+          if (!pendingByChat.has(message.chatId)) pendingByChat.set(message.chatId, []);
+        }
+      }
+      if (pendingByChat.size === 0) return;
+      for (const message of messages) pendingByChat.get(message.chatId)?.push(message);
+      for (const [chatId, pending] of pendingByChat) void markBlockedChatReactionsRead(chatId, pending);
+    };
+    const reconcileMessageAttention = (
+      message: Message,
+      previous: Message | undefined,
+      live: boolean,
+    ) => {
+      const key = messageEventKey(message);
+      if (message.isLocallyDeleted || message.isRemoving) {
+        removeUnreadAttention(message.chatId, [message.id]);
+        liveAttentionCandidates.delete(key);
+        return;
+      }
+      const hasUnreadReaction = messageHasVisibleUnreadReaction(message, localBlockedReactionUserIds());
+      const needsAttention = hasUnreadReaction || messageHasPrimaryAttention(message);
+      if (
+        previous && (
+          (!previous.containsUnreadMention && message.containsUnreadMention) ||
+          (!previous.containsUnreadReaction && message.containsUnreadReaction)
+        )
+      ) {
+        acknowledgedAttentionMessages.delete(key);
+      }
+      const previouslyNeededAttention = previous && (
+        previous.containsUnreadReaction === true || messageHasPrimaryAttention(previous)
+      );
+      if ((previouslyNeededAttention && !needsAttention) ||
+          (previous?.containsUnreadMention && !message.containsUnreadMention && !hasUnreadReaction)) {
+        removeUnreadAttention(message.chatId, [message.id]);
+      }
+      if (previous?.containsUnreadReaction === true && !hasUnreadReaction) {
+        seenReactionMessageIds.get(message.chatId)?.delete(message.id);
+      }
+      if (message.outgoing && !hasUnreadReaction) {
+        liveAttentionCandidates.delete(key);
+        return;
+      }
+      if (live || hasUnreadReaction || message.containsUnreadMention) {
+        liveAttentionCandidates.add(key);
+        if (liveAttentionCandidates.size > 512) {
+          liveAttentionCandidates.delete(liveAttentionCandidates.values().next().value!);
+        }
+      }
+      if (!liveAttentionCandidates.has(key)) return;
+
+      const reply = message.replyTo?.kind === "message" ? message.replyTo : undefined;
+      const repliedMessage = reply?.messageId
+        ? get().messages.get(reply.chatId ?? message.chatId)?.find((candidate) => candidate.id === reply.messageId)
+        : undefined;
+      const replyResolved = !reply || reply.outgoing !== undefined || repliedMessage !== undefined;
+      if (!needsAttention && !replyResolved) return;
+
+      liveAttentionCandidates.delete(key);
+      if (!needsAttention) return;
+      const unreadAttentionMessageIds = new Map(get().unreadAttentionMessageIds);
+      const current = unreadAttentionMessageIds.get(message.chatId) ?? [];
+      if (current.includes(message.id)) return;
+      unreadAttentionMessageIds.set(message.chatId, [...current, message.id]);
+      set({ unreadAttentionMessageIds });
+    };
+    const expectedUnreadReactionCount = (chatId: string) => Math.max(
+      get().chats.get(chatId)?.unreadReactionCount ?? 0,
+      (get().forumTopics.get(chatId) ?? []).reduce(
+        (total, topic) => total + topic.unreadReactionCount,
+        0,
+      ),
+    );
+    const refreshUnreadAttention = (chatId: string, kind: "mention" | "reaction") => {
+      const expectedUnreadCount = () => kind === "mention"
+        ? get().chats.get(chatId)?.unreadMentionCount ?? 0
+        : expectedUnreadReactionCount(chatId);
+      if (
+        get().authorization.kind !== "ready" ||
+        get().connectionStatus !== "online" ||
+        expectedUnreadCount() <= 0
+      ) return Promise.resolve();
+      const loads = kind === "mention" ? mentionAttentionLoads : reactionAttentionLoads;
+      const existing = loads.get(chatId);
+      if (existing) return existing;
+      const generation = accountGeneration;
+      const expectedCount = expectedUnreadCount();
+      const before = new Map((get().messages.get(chatId) ?? []).map(message => [message.id, message]));
+      const request = (async () => {
+        const found: Message[] = [];
+        let fromMessageId: string | undefined;
+        const maximumPages = Math.min(100, Math.max(1, Math.ceil(expectedCount / 100) + 1));
+        for (let pageIndex = 0; pageIndex < maximumPages; pageIndex += 1) {
+          const page = await transport.searchChatMessages({
+            chatId,
+            filter: kind === "mention" ? "unreadMention" : "unreadReaction",
+            fromMessageId,
+            limit: 100,
+          });
+          if (generation !== accountGeneration || expectedUnreadCount() <= 0) return;
+          found.push(...page.messages);
+          if (
+            found.length >= expectedCount ||
+            !page.hasMore ||
+            !page.nextFromMessageId ||
+            page.nextFromMessageId === fromMessageId
+          ) break;
+          fromMessageId = page.nextFromMessageId;
+        }
+        if (
+          generation !== accountGeneration ||
+          !get().chats.has(chatId) ||
+          expectedUnreadCount() <= 0 ||
+          (kind === "mention" && expectedUnreadCount() < expectedCount) ||
+          found.length === 0
+        ) return;
+        const current = new Map((get().messages.get(chatId) ?? []).map(message => [message.id, message]));
+        // Search snapshots must not resurrect a deletion or overwrite a newer read/content update.
+        const recovered = found.filter(message => acceptsMessage(message) &&
+          !message.isLocallyDeleted && !message.isRemoving &&
+          current.get(message.id) === before.get(message.id) &&
+          (kind !== "mention" || !acknowledgedAttentionMessages.has(messageEventKey(message))));
+        if (recovered.length === 0) return;
+        const messages = new Map(get().messages);
+        messages.set(chatId, upsertMessages(messages.get(chatId) ?? [], recovered));
+        set({ messages, operationError: undefined });
+        queueBlockedReactionReads(recovered);
+        addUnreadServerAttention(recovered);
+        publishMessageChange({ type: "upsert", messages: recovered, liveMessages: [] });
+      })()
+        .catch((error) => {
+          if (generation === accountGeneration) {
+            set({ operationError: errorMessage(error, kind === "mention"
+              ? translate("无法加载历史消息") : translate("无法恢复未读回应")) });
+          }
+        })
+        .finally(() => {
+          if (loads.get(chatId) === request) {
+            loads.delete(chatId);
+          }
+        });
+      loads.set(chatId, request);
+      return request;
+    };
+    const refreshUnreadReactionAttention = (chatId: string) => refreshUnreadAttention(chatId, "reaction");
+    const markSeenChatReactionsRead = (chatId: string, visibleMessageIds: string[]) => {
+      const chatMessages = get().messages.get(chatId) ?? [];
+      const knownReactionMessageIds = chatMessages
+        .filter((message) => message.containsUnreadReaction === true)
+        .map((message) => message.id);
+      const visibleReactionIds = new Set(visibleMessageIds.filter((messageId) =>
+        knownReactionMessageIds.includes(messageId),
+      ));
+      if (visibleReactionIds.size === 0) return;
+      const seen = new Set(seenReactionMessageIds.get(chatId) ?? []);
+      for (const messageId of visibleReactionIds) seen.add(messageId);
+      seenReactionMessageIds.set(chatId, seen);
+      const expectedCount = expectedUnreadReactionCount(chatId);
+      if (
+        reactionReadRequests.has(chatId) ||
+        expectedCount <= 0 ||
+        knownReactionMessageIds.length === 0 ||
+        knownReactionMessageIds.length < expectedCount ||
+        knownReactionMessageIds.some((messageId) => !seen.has(messageId))
+      ) {
+        if (knownReactionMessageIds.length < expectedCount) {
+          void refreshUnreadReactionAttention(chatId);
+        }
+        return;
+      }
+      const requestGeneration = attentionReadGeneration;
+      reactionReadRequests.add(chatId);
+      void transport.markAllChatReactionsRead(chatId)
+        .then(() => {
+          if (requestGeneration !== attentionReadGeneration) return;
+          clearUnreadReactionAttention(chatId);
+          const chats = new Map(get().chats);
+          const chat = chats.get(chatId);
+          if (chat) chats.set(chatId, { ...chat, unreadReactionCount: 0 });
+          const forumTopics = new Map(get().forumTopics);
+          if (forumTopics.has(chatId)) {
+            forumTopics.set(chatId, (forumTopics.get(chatId) ?? []).map((topic) => ({
+              ...topic,
+              unreadReactionCount: 0,
+            })));
+          }
+          set({ chats, forumTopics, operationError: undefined });
+          scheduleCacheWrite();
+        })
+        .catch((error) => {
+          if (requestGeneration !== attentionReadGeneration) return;
+          set({ operationError: errorMessage(error, translate("无法更新回应已读状态")) });
+        })
+        .finally(() => {
+          if (requestGeneration !== attentionReadGeneration) return;
+          reactionReadRequests.delete(chatId);
+        });
+    };
+    let expiryMessages: TelegramState["messages"] | undefined;
+    let expiryChats: TelegramState["chats"] | undefined;
+    let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleMessageExpiry = () => {
+      if (expiryMessages === get().messages && expiryChats === get().chats) return;
+      expiryMessages = get().messages; expiryChats = get().chats;
+      if (expiryTimer) globalThis.clearTimeout(expiryTimer);
+      let earliest = Infinity;
+      for (const messages of get().messages.values()) {
+        for (const message of messages) if (message.expiresAt) earliest = Math.min(earliest, Date.parse(message.expiresAt));
+      }
+      for (const chat of get().chats.values()) if (chat.previewExpiresAt) earliest = Math.min(earliest, Date.parse(chat.previewExpiresAt));
+      if (!Number.isFinite(earliest)) return;
+      expiryTimer = globalThis.setTimeout(() => {
+        expiryTimer = undefined;
+        expiryMessages = undefined; expiryChats = undefined;
+        for (const [chatId, messages] of get().messages) {
+          for (const message of messages) if (messageExpired(message)) removeMessageImmediately(chatId, message.id);
+        }
+        const chats = new Map(get().chats);
+        for (const [id, chat] of chats) if (chat.previewExpiresAt && Date.parse(chat.previewExpiresAt) <= Date.now()) {
+          chats.set(id, { ...chat, preview: "", previewSenderId: undefined, previewExpiresAt: undefined });
+        }
+        set({ chats });
+        scheduleMessageExpiry();
+      }, Math.min(60_000, Math.max(0, earliest - Date.now())));
+    };
+
+    const markMessageRemoving = (chatId: string, messageId: string) => {
+      const key = `${chatId}:${messageId}`;
+      const previous = removalTimers.get(key);
+      const messages = new Map(get().messages);
+      const current = messages.get(chatId) ?? [];
+      const removed = current.find((message) => message.id === messageId);
+      if (!removed) return;
+      if (previous) globalThis.clearTimeout(previous);
+      removalTimers.delete(key);
+      messages.set(chatId, current.filter((message) => message.id !== messageId));
+      const removingMessages = new Map(get().removingMessages);
+      const ghosts = removingMessages.get(chatId) ?? [];
+      const ghost = { ...removed, isRemoving: true };
+      recordConversationMessage(chatId, messageId, conversationTraceKind.ghostStart, ghost);
+      removalDeadlines.set(ghost, performance.now() + motionLifecycleTiming.messageRemoval);
+      removingMessages.set(chatId, [...ghosts.filter((message) => message.id !== messageId), ghost]);
+      set({ messages, removingMessages });
+      publishMessageChange({ type: "remove", chatId, messageIds: [messageId] });
+      removalTimers.set(key, globalThis.setTimeout(() => {
+        removalTimers.delete(key);
+        const nextRemoving = new Map(get().removingMessages);
+        // Drain exits that have already finished together. Separate timers for
+        // the same batch must not briefly expand a two-photo album to one photo.
+        const now = performance.now();
+        const finishedIds: string[] = [];
+        const remaining = (nextRemoving.get(chatId) ?? []).filter(message => {
+          if (message.id !== messageId && (removalDeadlines.get(message) ?? Infinity) > now) return true;
+          finishedIds.push(message.id);
+          recordConversationMessage(chatId, message.id, conversationTraceKind.ghostEnd, message, {
+            deadlineLagMs: now - (removalDeadlines.get(message) ?? now),
+          });
+          const timerKey = `${chatId}:${message.id}`;
+          globalThis.clearTimeout(removalTimers.get(timerKey));
+          removalTimers.delete(timerKey);
+          return false;
+        });
+        if (remaining.length > 0) nextRemoving.set(chatId, remaining);
+        else nextRemoving.delete(chatId);
+        sharedMediaIndex.remove(chatId, finishedIds);
+        set({ removingMessages: nextRemoving });
+        scheduleCacheWrite();
+      }, motionLifecycleTiming.messageRemoval + motionLifecycleTiming.exitFallbackBuffer));
+    };
+    const removeMessageImmediately = (chatId: string, messageId: string) => {
+      recordConversationMessage(chatId, messageId, conversationTraceKind.immediateRemove);
+      const key = `${chatId}:${messageId}`;
+      removedMessageIds.add(key);
+      const previous = removalTimers.get(key);
+      if (previous) globalThis.clearTimeout(previous);
+      removalTimers.delete(key);
+
+      const messages = new Map(get().messages);
+      messages.set(chatId, (messages.get(chatId) ?? []).filter((message) => message.id !== messageId));
+      const removingMessages = new Map(get().removingMessages);
+      const ghosts = (removingMessages.get(chatId) ?? []).filter((message) => message.id !== messageId);
+      if (ghosts.length > 0) removingMessages.set(chatId, ghosts);
+      else removingMessages.delete(chatId);
+      sharedMediaIndex.remove(chatId, [messageId]);
+      set({ messages, removingMessages });
+      publishMessageChange({ type: "remove", chatId, messageIds: [messageId] });
+    };
+
+    const setTypingUser = (chatId: string, senderId: string, typing: boolean) => {
+      const key = `${chatId}:${senderId}`;
+      const previousTimer = typingTimers.get(key);
+      if (previousTimer) globalThis.clearTimeout(previousTimer);
+      typingTimers.delete(key);
+
+      const currentIds = get().typingUserIds.get(chatId) ?? [];
+      const hasSender = currentIds.includes(senderId);
+      if (typing && !hasSender) {
+        const typingUserIds = new Map(get().typingUserIds);
+        typingUserIds.set(chatId, [...currentIds, senderId]);
+        set({ typingUserIds });
+      } else if (!typing && hasSender) {
+        const typingUserIds = new Map(get().typingUserIds);
+        const nextIds = currentIds.filter((id) => id !== senderId);
+        if (nextIds.length > 0) typingUserIds.set(chatId, nextIds);
+        else typingUserIds.delete(chatId);
+        set({ typingUserIds });
+      }
+
+      if (typing) {
+        typingTimers.set(key, globalThis.setTimeout(() => {
+          typingTimers.delete(key);
+          setTypingUser(chatId, senderId, false);
+        }, 6_000));
+      }
+    };
+
+    const clearTypingUsers = () => {
+      for (const timer of typingTimers.values()) globalThis.clearTimeout(timer);
+      typingTimers.clear();
+    };
+
+    const cancelPendingCacheCallback = () => {
+      if (cacheTimer) globalThis.clearTimeout(cacheTimer);
+      cacheTimer = undefined;
+      if (cacheIdleCallback !== undefined && typeof globalThis.cancelIdleCallback === "function") {
+        globalThis.cancelIdleCallback(cacheIdleCallback);
+      }
+      cacheIdleCallback = undefined;
+    };
+
+    const cancelScheduledCacheWrite = () => {
+      cancelPendingCacheCallback();
+      cacheDirtySince = undefined;
+    };
+
+    let localSaveTimer: ReturnType<typeof setTimeout> | undefined;
+    let savedLocalReferences: unknown[] = [];
+    const flushUnsentState = async () => {
+      if (localSaveTimer) globalThis.clearTimeout(localSaveTimer);
+      localSaveTimer = undefined;
+      if (!transport.saveLocalState) return flushCachedSnapshot();
+      const state = get();
+      if (!state.currentUserId) return;
+      const accountId = state.activeAccountId;
+      const value = {
+        currentUserId: state.currentUserId,
+        savedAt: new Date().toISOString(),
+        drafts: [...state.drafts.values()],
+        localAttachmentDrafts: [...state.localAttachmentDrafts.values()],
+        outbox: state.outbox,
+      };
+      const operation = cacheWrite.catch(() => undefined).then(() => transport.saveLocalState!(accountId, value));
+      cacheWrite = operation;
+      await operation;
+    };
+
+    let boundedMessages: TelegramState["messages"] | undefined;
+    let boundedMessageCount = 0;
+    const retentionViewports = new Map<string, Set<() => HistoryRetentionViewport>>();
+    const ordinaryMessageCounts = new WeakMap<Message[], number>();
+    const ordinaryMessageCount = (items: Message[]) => {
+      let count = ordinaryMessageCounts.get(items);
+      if (count === undefined) {
+        count = items.reduce((sum, message) => sum + Number(!message.isLocallyDeleted && !message.isPending &&
+          message.delivery !== "sending" && message.delivery !== "failed"), 0);
+        ordinaryMessageCounts.set(items, count);
+      }
+      return count;
+    };
+    const boundMessageHistory = () => {
+      const current = get();
+      // Draft-only writes reuse the last count; unchanged immutable histories
+      // also reuse their counts when another chat receives a message.
+      if (boundedMessages !== current.messages) {
+        boundedMessageCount = [...current.messages.values()].reduce(
+          (sum, items) => sum + ordinaryMessageCount(items), 0,
+        );
+        boundedMessages = current.messages;
+      }
+      let total = boundedMessageCount;
+      const oversized = [...current.messages].filter(([, items]) => ordinaryMessageCount(items) > HISTORY_MESSAGE_LIMIT);
+      if (total <= 10_000 && current.messages.size <= 100 && oversized.length === 0) return;
+      const messages = new Map(current.messages);
+      const histories = new Map(current.histories);
+      const topicHistories = new Map(current.topicHistories);
+      const evictions: Array<{ chatId: string; ids: string[] }> = [];
+      for (const [chatId, items] of oversized) {
+        const providers = [...retentionViewports.get(chatId) ?? []];
+        const viewports = providers.map(provider => provider());
+        const pending = histories.get(chatId)?.loading || [...topicHistories].some(([key, state]) =>
+          key.startsWith(`${chatId}:topic:`) && state.loading);
+        if (pending) continue;
+        const ids = new Set(history.protectedIds(chatId));
+        for (const item of current.outbox) {
+          if (item.chatId !== chatId) continue;
+          ids.add(item.id);
+          if (item.replyToMessageId) ids.add(item.replyToMessageId);
+        }
+        for (const draft of current.drafts.values()) if (draft.chatId === chatId && draft.replyToMessageId) ids.add(draft.replyToMessageId);
+        const kept = retainedHistoryMessages(items, viewports, ids);
+        if (kept === items) continue;
+        const keptIds = new Set(kept.map(message => message.id));
+        const removed = items.filter(message => !keptIds.has(message.id)).map(message => message.id);
+        if (!removed.length) continue;
+        const anchor = viewports.find(viewport => !viewport.following)?.anchorId;
+        for (const patch of history.retain(chatId, items, kept, anchor)) {
+          if (patch.topicId) topicHistories.set(topicKey(chatId, patch.topicId), patch.state);
+          else histories.set(chatId, patch.state);
+        }
+        messages.set(chatId, kept);
+        total -= ordinaryMessageCount(items) - ordinaryMessageCount(kept);
+        evictions.push({ chatId, ids: removed });
+      }
+      const protectedChats = new Set(current.outbox.map((item) => item.chatId));
+      for (const [chatId, items] of messages) {
+        if (total <= 10_000 && messages.size <= 100) break;
+        if (
+          current.chats.get(chatId)?.isForum ||
+          chatId === current.activeChatId ||
+          protectedChats.has(chatId) ||
+          histories.get(chatId)?.loading ||
+          items.some((message) => message.isLocallyDeleted)
+        ) continue;
+        if (items.some((message) => message.delivery === "sending")) continue;
+        total -= ordinaryMessageCount(items);
+        messages.delete(chatId); histories.delete(chatId); history.discard(chatId);
+        evictions.push({ chatId, ids: items.map(message => message.id) });
+        transport.discardChatHistoryCache?.(chatId);
+      }
+      if (evictions.length) {
+        boundedMessages = messages;
+        boundedMessageCount = total;
+        set({ messages, histories, topicHistories });
+        for (const { chatId, ids } of evictions) {
+          transport.evictChatMessages?.(chatId, ids);
+          // Ordinary eviction has no tombstone and never removes deletion archives.
+          publishMessageChange({ type: "evict", chatId, messageIds: ids });
+        }
+      }
+    };
+    const scheduleCacheWrite = () => {
+      boundMessageHistory();
+      const state = get();
+      if (state.authorization.kind !== "ready" || !state.currentUserId) return;
+      scheduleMessageExpiry();
+      const references = [state.drafts, state.localAttachmentDrafts, state.outbox];
+      if (transport.saveLocalState && references.some((value, index) => value !== savedLocalReferences[index])) {
+        savedLocalReferences = references;
+        if (localSaveTimer) globalThis.clearTimeout(localSaveTimer);
+        localSaveTimer = globalThis.setTimeout(() => {
+          void flushUnsentState().catch(() => set({
+            cacheHealth: "invalid",
+            operationError: translate("无法保存附件草稿"),
+          }));
+        }, 500);
+      }
+      const now = Date.now();
+      cacheDirtySince ??= now;
+      const deadline = cacheDirtySince + CACHE_WRITE_MAX_DELAY_MS;
+      if ((cacheTimer || cacheIdleCallback !== undefined) && now >= deadline) return;
+      cancelPendingCacheCallback();
+      const delay = Math.max(0, Math.min(CACHE_WRITE_DELAY_MS, deadline - now));
+      cacheTimer = globalThis.setTimeout(() => {
+        cacheTimer = undefined;
+        const writeSnapshot = () => {
+          cacheIdleCallback = undefined;
+          cacheDirtySince = undefined;
+          boundMessageHistory();
+          const current = get();
+          if (current.authorization.kind !== "ready" || !current.currentUserId) return;
+          const snapshot = snapshotWithHistory(
+            { ...current, chats: chatsWithServerOrders(current.chats) },
+            profileController.getCachedProfiles(),
+          );
+          cacheWrite = cacheWrite
+            .catch(() => undefined)
+            .then(() => transport.saveCachedSnapshot(snapshot))
+            .then(() => set({ cacheHealth: "healthy" }))
+            .catch(() => set({ cacheHealth: "invalid" }));
+        };
+        if (typeof globalThis.requestIdleCallback === "function") {
+          cacheIdleCallback = globalThis.requestIdleCallback(writeSnapshot, {
+            timeout: CACHE_WRITE_IDLE_TIMEOUT_MS,
+          });
+        } else {
+          writeSnapshot();
+        }
+      }, delay);
+    };
+
+    const discardLocalAttachmentDraft = (draftKey: string) => {
+      localAttachmentDraftGenerations.set(
+        draftKey,
+        (localAttachmentDraftGenerations.get(draftKey) ?? 0) + 1,
+      );
+      const current = get().localAttachmentDrafts.get(draftKey);
+      if (!current) return;
+      const localAttachmentDrafts = new Map(get().localAttachmentDrafts);
+      localAttachmentDrafts.delete(draftKey);
+      set({ localAttachmentDrafts });
+      void flushUnsentState().then(() => attachmentOutbox.remove(current.batchId)).catch(() => {
+        set({ cacheHealth: "invalid" });
+      });
+      scheduleCacheWrite();
+    };
+
+    const draftSync = new DraftSyncController({
+      isReady: () => get().authorization.kind === "ready",
+      getDrafts: () => get().drafts,
+      setDrafts: (drafts) => set({ drafts }),
+      sendDraft: (draftKey, draft) => transport.setChatDraft({
+        chatId: draft?.chatId ?? draftKey.split(":topic:")[0],
+        topicId: draft?.topicId,
+        text: draft?.text ?? "",
+        entities: draft?.entities,
+        replyToMessageId: draft?.replyToMessageId,
+        replyQuote: draft?.replyQuote,
+      }),
+      reportError: (operationError) => set({ operationError }),
+      scheduleCacheWrite,
+      discardLocalAttachments: discardLocalAttachmentDraft,
+    });
+
+    const clearCachedData = (clearSnapshot = true) => {
+      boundedMessages = undefined;
+      boundedMessageCount = 0;
+      retentionViewports.clear();
+      resetOutbox();
+      chatJoinTargets.clear();
+      history.clear();
+      pendingPinnedReorders.clear();
+      removedMessageIds.clear();
+      deletedHistory.clear();
+      historyDeletionVersions.clear();
+      mediaFileRestorer.reset();
+      syncGeneration += 1;
+      hasConnected = false;
+      syncRetries.clear();
+      forumController.reset();
+      cancelScheduledCacheWrite();
+      if (localSaveTimer) globalThis.clearTimeout(localSaveTimer);
+      localSaveTimer = undefined;
+      savedLocalReferences = [];
+      if (expiryTimer) globalThis.clearTimeout(expiryTimer);
+      expiryTimer = undefined;
+      sharedMediaIndex.clear();
+      advanceConversationGeneration();
+      transport.setConversationFocus?.();
+      draftSync.clear();
+      localAttachmentDraftGenerations.clear();
+      clearTypingUsers();
+      liveAttentionCandidates.clear();
+      attentionReadRequests.clear();
+      acknowledgedAttentionMessages.clear();
+      seenReactionMessageIds.clear();
+      reactionAttentionLoads.clear();
+      mentionAttentionLoads.clear();
+      reactionReadRequests.clear();
+      blockedReactionReadRequests.clear();
+      attentionReadGeneration += 1;
+      for (const timer of readTimers.values()) globalThis.clearTimeout(timer);
+      readTimers.clear();
+      readRequestChains.clear();
+      chatAdministratorLabelLoads.clear();
+      chatAdministratorLabelsGeneration += 1;
+      forumTopicsRefreshedAt.clear();
+      searchController.reset();
+      profileController.reset();
+      emojiPickerController.reset();
+      set({
+        currentUserId: undefined,
+        users: new Map(),
+        userIdsByUsername: new Map(),
+        folders: [],
+        chats: new Map(),
+        chatAdministratorLabels: new Map(),
+        chatListReady: false,
+        chatLists: new Map(),
+        messages: new Map(),
+        sponsoredMessages: new Map(),
+        removingMessages: new Map(),
+        unreadAttentionMessageIds: new Map(),
+        drafts: new Map(),
+        localAttachmentDrafts: new Map(),
+        typingUserIds: new Map(),
+        outbox: [],
+        histories: new Map(),
+        forumTopics: new Map(),
+        forumTopicsLoading: new Set(),
+        topicHistories: new Map(),
+        lastForumTopicIds: new Map(),
+        activeChatId: undefined,
+        activeTopicId: undefined,
+        globalSearch: emptyGlobalSearch(),
+        chatMessageSearch: emptyChatMessageSearch(),
+        accountProfile: emptyProfileState(),
+        profile: emptyProfileState(),
+        contacts: [],
+        contactsLoading: false,
+        contactsError: undefined,
+        contactPendingUserId: undefined,
+        chatManagementPending: new Set(),
+        chatJoinStates: new Map(),
+        groupManagement: undefined,
+        groupManagementLoading: false,
+        groupManagementError: undefined,
+        blockedSenders: [],
+        blockedSendersLoading: false,
+        folderManagementPending: false,
+        chatCreationPending: false,
+        chatFilter: "main",
+        cacheHealth: clearSnapshot ? "empty" : get().cacheHealth,
+      });
+      publishMessageChange({ type: "reset", messages: get().messages });
+      if (clearSnapshot) void transport.clearCachedSnapshot().catch(() => undefined);
+    };
+
+    const applyAccountState = (accountState: TelegramAccountState) => {
+      set(accountStatePatch(accountState));
+    };
+
+    const registerCurrentAccount = () => {
+      const state = get();
+      if (accountTransition) return Promise.resolve();
+      const registration = currentAccountRegistration(state);
+      if (!registration) return Promise.resolve();
+      const { accountId, account, key } = registration;
+      if (registeredAccountKey === key) return accountRegistration;
+      registeredAccountKey = key;
+      const request = transport.registerCurrentAccount(account).then((accountState) => {
+        if (
+          !accountTransition &&
+          get().activeAccountId === accountId &&
+          accountState.activeAccountId === accountId
+        ) {
+          applyAccountState(accountState);
+        }
+      }).catch((error) => {
+        if (registeredAccountKey === key) registeredAccountKey = undefined;
+        if (!accountTransition) {
+          set({
+            accountError: error instanceof Error ? error.message : translate("无法保存账号信息"),
+          });
+        }
+      });
+      accountRegistration = request;
+      return request;
+    };
+
+    const flushCachedSnapshot = async () => {
+      cancelScheduledCacheWrite();
+      if (localSaveTimer) globalThis.clearTimeout(localSaveTimer);
+      localSaveTimer = undefined;
+      const state = get();
+      if (state.authorization.kind === "ready" && state.currentUserId) {
+        const snapshot = snapshotWithHistory(
+          { ...state, chats: chatsWithServerOrders(state.chats) }, profileController.getCachedProfiles(),
+        );
+        const operation = cacheWrite.catch(() => undefined).then(() => transport.saveCachedSnapshot(snapshot));
+        cacheWrite = operation;
+        await operation;
+        set({ cacheHealth: "healthy" });
+      }
+    };
+
+    const hydrateCachedSnapshot = (persistedSnapshot?: CachedTelegramSnapshot, localState?: ReturnType<typeof migrateLocalUnsentState>) => {
+      const migration = migrateCachedSnapshot(persistedSnapshot);
+      const snapshot = localState ? {
+        ...(migration.snapshot ?? { version: 4 as const, users: [], folders: [], chats: [], messages: [] }),
+        ...localState,
+      } : migration.snapshot;
+      set({ cacheHealth: migration.health });
+      if (!snapshot) {
+        return;
+      }
+      const current = get();
+      profileController.hydrateCachedProfiles(snapshot.profiles ?? []);
+      const chats = new Map(snapshot.chats.map((chat) => [chat.id, chat]));
+      const users = new Map(snapshot.users.map((user) => [user.id, user]));
+      const forumTopics = new Map(
+        (snapshot.forumTopics ?? []).map((entry) => [entry.chatId, entry.topics]),
+      );
+      const lastForumTopicIds = new Map(
+        (snapshot.lastForumTopicIds ?? []).map((entry) => [entry.chatId, entry.topicId]),
+      );
+      let messages = messageMapFrom([
+        ...snapshot.messages,
+        ...(snapshot.locallyDeletedMessages ?? []),
+      ].filter(acceptsMessage));
+      const drafts = new Map((snapshot.drafts ?? []).map((draft) => [draft.localKey ?? topicKey(draft.chatId, draft.topicId), draft]));
+      const localAttachmentDrafts = new Map(
+        (snapshot.localAttachmentDrafts ?? []).map((draft) => [draft.draftKey, draft]),
+      );
+      const outbox = snapshot.outbox ?? [];
+      for (const [id, chat] of current.chats) chats.set(id, chat);
+      for (const [id, user] of current.users) users.set(id, user);
+      for (const [chatId, topics] of current.forumTopics) forumTopics.set(chatId, topics);
+      for (const [chatId, topicId] of current.lastForumTopicIds) {
+        lastForumTopicIds.set(chatId, topicId);
+      }
+      for (const [chatId, draft] of current.drafts) {
+        if (draft.pending || !drafts.has(chatId)) drafts.set(chatId, draft);
+      }
+      for (const [draftKey, draft] of current.localAttachmentDrafts) {
+        localAttachmentDrafts.set(draftKey, draft);
+      }
+      for (const [chatId, chatMessages] of current.messages) {
+        for (const message of chatMessages) {
+          messages.set(chatId, upsertMessage(messages.get(chatId) ?? [], message));
+        }
+      }
+      messages = messagesWithOutbox(
+        messages,
+        outbox,
+        current.currentUserId ?? snapshot.currentUserId,
+      );
+      const unreadAttentionMessageIds = new Map(current.unreadAttentionMessageIds);
+      for (const [chatId, chatMessages] of messages) {
+        const attentionIds = chatMessages
+          .filter((message) => !message.isLocallyDeleted && !message.isRemoving &&
+            (message.containsUnreadMention || message.containsUnreadReaction))
+          .map((message) => message.id);
+        if (attentionIds.length === 0) continue;
+        unreadAttentionMessageIds.set(chatId, [
+          ...new Set([...(unreadAttentionMessageIds.get(chatId) ?? []), ...attentionIds]),
+        ]);
+      }
+      const folders = current.folders.length > 0
+        ? current.folders
+        : snapshot.folders;
+      const requestedFilter = snapshot.chatFilter ?? "main";
+      const chatFilter = folders.some((folder) => folder.id === requestedFilter)
+        ? requestedFilter
+        : (folders[0]?.id ?? "main");
+      const cachedActiveChatId = snapshot.activeChatId && chats.has(snapshot.activeChatId)
+        ? snapshot.activeChatId
+        : undefined;
+      const nextActiveChatId = current.activeChatId ?? cachedActiveChatId;
+      const cachedActiveTopicId = nextActiveChatId && chats.get(nextActiveChatId)?.isForum
+        ? lastForumTopicIds.get(nextActiveChatId)
+        : undefined;
+      set({
+        currentUserId: current.currentUserId ?? snapshot.currentUserId,
+        users,
+        userIdsByUsername: usernameIndexForUsers(users.values()),
+        folders,
+        chats,
+        chatListReady: true,
+        messages,
+        unreadAttentionMessageIds,
+        drafts,
+        localAttachmentDrafts,
+        outbox,
+        forumTopics,
+        lastForumTopicIds,
+        activeChatId: nextActiveChatId,
+        activeTopicId: current.activeTopicId ?? cachedActiveTopicId,
+        chatFilter: current.chatFilter !== "main" ? current.chatFilter : chatFilter,
+        cacheHealth: migration.health,
+      });
+      history.restoreContexts(snapshot.historyContexts ?? []);
+      publishMessageChange({ type: "reset", messages });
+    };
+
+    const mergeHistoryPage = (incomingMessages: readonly Message[]) => {
+      if (incomingMessages.length === 0) return { messages: get().messages, removingMessages: get().removingMessages };
+      const messages = new Map(get().messages);
+      const removingMessages = new Map(get().removingMessages);
+      const incomingByChat = new Map<string, Message[]>();
+      for (const message of incomingMessages) {
+        const incoming = incomingByChat.get(message.chatId) ?? [];
+        incoming.push(message);
+        incomingByChat.set(message.chatId, incoming);
+      }
+      for (const [chatId, incoming] of incomingByChat) {
+        const existing = messages.get(chatId) ?? [];
+        for (const message of incoming) {
+          queueBlockedReactionReads([message]);
+          reconcileMessageAttention(message, existing.find((candidate) => candidate.id === message.id), false);
+        }
+        messages.set(chatId, upsertMessages(existing, incoming.map(message => message.isRemoving ? { ...message, isRemoving: false } : message)));
+        const incomingIds = new Set(incoming.map((message) => message.id));
+        const ghosts = (removingMessages.get(chatId) ?? []).filter((message) => !incomingIds.has(message.id));
+        if (ghosts.length > 0) removingMessages.set(chatId, ghosts);
+        else removingMessages.delete(chatId);
+      }
+      return { messages, removingMessages };
+    };
+
+    const history = new ConversationHistory({
+      online: () => get().authorization.kind === "ready" && get().connectionStatus === "online",
+      active: (chatId, topicId) => get().activeChatId === chatId && get().activeTopicId === topicId,
+      messages: (chatId, topicId) => (get().messages.get(chatId) ?? []).filter(message => !topicId || message.topicId === topicId),
+      state: (chatId, topicId) => topicId ? get().topicHistories.get(topicKey(chatId, topicId)) : get().histories.get(chatId),
+      request: (chatId, topicId, request) => {
+        const traceId = request.purpose === "refresh" && !(get().messages.get(chatId)?.length)
+          ? getActiveConversationTraceId() : undefined;
+        markConversationSwitch(traceId, "asyncWaitStarted");
+        const pending = topicId
+          ? transport.loadForumTopicHistory(chatId, topicId, 30, request)
+          : transport.loadChatHistory(chatId, 30, request);
+        if (traceId === undefined) return pending;
+        return pending.then(page => {
+          markConversationSwitch(traceId, "asyncWaitFinished", { failed: false });
+          return page;
+        }, error => {
+          markConversationSwitch(traceId, "asyncWaitFinished", { failed: true });
+          throw error;
+        });
+      },
+      publish: (chatId, topicId, state, page) => {
+        const histories = new Map(topicId ? get().topicHistories : get().histories);
+        histories.set(topicKey(chatId, topicId), state);
+        const merged = mergeHistoryPage(page?.messages ?? []);
+        set({ ...(topicId ? { topicHistories: histories } : { histories }),
+          messages: merged.messages, removingMessages: merged.removingMessages,
+          ...(page ? { operationError: undefined } : {}),
+        });
+        if (page?.messages?.length) {
+          publishMessageChange({ type: "upsert", messages: page.messages, liveMessages: [] });
+          scheduleCacheWrite();
+        }
+      },
+      error: (error, topicId) => set({ operationError: errorMessage(error,
+        topicId ? translate("无法加载话题消息") : translate("无法加载历史消息")) }),
+      diagnostic: (chatId, details) => {
+        if (isPerformanceMonitoringEnabled()) {
+          logPerformance("ui_history_data", { ...details, chatHash: diagnosticChatHash(chatId) });
+        }
+      },
+    });
+    const snapshotWithHistory = (...parameters: Parameters<typeof cachedSnapshotFrom>) => {
+      const snapshot = cachedSnapshotFrom(...parameters);
+      const contexts = history.cachedContexts(snapshot.messages);
+      if (contexts.length) snapshot.historyContexts = contexts;
+      return snapshot;
+    };
+    const loadHistory = (chatId: string, mode: "ensure" | "older") => mode === "ensure"
+      ? history.ensure(chatId) : history.older(chatId);
+    const loadForumTopicHistory = (chatId: string, topicId: string, mode: "ensure" | "older") => mode === "ensure"
+      ? history.ensure(chatId, topicId) : history.older(chatId, topicId);
+
+    const invalidateSyncState = () => {
+      syncGeneration += 1;
+      syncRetries.clear();
+      transport.resetSyncState();
+      forumController.reset();
+      history.invalidate();
+      forumTopicsRefreshedAt.clear();
+      set({ chatLists: new Map() });
+    };
+
+    const refreshVisibleData = () => {
+      if (get().authorization.kind !== "ready" || get().connectionStatus !== "online") return;
+      void loadChats();
+      const { activeChatId, activeTopicId, chats } = get();
+      if (!activeChatId) return;
+      transport.setConversationFocus?.(activeChatId);
+      if (chats.get(activeChatId)?.isForum) {
+        if (activeTopicId) loadActiveForumTopic(activeChatId, activeTopicId);
+        void refreshForumConversation(activeChatId, true);
+      } else {
+        void loadHistory(activeChatId, "ensure");
+      }
+    };
+
+    const loadChats = async (chatListId = get().chatFilter) => {
+      if (get().authorization.kind !== "ready" || get().connectionStatus !== "online") return;
+      const current = get().chatLists.get(chatListId);
+      const generation = accountGeneration;
+      const sync = syncGeneration;
+      if (current?.loading || current?.hasMore === false) return;
+
+      const chatLists = new Map(get().chatLists);
+      chatLists.set(chatListId, { loading: true, hasMore: current?.hasMore ?? true });
+      set({ chatLists });
+      try {
+        const page = await transport.loadMoreChats(chatListId, 50);
+        if (generation !== accountGeneration || sync !== syncGeneration) return;
+        syncRetries.complete(`list:${chatListId}`);
+        const nextChatLists = new Map(get().chatLists);
+        nextChatLists.set(chatListId, { loading: false, hasMore: page.hasMore });
+        set({ chatLists: nextChatLists, operationError: undefined });
+        scheduleCacheWrite();
+      } catch (error) {
+        if (generation !== accountGeneration || sync !== syncGeneration) return;
+        const nextChatLists = new Map(get().chatLists);
+        nextChatLists.set(chatListId, { loading: false, hasMore: true });
+        syncRetries.schedule(`list:${chatListId}`, () => loadChats(chatListId), error);
+        set({
+          chatLists: nextChatLists,
+          operationError: error instanceof Error ? error.message : translate("无法加载更多会话"),
+        });
+      }
+    };
+
+    const loadInitialVisibleFolder = () => {
+      const { chatFilter, chatLists } = get();
+      // Transport bootstrap loads main only. A cached/early-selected folder
+      // must load when authorization and connection become ready, even when
+      // cached rows fill the viewport and sidebar auto-pagination never runs.
+      if (chatFilter !== "main" && !chatLists.has(chatFilter)) void loadChats(chatFilter);
+    };
+
+    const searchController = createSearchController({
+      transport,
+      get,
+      set,
+      onError: errorMessage,
+    });
+
+    const documentIsVisible = () =>
+      typeof document === "undefined" || document.visibilityState === "visible";
+
+    const markChatRead = (chatId: string, activeOnly = true) => {
+      const generation = accountGeneration;
+      const previous = readRequestChains.get(chatId) ?? Promise.resolve();
+      let succeeded = false;
+      const operation = previous
+        .catch(() => undefined)
+        .then(async () => {
+          const state = get();
+          const chat = state.chats.get(chatId);
+          const saved = chat?.kind === "saved";
+          if (
+            generation !== accountGeneration ||
+            state.authorization.kind !== "ready" ||
+            (activeOnly && state.activeChatId !== chatId) ||
+            (!saved && !documentIsVisible()) ||
+            (saved && (state.connectionStatus !== "online" || chat.unreadCount === 0))
+          ) {
+            return;
+          }
+          await transport.markChatRead(chatId);
+          succeeded = true;
+        })
+        .catch((error) => {
+          if (generation !== accountGeneration) return;
+          set({ operationError: error instanceof Error ? error.message : translate("无法更新已读状态") });
+        });
+      const tracked = operation.finally(() => {
+        if (readRequestChains.get(chatId) === tracked) readRequestChains.delete(chatId);
+      });
+      readRequestChains.set(chatId, tracked);
+      return tracked.then(() => succeeded);
+    };
+
+    const markForumTopicRead = async (chatId: string, topicId: string) => {
+      if (
+        get().authorization.kind !== "ready" ||
+        get().activeChatId !== chatId ||
+        get().activeTopicId !== topicId ||
+        !documentIsVisible()
+      ) return false;
+      const messages = get().messages.get(chatId) ?? [];
+      let latestIncoming: Message | undefined;
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (message.topicId === topicId && !message.outgoing) {
+          latestIncoming = message;
+          break;
+        }
+      }
+      if (!latestIncoming) return false;
+      const topic = get().forumTopics.get(chatId)?.find((candidate) => candidate.id === topicId);
+      if (
+        topic?.lastReadInboxMessageId === latestIncoming.id &&
+        topic.unreadCount === 0
+      ) return false;
+      try {
+        await transport.markForumTopicRead(chatId, topicId, latestIncoming.id);
+        const forumTopics = new Map(get().forumTopics);
+        forumTopics.set(chatId, (forumTopics.get(chatId) ?? []).map((topic) => topic.id === topicId
+          ? {
+              ...topic,
+              unreadCount: 0,
+              lastReadInboxMessageId: latestIncoming.id,
+            }
+          : topic));
+        set({ forumTopics });
+        return true;
+      } catch (error) {
+        set({ operationError: errorMessage(error, translate("无法更新话题已读状态")) });
+        return false;
+      }
+    };
+
+    const markActiveConversationRead = (chatId: string) => {
+      const current = get();
+      if (current.activeChatId !== chatId) return Promise.resolve(false);
+      if (current.chats.get(chatId)?.isForum) {
+        return current.activeTopicId
+          ? markForumTopicRead(chatId, current.activeTopicId)
+          : Promise.resolve(false);
+      }
+      return markChatRead(chatId);
+    };
+
+    const migrateChatState = (fromChatId: string, toChatId: string) => {
+      if (!fromChatId || !toChatId || fromChatId === toChatId) return;
+      for (const key of removedMessageIds) {
+        if (key.startsWith(`${fromChatId}:`)) removedMessageIds.add(`${toChatId}:${key.slice(fromChatId.length + 1)}`);
+      }
+      const current = get();
+      const chats = new Map(current.chats);
+      const oldChat = chats.get(fromChatId);
+      const newChat = chats.get(toChatId);
+      if (oldChat) {
+        chats.set(toChatId, newChat ? { ...oldChat, ...newChat, id: toChatId } : { ...oldChat, id: toChatId });
+      }
+      chats.delete(fromChatId);
+
+      const messages = new Map(current.messages);
+      const migratedMessages = (messages.get(fromChatId) ?? [])
+        .map((message) => migrateMessageChatId(message, fromChatId, toChatId));
+      messages.delete(fromChatId);
+      if (migratedMessages.length > 0 || messages.has(toChatId)) {
+        messages.set(toChatId, upsertMessages(messages.get(toChatId) ?? [], migratedMessages));
+      }
+      history.discard(fromChatId);
+      history.discard(toChatId);
+
+      const removingMessages = new Map(current.removingMessages);
+      const migratedRemoving = (removingMessages.get(fromChatId) ?? [])
+        .map((message) => migrateMessageChatId(message, fromChatId, toChatId));
+      removingMessages.delete(fromChatId);
+      if (migratedRemoving.length > 0) {
+        removingMessages.set(toChatId, upsertMessages(removingMessages.get(toChatId) ?? [], migratedRemoving));
+      }
+
+      const unreadAttentionMessageIds = new Map(current.unreadAttentionMessageIds);
+      const migratedAttention = [
+        ...(unreadAttentionMessageIds.get(toChatId) ?? []),
+        ...(unreadAttentionMessageIds.get(fromChatId) ?? []),
+      ];
+      unreadAttentionMessageIds.delete(fromChatId);
+      if (migratedAttention.length > 0) {
+        unreadAttentionMessageIds.set(toChatId, [...new Set(migratedAttention)]);
+      }
+
+      const drafts = new Map(current.drafts);
+      for (const [key, draft] of current.drafts) {
+        const migratedKey = migrateChatKey(key, fromChatId, toChatId);
+        const migratedDraft = draft.chatId === fromChatId ? { ...draft, chatId: toChatId } : draft;
+        if (migratedKey !== key) drafts.delete(key);
+        const previous = drafts.get(migratedKey);
+        if (!previous || Date.parse(migratedDraft.updatedAt) >= Date.parse(previous.updatedAt)) {
+          drafts.set(migratedKey, migratedDraft);
+        }
+      }
+
+      const localAttachmentDrafts = new Map(current.localAttachmentDrafts);
+      for (const [key, draft] of [...localAttachmentDrafts]) {
+        if (draft.chatId !== fromChatId) continue;
+        const migratedKey = migrateChatKey(key, fromChatId, toChatId);
+        localAttachmentDrafts.delete(key);
+        localAttachmentDrafts.set(migratedKey, {
+          ...draft,
+          draftKey: migratedKey,
+          chatId: toChatId,
+        });
+      }
+
+      const outbox = current.outbox.map((item) => item.chatId === fromChatId
+        ? { ...item, chatId: toChatId }
+        : item);
+      const histories = new Map(current.histories);
+      const oldHistory = histories.get(fromChatId);
+      const newHistory = histories.get(toChatId);
+      histories.delete(fromChatId);
+      if (oldHistory || newHistory) {
+        histories.set(toChatId, {
+          loading: Boolean(oldHistory?.loading || newHistory?.loading),
+          hasMore: Boolean(oldHistory?.hasMore || newHistory?.hasMore),
+          initialized: Boolean(oldHistory?.initialized || newHistory?.initialized),
+        });
+      }
+
+      const forumTopics = new Map(current.forumTopics);
+      const oldTopics = forumTopics.get(fromChatId);
+      if (oldTopics && !forumTopics.has(toChatId)) forumTopics.set(toChatId, oldTopics);
+      forumTopics.delete(fromChatId);
+      const forumTopicsLoading = new Set(current.forumTopicsLoading);
+      if (forumTopicsLoading.delete(fromChatId)) forumTopicsLoading.add(toChatId);
+      const topicHistories = new Map(current.topicHistories);
+      topicHistories.clear();
+      for (const [key, history] of current.topicHistories) topicHistories.set(migrateChatKey(key, fromChatId, toChatId), history);
+      const lastForumTopicIds = new Map(current.lastForumTopicIds);
+      const oldTopicId = lastForumTopicIds.get(fromChatId);
+      lastForumTopicIds.delete(fromChatId);
+      if (oldTopicId && !lastForumTopicIds.has(toChatId)) lastForumTopicIds.set(toChatId, oldTopicId);
+
+      const typingUserIds = new Map(current.typingUserIds);
+      const oldTyping = typingUserIds.get(fromChatId);
+      typingUserIds.delete(fromChatId);
+      if (oldTyping?.length) typingUserIds.set(toChatId, [...new Set([...(typingUserIds.get(toChatId) ?? []), ...oldTyping])]);
+
+      const chatAdministratorLabels = new Map(current.chatAdministratorLabels);
+      const labels = chatAdministratorLabels.get(fromChatId);
+      chatAdministratorLabels.delete(fromChatId);
+      if (labels && !chatAdministratorLabels.has(toChatId)) chatAdministratorLabels.set(toChatId, labels);
+
+      for (const [key, timer] of [...readTimers]) {
+        if (key === fromChatId) {
+          globalThis.clearTimeout(timer);
+          readTimers.delete(key);
+        }
+      }
+      for (const [key, timer] of [...typingTimers]) {
+        if (key.startsWith(`${fromChatId}:`)) {
+          globalThis.clearTimeout(timer);
+          typingTimers.delete(key);
+        }
+      }
+      readRequestChains.delete(fromChatId);
+      groupManagementLoads.delete(fromChatId);
+      chatAdministratorLabelLoads.delete(fromChatId);
+      forumTopicsRefreshedAt.delete(fromChatId);
+      sharedMediaIndex.clearChat(fromChatId);
+      sharedMediaIndex.clearChat(toChatId);
+
+      const activeChatId = current.activeChatId === fromChatId ? toChatId : current.activeChatId;
+      const oldAttachmentGenerationKeys = [...localAttachmentDraftGenerations.keys()]
+        .filter((key) => migrateChatKey(key, fromChatId, toChatId) !== key);
+      for (const key of oldAttachmentGenerationKeys) {
+        const migratedKey = migrateChatKey(key, fromChatId, toChatId);
+        const generation = localAttachmentDraftGenerations.get(key);
+        localAttachmentDraftGenerations.delete(key);
+        if (generation !== undefined) localAttachmentDraftGenerations.set(migratedKey, generation);
+      }
+      for (const collection of [attentionReadRequests, acknowledgedAttentionMessages, liveAttentionCandidates]) {
+        for (const key of [...collection]) {
+          if (!key.startsWith(`${fromChatId}:`)) continue;
+          collection.delete(key);
+          collection.add(`${toChatId}:${key.slice(fromChatId.length + 1)}`);
+        }
+      }
+      const previousSeenReactions = seenReactionMessageIds.get(fromChatId);
+      seenReactionMessageIds.delete(fromChatId);
+      if (previousSeenReactions) {
+        seenReactionMessageIds.set(toChatId, new Set([
+          ...(seenReactionMessageIds.get(toChatId) ?? []),
+          ...previousSeenReactions,
+        ]));
+      }
+      reactionAttentionLoads.delete(fromChatId);
+      mentionAttentionLoads.delete(fromChatId);
+      reactionReadRequests.delete(fromChatId);
+      const profile = current.profile.target?.kind === "chat" && current.profile.target.chatId === fromChatId
+        ? emptyProfileState()
+        : current.profile;
+      const groupManagement = current.groupManagement?.chatId === fromChatId
+        ? undefined
+        : current.groupManagement;
+      set({
+        chats,
+        messages,
+        removingMessages,
+        unreadAttentionMessageIds,
+        drafts,
+        localAttachmentDrafts,
+        outbox,
+        histories,
+        forumTopics,
+        forumTopicsLoading,
+        topicHistories,
+        lastForumTopicIds,
+        typingUserIds,
+        chatAdministratorLabels,
+        activeChatId,
+        profile,
+        groupManagement,
+        groupManagementLoading: groupManagement ? current.groupManagementLoading : false,
+        groupManagementError: groupManagement ? current.groupManagementError : undefined,
+      });
+      draftSync.migrateChat(fromChatId, toChatId);
+      publishMessageChange({ type: "reset", messages });
+      if ((chats.get(toChatId)?.unreadReactionCount ?? 0) > 0) {
+        void refreshUnreadReactionAttention(toChatId);
+      }
+      scheduleCacheWrite();
+    };
+
+    const scheduleChatRead = (chatId: string, delayMs = 120) => {
+      if (preferencesStore.getState().ghostMode) return;
+      const generation = accountGeneration;
+      const currentTimer = readTimers.get(chatId);
+      if (currentTimer) globalThis.clearTimeout(currentTimer);
+      readTimers.set(chatId, globalThis.setTimeout(() => {
+        readTimers.delete(chatId);
+        if (generation !== accountGeneration || preferencesStore.getState().ghostMode) return;
+        // Saved Messages belongs to the account itself and is read even in the background.
+        if (get().chats.get(chatId)?.kind === "saved") void markChatRead(chatId, false);
+        else void markActiveConversationRead(chatId);
+      }, delayMs));
+    };
+
+    const scheduleSavedMessagesRead = (chat: Chat) => {
+      if (chat.kind === "saved" && chat.unreadCount > 0) scheduleChatRead(chat.id);
+    };
+
+    const maybeAutoCacheArchiveMedia = (message: Message, priority = 48) => {
+      if (!preferencesStore.getState().deletedMessageArchiveEnabled) return;
+      const fileId = archiveMediaFileId(message);
+      const content = message.content.kind === "media" &&
+        (message.content.mediaType === "photo" || message.content.mediaType === "sticker")
+        ? message.content
+        : undefined;
+      if (fileId !== undefined && content && !content.isDownloaded) {
+        void get().cacheFile(fileId, priority).catch(() => undefined);
+      }
+    };
+
+    const commitFileUpdates = (updated: Message[]) => {
+      const messages = new Map(get().messages);
+      const byChat = new Map<string, Message[]>();
+      for (const message of updated) {
+        const items = byChat.get(message.chatId) ?? [];
+        items.push(message);
+        byChat.set(message.chatId, items);
+      }
+      for (const [chatId, items] of byChat) {
+        messages.set(chatId, upsertMessages(messages.get(chatId) ?? [], items));
+      }
+      set({ messages });
+      publishMessageChange({ type: "upsert", messages: updated, liveMessages: [] });
+    };
+
+    const mediaFileRestorer = new MediaFileRestorer({
+      canRestore: () => !accountTransition && get().authorization.kind === "ready" && get().connectionStatus === "online",
+      messages: () => [...(get().messages.get(get().activeChatId ?? "") ?? []), ...retainedMessages.all()],
+      resolveFile: remoteId => transport.resolveRemoteFile(remoteId),
+      refreshMessage: async message => {
+        const generation = accountGeneration;
+        const fresh = await transport.getMessage(message.chatId, message.id);
+        if (!fresh || generation !== accountGeneration || !acceptsMessage(fresh) ||
+          get().messages.get(message.chatId)?.find(item => item.id === message.id) !== message) return;
+        const messages = new Map(get().messages);
+        messages.set(fresh.chatId, upsertMessage(messages.get(fresh.chatId) ?? [], fresh));
+        set({ messages });
+        publishMessageChange({ type: "upsert", messages: [fresh], liveMessages: [] });
+        scheduleCacheWrite();
+      },
+      applyFile: (remoteId, file) => {
+        const updated = messageFiles.forRemoteFile(remoteId).flatMap(message => {
+          const next = bindMessageFile(message, remoteId, file);
+          return next === message ? [] : [next];
+        });
+        if (updated.length === 0) return;
+        commitFileUpdates(updated);
+        // Restoring old archives can queue thousands of missing files. Keep
+        // those repairs in background capacity; live preservation stays urgent.
+        for (const message of updated) maybeAutoCacheArchiveMedia(message, 16);
+        scheduleCacheWrite();
+      },
+    });
+
+    const applyEvent = (event: TelegramEvent) => {
+      if (event.type === "emoji.catalogChanged" || event.type === "stickerSet.updated") {
+        emojiPickerController.handleUpdate(event);
+        return;
+      }
+      if (event.type === "file.updated") {
+        emojiPickerController.updateFile(event.file);
+        const updated = messageFiles.forFile(event.file.fileId).flatMap(message => {
+          const current = findIndexedMessage(get().messages.get(message.chatId) ?? [], message.id);
+          if (!current) return [];
+          const next = updateMessageFile(current, event.file);
+          return next === current ? [] : [next];
+        });
+        if (updated.length === 0) return;
+        commitFileUpdates(updated);
+        if (event.file.isDownloaded || !event.file.isDownloading) scheduleCacheWrite();
+        return;
+      }
+      if (event.type === "authorization.changed") {
+        set({
+          authorization: event.state,
+          authorizationPending: false,
+          authorizationError: undefined,
+        });
+        if (event.state.kind === "ready") {
+          loadInitialVisibleFolder();
+          void mediaFileRestorer.restore();
+          scheduleCacheWrite();
+          draftSync.resumePending();
+          void flushOutbox();
+          const activeChatId = get().activeChatId;
+          if (activeChatId && get().connectionStatus === "online") {
+            transport.setConversationFocus?.(activeChatId);
+            const activeTopicId = get().activeTopicId;
+            if (get().chats.get(activeChatId)?.isForum) {
+              if (activeTopicId) loadActiveForumTopic(activeChatId, activeTopicId);
+              void refreshForumConversation(activeChatId);
+            } else {
+              void loadHistory(activeChatId, "ensure").then(() => markChatRead(activeChatId));
+              if (get().chats.get(activeChatId)?.kind === "channel") {
+                void get().loadChatSponsoredMessages(activeChatId);
+              }
+            }
+          }
+          if (get().connectionStatus === "online") {
+            for (const chat of get().chats.values()) {
+              scheduleSavedMessagesRead(chat);
+              if ((chat.unreadReactionCount ?? 0) > 0) void refreshUnreadReactionAttention(chat.id);
+            }
+          }
+        } else if (event.state.kind !== "preparing") {
+          if (event.state.kind === "closing" || event.state.kind === "closed") {
+            set({ connectionStatus: "offline" });
+          }
+          clearCachedData(!accountTransition);
+        }
+        return;
+      }
+
+      if (event.type === "sync.required") {
+        emojiPickerController.invalidate();
+        if (get().authorization.kind === "ready") {
+          invalidateSyncState();
+          refreshVisibleData();
+        }
+        return;
+      }
+
+      if (event.type === "proxy.settingsChanged") {
+        void get().loadProxySettings();
+        return;
+      }
+      if (event.type === "connection.changed") {
+        const recovered = event.status === "online" && get().connectionStatus !== "online" && hasConnected;
+        set({ connectionStatus: event.status });
+        if (event.status === "online") {
+          void mediaFileRestorer.restore();
+          hasConnected = true;
+          if (recovered) {
+            emojiPickerController.invalidate();
+            invalidateSyncState();
+            refreshVisibleData();
+          } else {
+            loadInitialVisibleFolder();
+          }
+          draftSync.resumePending();
+          void flushOutbox();
+          const activeChatId = get().activeChatId;
+          if (get().authorization.kind === "ready" && activeChatId) {
+            const activeTopicId = get().activeTopicId;
+            if (get().chats.get(activeChatId)?.isForum) {
+              if (activeTopicId) loadActiveForumTopic(activeChatId, activeTopicId);
+              void refreshForumConversation(activeChatId);
+            } else {
+              void loadHistory(activeChatId, "ensure").then(() => markChatRead(activeChatId));
+              if (get().chats.get(activeChatId)?.kind === "channel") {
+                void get().loadChatSponsoredMessages(activeChatId);
+              }
+            }
+          }
+          if (get().authorization.kind === "ready") {
+            for (const chat of get().chats.values()) {
+              scheduleSavedMessagesRead(chat);
+              if ((chat.unreadReactionCount ?? 0) > 0) void refreshUnreadReactionAttention(chat.id);
+            }
+          }
+        }
+        return;
+      }
+
+      if (event.type === "currentUser.changed") {
+        set({ currentUserId: event.userId });
+        scheduleCacheWrite();
+        void registerCurrentAccount();
+        return;
+      }
+
+      if (event.type === "sync.error") {
+        set({
+          phase: event.fatal ? "error" : get().phase,
+          connectionStatus: event.fatal ? "offline" : get().connectionStatus,
+          error: event.fatal ? event.message : get().error,
+          operationError: event.fatal ? undefined : event.message,
+        });
+        return;
+      }
+
+      if (event.type === "folders.replaced") {
+        let folders = event.folders;
+        const reorder = pendingFolderReorder;
+        if (reorder?.generation === accountGeneration && !accountTransition) {
+          reorder.serverFolders = folders;
+          const byId = new Map(folders.filter((folder) => folder.id !== "archive").map((folder) => [folder.id, folder]));
+          if (byId.size === reorder.order.length && reorder.order.every((id) => byId.has(id))) {
+            // Keep the pending order visible while still accepting current titles and icons.
+            folders = [...reorder.order.map((id) => byId.get(id)!), ...folders.filter((folder) => folder.id === "archive")];
+          }
+        }
+        const activeFolderExists = folders.some(
+          (folder) => folder.id === get().chatFilter,
+        );
+        set({
+          folders,
+          chatFilter: activeFolderExists
+            ? get().chatFilter
+            : (folders[0]?.id ?? "main"),
+        });
+        scheduleCacheWrite();
+        return;
+      }
+
+      if (event.type === "chat.migrated") {
+        migrateChatState(event.fromChatId, event.toChatId);
+        return;
+      }
+
+      if (event.type === "chats.upserted" || event.type === "chat.upsert") {
+        const incomingChats = event.type === "chats.upserted" ? event.chats : [event.chat];
+        const previousChats = get().chats;
+        const chatJoinStates = new Map(get().chatJoinStates);
+        for (const chat of incomingChats) {
+          const transitioned = chat.isMember !== previousChats.get(chat.id)?.isMember;
+          if (chatJoinStates.size > 0 && (chat.isMember === true || transitioned)) {
+            for (const [key, targetId] of chatJoinTargets) {
+              if (targetId === chat.id && chatJoinStates.get(key) !== "joining") chatJoinStates.delete(key);
+            }
+          }
+        }
+        const loadedManagement = get().groupManagement;
+        const managementChanged = Boolean(loadedManagement && incomingChats.some((chat) =>
+          chat.id === loadedManagement.chatId &&
+          JSON.stringify(previousChats.get(chat.id)?.management ?? null) !== JSON.stringify(chat.management ?? null),
+        ));
+        const activeChatId = get().activeChatId;
+        const previousActiveChat = activeChatId ? previousChats.get(activeChatId) : undefined;
+        const chats = new Map(previousChats);
+        for (let chat of incomingChats) {
+          for (const [listId, reorder] of pendingPinnedReorders) {
+            if (!reorder.serverOrders.has(chat.id)) continue;
+            reorder.serverOrders.set(chat.id, chat.listOrderByFolder?.[listId]);
+            if (isChatPinnedInFolder(chat, listId) && chat.folderIds.includes(listId)) {
+              chat = withListOrder(chat, listId, reorder.optimisticOrders.get(chat.id));
+            }
+          }
+          chats.set(chat.id, chat);
+        }
+        const firstChat = get().activeChatId || get().chatListReady
+          ? undefined
+          : filterAndSortChats(chats.values(), get().chatFilter, "")[0]?.id;
+        const activeChat = activeChatId ? chats.get(activeChatId) : undefined;
+        const activeChatModeChanged = Boolean(
+          activeChatId &&
+          activeChat &&
+          (!previousActiveChat || previousActiveChat.isForum !== activeChat.isForum),
+        );
+        set({
+          chats,
+          chatJoinStates,
+          groupManagement: managementChanged ? undefined : loadedManagement,
+          groupManagementError: managementChanged ? undefined : get().groupManagementError,
+          chatListReady: true,
+          activeChatId: get().activeChatId ?? firstChat,
+          activeTopicId: activeChatModeChanged && !activeChat?.isForum
+            ? undefined
+            : get().activeTopicId,
+        });
+        for (const chat of incomingChats) {
+          scheduleSavedMessagesRead(chat);
+          if (chat.unreadMentionCount === 0 && (previousChats.get(chat.id)?.unreadMentionCount ?? 0) > 0) {
+            clearUnreadMentionAttention(chat.id);
+          }
+          if ((chat.unreadReactionCount ?? 0) > 0) {
+            void refreshUnreadReactionAttention(chat.id);
+          } else if ((previousChats.get(chat.id)?.unreadReactionCount ?? 0) > 0) {
+            clearUnreadReactionAttention(chat.id);
+          }
+        }
+        if (event.type !== "chat.upsert" || event.cacheRelevant !== false) {
+          scheduleCacheWrite();
+        }
+        if (activeChatModeChanged && activeChatId && activeChat) {
+          history.discard(activeChatId);
+          if (activeChat.isForum) void refreshForumConversation(activeChatId);
+          else void loadHistory(activeChatId, "ensure").then(() => markChatRead(activeChatId));
+        }
+        if (firstChat) {
+          if (chats.get(firstChat)?.isForum) void refreshForumConversation(firstChat);
+          else void loadHistory(firstChat, "ensure").then(() => markChatRead(firstChat));
+        }
+        return;
+      }
+
+      if (event.type === "users.upserted") {
+        const current = get();
+        const users = new Map(current.users);
+        const userIdsByUsername = new Map(current.userIdsByUsername);
+        for (const incoming of event.users) {
+          const previous = users.get(incoming.id);
+          const user = preserveUserAvatarMedia(incoming, previous);
+          users.set(user.id, user);
+          const previousUsername = normalizedUsername(previous);
+          const nextUsername = normalizedUsername(user);
+          if (previousUsername && userIdsByUsername.get(previousUsername) === user.id) {
+            userIdsByUsername.delete(previousUsername);
+          }
+          if (nextUsername) userIdsByUsername.set(nextUsername, user.id);
+        }
+        set({ users, userIdsByUsername });
+        if (event.users.length > 0) scheduleCacheWrite();
+        return;
+      }
+
+      if (event.type === "user.upsert") {
+        const current = get();
+        const users = new Map(current.users);
+        const previous = users.get(event.user.id);
+        const user = preserveUserAvatarMedia(event.user, previous);
+        users.set(event.user.id, user);
+        // Mention selectors return primitive display keys, so this derived index can
+        // update in place without forcing an O(n) clone on frequent presence updates.
+        const userIdsByUsername = current.userIdsByUsername;
+        const previousUsername = normalizedUsername(previous);
+        const nextUsername = normalizedUsername(user);
+        if (previousUsername && userIdsByUsername.get(previousUsername) === event.user.id) {
+          userIdsByUsername.delete(previousUsername);
+        }
+        if (nextUsername) userIdsByUsername.set(nextUsername, event.user.id);
+        set({ users, userIdsByUsername });
+        if (event.cacheRelevant !== false) scheduleCacheWrite();
+        if (event.user.id === get().currentUserId) void registerCurrentAccount();
+        return;
+      }
+
+      if (event.type === "chat.typingChanged") {
+        if (event.senderId !== get().currentUserId) {
+          setTypingUser(event.chatId, event.senderId, event.typing);
+        }
+        return;
+      }
+
+      if (event.type === "forumTopics.changed") {
+        if (event.topic) {
+          const existing = get().forumTopics.get(event.chatId);
+          if (existing?.some((topic) => topic.id === event.topic?.id)) {
+            const forumTopics = new Map(get().forumTopics);
+            forumTopics.set(event.chatId, existing.map((topic) => topic.id === event.topic?.id
+              ? { ...topic, ...event.topic }
+              : topic));
+            set({ forumTopics });
+            if ((event.topic.unreadReactionCount ?? 0) > 0) {
+              void refreshUnreadReactionAttention(event.chatId);
+            }
+            scheduleCacheWrite();
+          }
+        }
+        if (get().chats.get(event.chatId)?.isForum) {
+          void refreshForumConversation(event.chatId, true);
+        }
+        return;
+      }
+
+      if (event.type === "chat.historyDeleted") {
+        historyDeletionVersions.set(event.chatId, (historyDeletionVersions.get(event.chatId) ?? 0) + 1);
+        history.discard(event.chatId);
+        if (event.lastMessageId) deletedHistory.set(event.chatId, event.lastMessageId);
+        const ids = new Set([
+          ...(get().messages.get(event.chatId) ?? []),
+          ...(get().removingMessages.get(event.chatId) ?? []),
+          ...retainedMessages.all().filter(message => message.chatId === event.chatId),
+        ].filter(message => event.lastMessageId === undefined || message.isLocallyDeleted ||
+          isInDeletedHistory(message.id, event.lastMessageId)).map(message => message.id));
+        for (const id of ids) {
+          const key = `${event.chatId}:${id}`;
+          removedMessageIds.add(key);
+          globalThis.clearTimeout(removalTimers.get(key));
+          removalTimers.delete(key);
+        }
+        const messages = new Map(get().messages);
+        const removingMessages = new Map(get().removingMessages);
+        messages.set(event.chatId, (messages.get(event.chatId) ?? []).filter(message => !ids.has(message.id)));
+        removingMessages.set(event.chatId, (removingMessages.get(event.chatId) ?? []).filter(message => !ids.has(message.id)));
+        sharedMediaIndex.clearChat(event.chatId);
+        set({ messages, removingMessages });
+        publishMessageChange({ type: "remove", chatId: event.chatId, messageIds: [...ids] });
+        get().clearGlobalSearch();
+        if (get().chatMessageSearch.input?.chatId === event.chatId) get().clearChatMessageSearch();
+        scheduleCacheWrite();
+        return;
+      }
+
+      if (event.type === "message.remove") {
+        const unreadAttentionMessageIds = new Map(get().unreadAttentionMessageIds);
+        const unreadAttention = (unreadAttentionMessageIds.get(event.chatId) ?? [])
+          .filter((messageId) => messageId !== event.messageId);
+        if (unreadAttention.length > 0) unreadAttentionMessageIds.set(event.chatId, unreadAttention);
+        else unreadAttentionMessageIds.delete(event.chatId);
+        liveAttentionCandidates.delete(`${event.chatId}:${event.messageId}`);
+        const existing = get().messages.get(event.chatId)?.find(message => message.id === event.messageId);
+        recordConversationMessage(event.chatId, event.messageId, conversationTraceKind.messageRemove,
+          event.preservedMessage ?? existing, {
+            remote: event.source === "remote", permanent: event.permanent, fromCache: event.fromCache,
+            immediate: event.immediate, archiveEnabled: preferencesStore.getState().deletedMessageArchiveEnabled,
+            isBot: get().users.get((event.preservedMessage ?? existing)?.senderId ?? "")?.isBot === true,
+          });
+        if (existing?.isLocallyDeleted && event.source === "remote") {
+          set({ unreadAttentionMessageIds });
+          return;
+        }
+        const preservedMessage = event.preservedMessage ?? existing;
+        if (
+          preferencesStore.getState().deletedMessageArchiveEnabled &&
+          event.source === "remote" &&
+          event.permanent === true &&
+          !removedMessageIds.has(`${event.chatId}:${event.messageId}`) &&
+          !isInDeletedHistory(event.messageId, deletedHistory.get(event.chatId)) &&
+          canArchiveDeletedMessage(preservedMessage) &&
+          get().users.get(preservedMessage!.senderId)?.isBot !== true
+        ) {
+          const archived = {
+            ...preservedMessage!,
+            content: retainHydratedContent(preservedMessage!.content, existing?.content),
+            isLocallyDeleted: true,
+            locallyDeletedAt: new Date().toISOString(),
+            permissions: undefined,
+            interaction: undefined,
+            isPinned: false,
+          };
+          const messages = new Map(get().messages);
+          messages.set(event.chatId, upsertMessage(messages.get(event.chatId) ?? [], archived));
+          recordConversationMessage(event.chatId, event.messageId, conversationTraceKind.archived, archived);
+          set({ messages, unreadAttentionMessageIds });
+          publishMessageChange({ type: "upsert", messages: [archived], liveMessages: [] });
+          maybeAutoCacheArchiveMedia(archived);
+          void flushCachedSnapshot().catch(() => set({ cacheHealth: "invalid" }));
+          return;
+        }
+        if (event.immediate) {
+          set({ unreadAttentionMessageIds });
+          removeMessageImmediately(event.chatId, event.messageId);
+          return;
+        }
+        if (event.permanent === true || event.source === "local") {
+          removedMessageIds.add(`${event.chatId}:${event.messageId}`);
+        }
+        set({ unreadAttentionMessageIds });
+        markMessageRemoving(event.chatId, event.messageId);
+        scheduleCacheWrite();
+        return;
+      }
+
+      if (event.type === "message.replace") {
+        history.replace(event.message.chatId, event.oldMessageId, event.message.id);
+        const chatId = event.message.chatId;
+        if (event.oldMessageId !== event.message.id) removedMessageIds.add(`${chatId}:${event.oldMessageId}`);
+        if (!acceptsMessage(event.message)) {
+          removeMessageImmediately(chatId, event.oldMessageId);
+          return;
+        }
+        queueBlockedReactionReads([event.message]);
+        const previousMessage = get().messages.get(chatId)
+          ?.find((message) => message.id === event.oldMessageId || message.id === event.message.id);
+        reconcileMessageAttention(event.message, previousMessage, false);
+        transferMessageEntrance(chatId, event.oldMessageId, event.message);
+        const oldKey = `${chatId}:${event.oldMessageId}`;
+        const removalTimer = removalTimers.get(oldKey);
+        if (removalTimer) globalThis.clearTimeout(removalTimer);
+        removalTimers.delete(oldKey);
+
+        const messages = new Map(get().messages);
+        messages.set(
+          chatId,
+          replaceMessage(messages.get(chatId) ?? [], event.oldMessageId, event.message),
+        );
+        const removingMessages = new Map(get().removingMessages);
+        const ghosts = (removingMessages.get(chatId) ?? []).filter(
+          (message) => message.id !== event.oldMessageId && message.id !== event.message.id,
+        );
+        if (ghosts.length > 0) removingMessages.set(chatId, ghosts);
+        else removingMessages.delete(chatId);
+        set({ messages, removingMessages });
+        publishMessageChange({
+          type: "replace",
+          oldMessageId: event.oldMessageId,
+          message: event.message,
+        });
+        scheduleCacheWrite();
+        return;
+      }
+
+      if (event.type === "messages.upserted") {
+        if (event.messages.length === 0) return;
+        const mergeStartedAt = isPerformanceMonitoringEnabled() ? performance.now() : undefined;
+        const messages = new Map(get().messages);
+        const incomingByChat = new Map<string, typeof event.messages>();
+        let beforeCount = 0;
+        for (const message of event.messages) {
+          // Bulk history preservation shares the bounded background capacity.
+          maybeAutoCacheArchiveMedia(message, 16);
+          const chatMessages = incomingByChat.get(message.chatId) ?? [];
+          chatMessages.push(message);
+          incomingByChat.set(message.chatId, chatMessages);
+        }
+        for (const [chatId, incoming] of incomingByChat) {
+          const existing = messages.get(chatId) ?? [];
+          for (const message of incoming) {
+            queueBlockedReactionReads([message]);
+            reconcileMessageAttention(
+              message,
+              existing.find((candidate) => candidate.id === message.id),
+              false,
+            );
+          }
+          beforeCount += existing.length;
+          messages.set(chatId, upsertMessages(existing, incoming.map(message => message.isRemoving ? { ...message, isRemoving: false } : message)));
+          const removingMessages = new Map(get().removingMessages);
+          const incomingIds = new Set(incoming.map((message) => message.id));
+          const ghosts = (removingMessages.get(chatId) ?? []).filter((message) => !incomingIds.has(message.id));
+          if (ghosts.length > 0) removingMessages.set(chatId, ghosts); else removingMessages.delete(chatId);
+          set({ removingMessages });
+        }
+        set({ messages });
+        publishMessageChange({ type: "upsert", messages: event.messages, liveMessages: [] });
+        if (mergeStartedAt !== undefined && isPerformanceMonitoringEnabled()) logPerformance("ui_history_merge", {
+          durationMs: performance.now() - mergeStartedAt,
+          batchCount: event.messages.length,
+          beforeCount,
+          afterCount: [...incomingByChat.keys()].reduce(
+            (total, chatId) => total + (messages.get(chatId)?.length ?? 0),
+            0,
+          ),
+          traceId: getActiveConversationTraceId(),
+          duringConversationSwitch: getActiveConversationTraceId() !== undefined,
+        });
+        const activeChatId = get().activeChatId;
+        if (activeChatId && event.messages.some(
+          (message) => message.chatId === activeChatId &&
+            !message.outgoing &&
+            (!get().chats.get(activeChatId)?.isForum || (
+              Boolean(get().activeTopicId) && message.topicId === get().activeTopicId
+            )),
+        )) {
+          scheduleChatRead(activeChatId);
+        }
+        if (event.cacheRelevant !== false) scheduleCacheWrite();
+        return;
+      }
+
+      if (event.type === "chat.draftChanged") {
+        if (event.draft?.topicId) {
+          const key = topicKey(event.chatId, event.draft.topicId);
+          draftSync.acceptServerDraft(key, event.draft);
+          return;
+        }
+        draftSync.acceptServerDraft(event.chatId, event.draft);
+        return;
+      }
+
+      if (event.type === "drafts.replaced") {
+        draftSync.replaceServerDrafts(event.drafts, event.chatIds);
+        return;
+      }
+
+      const messages = new Map(get().messages);
+      const existingMessages = messages.get(event.message.chatId) ?? [];
+      maybeAutoCacheArchiveMedia(event.message);
+      queueBlockedReactionReads([event.message]);
+      const isNewLiveMessage = event.animateEntrance === true &&
+        !existingMessages.some((message) => message.id === event.message.id);
+      reconcileMessageAttention(
+        event.message,
+        existingMessages.find((message) => message.id === event.message.id),
+        event.animateEntrance === true,
+      );
+      if (isNewLiveMessage) {
+        markMessageEntrance(event.message);
+      }
+      if (!event.message.outgoing) {
+        setTypingUser(event.message.chatId, event.message.senderId, false);
+      }
+      messages.set(
+        event.message.chatId,
+        upsertMessage(existingMessages, event.message),
+      );
+      set({ messages });
+      publishMessageChange({
+        type: "upsert",
+        messages: [event.message],
+        liveMessages: isNewLiveMessage ? [event.message] : [],
+      });
+      if (
+        !event.message.outgoing &&
+        event.message.chatId === get().activeChatId &&
+        (!get().chats.get(event.message.chatId)?.isForum || (
+          Boolean(get().activeTopicId) && event.message.topicId === get().activeTopicId
+        ))
+      ) {
+        scheduleChatRead(event.message.chatId);
+      }
+      if (event.cacheRelevant !== false) scheduleCacheWrite();
+    };
+
+    if (import.meta.env.VITE_WEBVIEW_STRESS === "1") {
+      (
+        globalThis as typeof globalThis & {
+          __fardgramWebviewStressDispatch?: (event: TelegramEvent) => void;
+        }
+      ).__fardgramWebviewStressDispatch = (event) => {
+        globalThis.queueMicrotask(() => applyEvent(event));
+      };
+    }
+
+    const selectAccountAndReconnect = async (accountId: string) => {
+      const current = get();
+      if (current.accountPending) return false;
+      if (accountId === current.activeAccountId && current.authorization.kind === "ready") {
+        return true;
+      }
+      const accountSwitching = current.authorization.kind === "ready" &&
+        current.accounts.some((account) => account.id === accountId);
+      const previousAccountId = current.activeAccountId;
+      const discardPreviousAccount = shouldDiscardUnregisteredAccount(
+        current.accounts,
+        previousAccountId,
+        accountId,
+      );
+      let disconnected = false;
+      accountTransition = true;
+      accountGeneration += 1;
+      resetOutbox();
+      mediaFileRestorer.reset();
+      registeredAccountKey = undefined;
+      set({
+        accountPending: true,
+        accountSwitching,
+        accountError: undefined,
+        error: undefined,
+        operationError: undefined,
+      });
+      try {
+        await Promise.all([
+          accountRegistration,
+          draftSync.flushPending(),
+          flushCachedSnapshot(),
+        ]);
+        await transport.disconnect();
+        disconnected = true;
+        if (discardPreviousAccount) {
+          await transport.removeAccount(previousAccountId);
+        }
+        applyAccountState(await transport.selectAccount(accountId));
+        // Reconnect the selected TDLib database in the existing Store. Keeping the
+        // WebView mounted avoids a full-page reload and its repeated blank flashes.
+        clearCachedData(false);
+        set({
+          phase: "idle",
+          connectionStatus: "offline",
+          authorization: { kind: "preparing" },
+          authorizationPending: false,
+          authorizationError: undefined,
+          accountPending: true,
+          accountSwitching,
+          accountError: undefined,
+          error: undefined,
+          operationError: undefined,
+        });
+        await get().initialize({ preserveAccountPending: true, skipAccountState: true });
+        if (get().phase === "error") {
+          throw new Error(get().error ?? translate("无法切换账号"));
+        }
+        accountTransition = false;
+        void mediaFileRestorer.restore();
+        void registerCurrentAccount();
+        return true;
+      } catch (error) {
+        accountTransition = false;
+        set({
+          accountPending: false,
+          accountSwitching: false,
+          accountError: error instanceof Error ? error.message : translate("无法切换账号"),
+        });
+        if (disconnected) reloadApplication();
+        return false;
+      }
+    };
+
+    const selectAfterChatRemoval = (chatId: string) => {
+      if (get().activeChatId !== chatId) return;
+      const nextChat = filterAndSortChats(get().chats.values(), get().chatFilter, "")
+        .find(chat => chat.id !== chatId);
+      const lastForumTopicIds = new Map(get().lastForumTopicIds);
+      lastForumTopicIds.delete(chatId);
+      set({ lastForumTopicIds });
+      if (nextChat) get().selectChat(nextChat.id);
+      else {
+        set({ activeChatId: undefined, activeTopicId: undefined });
+        scheduleCacheWrite();
+      }
+    };
+
+    const manageChat = async (
+      chatId: string,
+      fallbackError: string,
+      confirmationError: string,
+      operation: () => Promise<void>,
+      confirmed: () => boolean,
+    ) => {
+      const generation = accountGeneration;
+      const isCurrent = () => generation === accountGeneration && !accountTransition;
+      const state = get();
+      if (
+        !isCurrent() ||
+        state.authorization.kind !== "ready" ||
+        !state.chats.has(chatId) ||
+        state.chatManagementPending.has(chatId) ||
+        [...pendingPinnedReorders.values()].some((reorder) => reorder.serverOrders.has(chatId))
+      ) return false;
+
+      const pending = new Set(state.chatManagementPending);
+      pending.add(chatId);
+      set({ chatManagementPending: pending, operationError: undefined });
+      try {
+        await operation();
+        if (!isCurrent()) return false;
+        if (!confirmed()) throw new Error(confirmationError);
+        await flushCachedSnapshot().catch(() => {
+          if (isCurrent()) set({ cacheHealth: "invalid" });
+        });
+        return isCurrent();
+      } catch (error) {
+        if (!isCurrent()) return false;
+        set({ operationError: errorMessage(error, fallbackError) });
+        return false;
+      } finally {
+        if (isCurrent()) {
+          const latestPending = new Set(get().chatManagementPending);
+          latestPending.delete(chatId);
+          set({ chatManagementPending: latestPending });
+        }
+      }
+    };
+
+    const manageFolder = async <T,>(
+      fallbackError: string,
+      confirmationError: string,
+      operation: () => Promise<T>,
+      confirmed: (result: T) => boolean,
+    ): Promise<T | undefined> => {
+      if (get().authorization.kind !== "ready" || get().folderManagementPending) {
+        return undefined;
+      }
+      set({ folderManagementPending: true, operationError: undefined });
+      try {
+        const result = await operation();
+        if (!confirmed(result)) throw new Error(confirmationError);
+        await flushCachedSnapshot();
+        return result;
+      } catch (error) {
+        set({ operationError: errorMessage(error, fallbackError) });
+        return undefined;
+      } finally {
+        set({ folderManagementPending: false });
+      }
+    };
+
+    const profileController = createProfileController({
+      transport,
+      get,
+      set,
+      scheduleCacheWrite,
+      registerCurrentAccount,
+      onError: errorMessage,
+    });
+    const { setOutbox, persistOutboxState, flushOutbox, resetOutbox } = createOutboxController({
+      transport,
+      get,
+      set,
+      flushCachedSnapshot,
+      topicKey,
+      onError: errorMessage,
+    });
+    const forumController = createForumController({
+      transport,
+      get,
+      set,
+      topicKey,
+      onError: errorMessage,
+      onTopicsLoaded: (chatId, query) => {
+        if (!query.trim()) {
+          forumTopicsRefreshedAt.set(chatId, Date.now());
+          if (expectedUnreadReactionCount(chatId) > 0) {
+            void refreshUnreadReactionAttention(chatId);
+          }
+        }
+      },
+    });
+    const touchForumTopic = (chatId: string, topicId: string) => {
+      const next = new Map(get().lastForumTopicIds);
+      next.delete(chatId);
+      next.set(chatId, topicId);
+      return next;
+    };
+    const restorableForumTopicId = (chatId: string, topics = get().forumTopics.get(chatId) ?? []) => {
+      const remembered = get().lastForumTopicIds.get(chatId);
+      if (remembered && (topics.length === 0 || topics.some((topic) => topic.id === remembered))) {
+        return remembered;
+      }
+      return topics.find((topic) => !topic.isHidden)?.id ?? topics[0]?.id;
+    };
+    const loadActiveForumTopic = (chatId: string, topicId: string) => {
+      if (get().authorization.kind !== "ready") return;
+      void loadForumTopicHistory(chatId, topicId, "ensure")
+        .then(() => markForumTopicRead(chatId, topicId));
+    };
+    const refreshForumConversation = async (chatId: string, changed = false) => {
+      const topics = get().forumTopics.get(chatId) ?? [];
+      const refreshedAt = forumTopicsRefreshedAt.get(chatId) ?? 0;
+      const minimumAge = changed
+        ? FORUM_TOPICS_CHANGE_COALESCE_MS
+        : FORUM_TOPICS_REFRESH_TTL_MS;
+      if (topics.length > 0 && Date.now() - refreshedAt < minimumAge) return;
+      const page = await forumController.loadForumTopics(chatId);
+      if (!page || get().activeChatId !== chatId || !get().chats.get(chatId)?.isForum) return;
+      const currentTopicId = get().activeTopicId;
+      if (currentTopicId && page.topics.some((topic) => topic.id === currentTopicId)) return;
+      const nextTopicId = restorableForumTopicId(chatId, page.topics);
+      if (nextTopicId) get().selectForumTopic(nextTopicId);
+      else set({ activeTopicId: undefined });
+    };
+    const sessionController = createSessionController({
+      transport,
+      set,
+      onError: errorMessage,
+    });
+    const emojiPickerController = createEmojiPickerController({
+      transport,
+      get,
+      set,
+      onError: errorMessage,
+    });
+
+    const defaultMhrvConfig: import("../telegram/types").MhrvConfig = {
+      scriptId: "",
+      authKey: "",
+      googleIp: "216.239.38.120",
+      frontDomain: "www.google.com",
+      httpPort: 8087,
+      socks5Port: 8088,
+      verifySsl: true,
+    };
+
+    let initialMhrvConfig = defaultMhrvConfig;
+    try {
+      const storedMhrv = localStorage.getItem("fardgram_mhrv_config");
+      if (storedMhrv) {
+        initialMhrvConfig = { ...defaultMhrvConfig, ...JSON.parse(storedMhrv) };
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      phase: "idle",
+      transportKind: transport.kind,
+      transportLabel: transport.label,
+      connectionStatus: "offline",
+      authorization: { kind: "preparing" },
+      authorizationPending: false,
+      accounts: [],
+      activeAccountId: "default",
+      accountPending: false,
+      accountSwitching: false,
+      proxyPending: false,
+      discoveredProxies: [],
+      discoveringProxies: false,
+      discoveringError: undefined,
+      discoveredV2RayProxies: [],
+      discoveringV2RayProxies: false,
+      discoveringV2RayError: undefined,
+      warpState: { kind: "idle" },
+      singboxState: { kind: "idle" },
+      singboxRoutingMode: "rule",
+      mhrvState: { kind: "idle" },
+      mhrvConfig: initialMhrvConfig,
+      mhrvTestResult: undefined,
+      mhrvTesting: false,
+      storagePending: false,
+      cacheUsage: undefined,
+      cacheCleanupResult: undefined,
+      cacheHealth: "empty",
+      users: new Map(),
+      userIdsByUsername: new Map(),
+      folders: [],
+      chats: new Map(),
+      chatAdministratorLabels: new Map(),
+      chatListReady: false,
+      chatLists: new Map(),
+      messages: new Map(),
+      sponsoredMessages: new Map(),
+      subscribeMessageChanges: (listener) => {
+        messageChangeListeners.add(listener);
+        return () => messageChangeListeners.delete(listener);
+      },
+      registerHistoryRetentionViewport: (chatId, viewport) => {
+        const providers = retentionViewports.get(chatId) ?? new Set();
+        providers.add(viewport);
+        retentionViewports.set(chatId, providers);
+        return () => {
+          providers.delete(viewport);
+          if (!providers.size && retentionViewports.get(chatId) === providers) retentionViewports.delete(chatId);
+        };
+      },
+      removingMessages: new Map(),
+      unreadAttentionMessageIds: new Map(),
+      drafts: new Map(),
+      localAttachmentDrafts: new Map(),
+      typingUserIds: new Map(),
+      outbox: [],
+      histories: new Map(),
+      forumTopics: new Map(),
+      forumTopicsLoading: new Set(),
+      topicHistories: new Map(),
+      lastForumTopicIds: new Map(),
+      activeTopicId: undefined,
+      searchQuery: "",
+      chatFilter: "main",
+      globalSearch: emptyGlobalSearch(),
+      chatMessageSearch: emptyChatMessageSearch(),
+      accountProfile: emptyProfileState(),
+      profile: emptyProfileState(),
+      contacts: [],
+      contactsLoading: false,
+      chatManagementPending: new Set(),
+      chatJoinStates: new Map(),
+      groupManagement: undefined,
+      groupManagementLoading: false,
+      groupManagementError: undefined,
+      blockedSenders: [],
+      blockedSendersLoading: false,
+      folderManagementPending: false,
+      chatCreationPending: false,
+
+      initialize: async (options = {}) => {
+        if (get().phase !== "idle") return;
+        const settingsOnly = options.settingsOnly === true;
+        const preserveAccountPending = options.preserveAccountPending === true;
+        const skipAccountState = options.skipAccountState === true;
+        set({
+          phase: "loading",
+          connectionStatus: "connecting",
+          error: undefined,
+          operationError: undefined,
+        });
+        try {
+          await initializeAccountMetadata().catch((error) => {
+            set({ operationError: errorMessage(error, translate("无法加载本地账号数据")) });
+          });
+          const pendingCleanup = globalThis.localStorage?.getItem("fardgram:pending-account-cleanup");
+          if (pendingCleanup) {
+            await attachmentOutbox.removeAccount(pendingCleanup);
+            removeAccountLocalBlocks(pendingCleanup);
+            removeAccountActivity(pendingCleanup);
+            removeAccountDownloads(pendingCleanup);
+            await flushAccountMetadata();
+            await transport.removeAccount(pendingCleanup);
+            globalThis.localStorage?.removeItem("fardgram:pending-account-cleanup");
+          }
+          if (!skipAccountState) {
+            applyAccountState(await transport.getAccountState());
+            if (preserveAccountPending) set({ accountPending: true });
+          } else if (preserveAccountPending) {
+            set({ accountPending: true });
+          }
+          if (!settingsOnly) {
+            let persistedSnapshot: CachedTelegramSnapshot | undefined;
+            try {
+              persistedSnapshot = await transport.loadCachedSnapshot();
+            } catch {
+              set({ cacheHealth: "invalid" });
+            }
+            // Durable drafts remain authoritative even when the replaceable cache is invalid.
+            const localState = transport.loadLocalState
+              ? migrateLocalUnsentState(await transport.loadLocalState(get().activeAccountId))
+              : undefined;
+            hydrateCachedSnapshot(persistedSnapshot, localState);
+            try {
+              await attachmentOutbox.claimLegacy(get().activeAccountId, [
+                ...[...get().localAttachmentDrafts.values()].map((draft) => draft.batchId),
+                ...get().outbox.filter((item) => item.attachments?.length).map((item) => item.id),
+              ]);
+            } catch {
+              // A corrupt or unavailable cache must not block the live connection.
+              set({ cacheHealth: "invalid" });
+            }
+          }
+          const snapshot = await transport.connect(applyEvent, { settingsOnly });
+          const chats = new Map(snapshot.chats.map((chat) => [chat.id, chat]));
+          const users = new Map(snapshot.users.map((user) => [user.id, user]));
+          const folders = snapshot.folders;
+          const messages = messageMapFrom(snapshot.messages);
+          const drafts = new Map((snapshot.drafts ?? []).map((draft) => [draft.localKey ?? topicKey(draft.chatId, draft.topicId), draft]));
+          const current = get();
+          for (const [id, chat] of current.chats) chats.set(id, chat);
+          for (const [id, user] of current.users) users.set(id, user);
+          for (const [chatId, chatMessages] of current.messages) {
+            for (const message of chatMessages) {
+              messages.set(
+                chatId,
+                upsertMessage(messages.get(chatId) ?? [], message),
+              );
+            }
+          }
+          for (const [chatId, draft] of current.drafts) {
+            if (draft.pending || !drafts.has(chatId)) drafts.set(chatId, draft);
+          }
+          const initialFolder = (current.folders.length > 0 ? current.folders : folders)
+            .some(folder => folder.id === current.chatFilter) ? current.chatFilter : (folders[0]?.id ?? "main");
+          const initialChats = filterAndSortChats(chats.values(), initialFolder, "");
+          const firstChat = initialChats[0];
+          const authorization =
+            current.authorization.kind === "preparing"
+              ? snapshot.authorization
+              : current.authorization;
+          if (authorization.kind !== "ready" && authorization.kind !== "preparing") {
+            clearCachedData();
+            set({
+              phase: current.phase === "error" ? "error" : "ready",
+              authorization,
+              accountPending: false,
+              accountSwitching: false,
+            });
+            return;
+          }
+          set({
+            phase: current.phase === "error" ? "error" : "ready",
+            currentUserId:
+              current.currentUserId && current.currentUserId !== "self"
+                ? current.currentUserId
+                : snapshot.currentUserId,
+            authorization,
+            chats,
+            chatListReady: current.chatListReady || snapshot.chats.length > 0,
+            users,
+            userIdsByUsername: usernameIndexForUsers(users.values()),
+            folders: current.folders.length > 0 ? current.folders : folders,
+            messages,
+            drafts,
+            activeChatId: current.activeChatId ?? firstChat?.id,
+            chatFilter:
+              (current.folders.length > 0 ? current.folders : folders).some(
+                (folder) => folder.id === current.chatFilter,
+              )
+                ? current.chatFilter
+                : (folders[0]?.id ?? "main"),
+            accountPending: false,
+            accountSwitching: false,
+          });
+          const initialChatId = get().activeChatId;
+          if (initialChatId && get().chats.get(initialChatId)?.kind === "channel") {
+            void get().loadChatSponsoredMessages(initialChatId);
+          }
+          for (const chatMessages of messages.values()) {
+            addUnreadServerAttention(chatMessages);
+            queueBlockedReactionReads(chatMessages);
+          }
+          if (authorization.kind === "ready" && get().connectionStatus === "online") {
+            for (const chat of chats.values()) {
+              scheduleSavedMessagesRead(chat);
+              if ((chat.unreadReactionCount ?? 0) > 0) void refreshUnreadReactionAttention(chat.id);
+            }
+          }
+          publishMessageChange({ type: "reset", messages });
+          void mediaFileRestorer.restore();
+          void registerCurrentAccount();
+          if (settingsOnly) return;
+          loadInitialVisibleFolder();
+          const refreshChatId = get().activeChatId ?? firstChat?.id;
+          if (refreshChatId && authorization.kind === "ready") transport.setConversationFocus?.(refreshChatId);
+          if (
+            authorization.kind === "ready" &&
+            get().connectionStatus === "online" &&
+            refreshChatId
+          ) {
+            if (get().chats.get(refreshChatId)?.isForum) {
+              const activeTopicId = get().activeTopicId;
+              if (activeTopicId) loadActiveForumTopic(refreshChatId, activeTopicId);
+              await refreshForumConversation(refreshChatId);
+            } else {
+              await loadHistory(refreshChatId, "ensure");
+              await markChatRead(refreshChatId);
+            }
+          }
+          if (authorization.kind === "ready") {
+            draftSync.resumePending();
+            void flushOutbox();
+          }
+          scheduleCacheWrite();
+        } catch (error) {
+          const browserTauriMismatch = !isTauri() && transport.kind === "tauri";
+          set({
+            phase: "error",
+            connectionStatus: "offline",
+            accountPending: false,
+            accountSwitching: false,
+            error: browserTauriMismatch
+              ? translate("当前配置需要 Fardgram 桌面版；浏览器预览请将 VITE_TELEGRAM_TRANSPORT 设置为 mock")
+              : errorMessage(error, translate("无法启动 Telegram runtime")),
+          });
+        }
+      },
+
+      authenticate: async (action) => {
+        set({ authorizationPending: true, authorizationError: undefined });
+        try {
+          await transport.authenticate(action);
+        } catch (error) {
+          set({
+            authorizationPending: false,
+            authorizationError:
+              error instanceof Error ? error.message : translate("登录请求失败"),
+          });
+        }
+      },
+
+      loadProxySettings: async () => {
+        set({ proxyPending: true, proxyError: undefined, proxyLatencyMs: undefined });
+        try {
+          const proxySettings = await transport.getProxySettings();
+          set({ proxySettings, proxyPending: false });
+        } catch (error) {
+          set({
+            proxyPending: false,
+            proxyError: error instanceof Error ? error.message : translate("无法读取代理设置"),
+          });
+        }
+      },
+
+      saveProxySettings: async (proxySettings) => {
+        set({ proxyPending: true, proxyError: undefined, proxyLatencyMs: undefined });
+        try {
+          await transport.saveProxySettings(proxySettings);
+          set({ proxySettings: await transport.getProxySettings(), proxyPending: false });
+          return true;
+        } catch (error) {
+          set({
+            proxyPending: false,
+            proxyError: error instanceof Error ? error.message : translate("无法保存代理设置"),
+          });
+          return false;
+        }
+      },
+
+      testProxy: async (proxySettings) => {
+        set({ proxyPending: true, proxyError: undefined, proxyLatencyMs: undefined });
+        try {
+          const proxyLatencyMs = await transport.testProxy(proxySettings);
+          set({ proxyLatencyMs, proxyPending: false });
+        } catch (error) {
+          set({
+            proxyPending: false,
+            proxyError: error instanceof Error ? error.message : translate("代理连接失败"),
+          });
+        }
+      },
+
+      discoverProxies: async () => {
+        set({ discoveringProxies: true, discoveringError: undefined });
+        try {
+          const discovered = await transport.discoverProxies?.() ?? [];
+          set({ discoveredProxies: discovered, discoveringProxies: false });
+          return discovered;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : translate("无法获取可用代理");
+          set({ discoveringProxies: false, discoveringError: message });
+          return [];
+        }
+      },
+
+      applyDiscoveredProxies: async (proxies, activeId) => {
+        set({ proxyPending: true, proxyError: undefined });
+        try {
+          const updated = await transport.applyDiscoveredProxies?.(proxies, activeId);
+          if (updated) {
+            set({ proxySettings: updated, proxyPending: false });
+            return true;
+          }
+          set({ proxyPending: false });
+          return false;
+        } catch (error) {
+          set({
+            proxyPending: false,
+            proxyError: error instanceof Error ? error.message : translate("无法应用发现的代理"),
+          });
+          return false;
+        }
+      },
+
+      discoverV2RayProxies: async () => {
+        set({ discoveringV2RayProxies: true, discoveringV2RayError: undefined });
+        try {
+          let nodes: import("../telegram/types").ParsedProxyNode[] = [];
+          
+          // Try fetching from online subscription sources with timeout
+          const sources = [
+            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Sub1.txt",
+            "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt",
+            "https://raw.githubusercontent.com/freefq/free/master/v2",
+          ];
+
+          for (const source of sources) {
+            try {
+              if (transport.fetchSingboxSubscription) {
+                const fetched = await transport.fetchSingboxSubscription(source);
+                if (fetched && fetched.length > 0) {
+                  nodes = fetched.slice(0, 15);
+                  break;
+                }
+              }
+            } catch {
+              // try next mirror
+            }
+          }
+
+          // Fallback configs if offline or unable to reach mirrors
+          if (nodes.length === 0) {
+            const fallbackLinks = [
+              "vless://9cf41d4c-28f0-46d5-bb1b-0ea4d8d1e2e1@104.21.25.12:443?encryption=none&security=reality&sni=speedtest.net&fp=chrome&pbk=1y7W4Pq-74w7oW2r9Jg6_Lp8_N7m4q-74w7oW2r9Jg6&sid=6ba7b810#⚡ Reality Fast 1",
+              "vless://a1b2c3d4-e5f6-7890-abcd-ef1234567890@188.114.97.3:443?encryption=none&security=reality&sni=cloudflare.com&fp=chrome&pbk=m4q-74w7oW2r9Jg6_Lp8_N71y7W4Pq-74w7oW2r9Jg6&sid=01#⚡ Reality Fast 2",
+              "vmess://eyJhZGQiOiIxMDQuMTYuMTMyLjIzOSIsImFpZCI6MCwiaWQiOiI4ZjczMmY1Ny01ZjBlLTQyYTgtODdiZS1hYWI1ZmI4ZTM5OWUiLCJuZXQiOiJ3cyIsInBhdGgiOiIvdjJyYXkiLCJwb3J0IjoiNDQzIiwicHMiOiLinqEgVk1lc3MgQ0ROIiwic2N5IjoiYXV0byIsInNuaSI6InNwZWVkdGVzdC5uZXQiLCJ0bHMiOiJ0bHMifQ==",
+              "trojan://trojan-secret-key@104.22.45.67:443?security=tls&sni=fast.com#⚡ Trojan Cloud",
+              "ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpQYXNzd29yZDEyMw==@104.18.22.33:8443#⚡ Shadowsocks 1"
+            ];
+            for (const link of fallbackLinks) {
+              if (transport.parseSingboxLink) {
+                try {
+                  const parsed = await transport.parseSingboxLink(link);
+                  nodes.push(parsed);
+                } catch {
+                  // ignore
+                }
+              }
+            }
+          }
+
+          // Test latency for discovered nodes
+          if (transport.testSingboxNode) {
+            for (let i = 0; i < Math.min(nodes.length, 8); i++) {
+              try {
+                const latency = await transport.testSingboxNode(nodes[i].server, nodes[i].port, 1500);
+                if (latency > 0) {
+                  nodes[i].latencyMs = latency;
+                }
+              } catch {
+                nodes[i].latencyMs = 999;
+              }
+            }
+          }
+
+          const discovered: import("../telegram/types").DiscoveredV2RayProxy[] = nodes.map((n) => ({
+            id: n.id,
+            name: n.name,
+            protocol: n.protocol,
+            config: n.rawLink,
+            latencyMs: n.latencyMs,
+          }));
+
+          set({ discoveredV2RayProxies: discovered, discoveringV2RayProxies: false });
+          return discovered;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to fetch V2Ray configs";
+          set({ discoveringV2RayProxies: false, discoveringV2RayError: message });
+          return [];
+        }
+      },
+
+      applyDiscoveredV2RayProxies: async (proxies, activeId) => {
+        set({ proxyPending: true, proxyError: undefined });
+        try {
+          const currentSettings = get().proxySettings;
+          if (!currentSettings) {
+            set({ proxyPending: false });
+            return false;
+          }
+
+          const newProfiles = proxies.map((p) => ({
+            id: `smart-v2ray-${p.id}`,
+            name: p.name.startsWith("⚡") ? p.name : `⚡ ${p.name}`,
+            endpoint: {
+              type: "v2ray" as const,
+              server: "127.0.0.1",
+              port: 10808, // local SOCKS5 port for sing-box sidecar
+              username: "",
+              password: "",
+              secret: "",
+              httpOnly: false,
+              v2rayConfig: p.config,
+            },
+          }));
+
+          const nextSettings = {
+            ...currentSettings,
+            mode: "custom" as const,
+            profiles: [...newProfiles, ...currentSettings.profiles].slice(0, 40),
+            activeProfileId: activeId ? `smart-v2ray-${activeId}` : newProfiles[0]?.id || currentSettings.activeProfileId,
+          };
+
+          // Save and apply proxy settings to TDLib and persist
+          const saved = await get().saveProxySettings(nextSettings);
+          set({ proxyPending: false });
+          return saved;
+        } catch (error) {
+          set({
+            proxyPending: false,
+            proxyError: error instanceof Error ? error.message : "Failed to apply V2Ray configs",
+          });
+          return false;
+        }
+      },
+
+      quickConnectBestProxy: async () => {
+        set({ proxyPending: true, discoveringProxies: true, proxyError: undefined });
+        try {
+          const updated = await transport.quickConnectBestProxy?.();
+          if (updated) {
+            set({ proxySettings: updated, proxyPending: false, discoveringProxies: false });
+            return true;
+          }
+          set({ proxyPending: false, discoveringProxies: false });
+          return false;
+        } catch (error) {
+          set({
+            proxyPending: false,
+            discoveringProxies: false,
+            proxyError: error instanceof Error ? error.message : translate("连接最佳代理失败"),
+          });
+          return false;
+        }
+      },
+
+      getWarpStatus: async () => {
+        const state = await transport.getWarpStatus?.() ?? { kind: "idle" as const };
+        set({ warpState: state });
+        return state;
+      },
+
+      startWarp: async () => {
+        set({ warpState: { kind: "starting" } });
+        try {
+          const state = await transport.startWarp?.();
+          if (state?.kind === "running") {
+            set({ warpState: state });
+            // Auto-apply warp as SOCKS5 proxy so TDLib routes through it
+            const warpProfile = {
+              id: "warp-engine",
+              name: "☁️ Cloudflare Warp",
+              endpoint: {
+                type: "socks5" as const,
+                server: "127.0.0.1",
+                port: state.port,
+                username: "",
+                password: "",
+                secret: "",
+                httpOnly: false,
+              },
+            };
+            const currentSettings = get().proxySettings;
+            if (currentSettings) {
+              const existingIndex = currentSettings.profiles.findIndex((p) => p.id === "warp-engine");
+              const profiles = existingIndex >= 0
+                ? currentSettings.profiles.map((p) => (p.id === "warp-engine" ? warpProfile : p))
+                : [warpProfile, ...currentSettings.profiles].slice(0, 20);
+              const next = { ...currentSettings, mode: "custom" as const, profiles, activeProfileId: "warp-engine" };
+              await get().saveProxySettings(next);
+            }
+            return true;
+          }
+          set({ warpState: state ?? { kind: "idle" } });
+          return false;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          set({ warpState: { kind: "error", message } });
+          return false;
+        }
+      },
+
+      stopWarp: async () => {
+        await transport.stopWarp?.();
+        set({ warpState: { kind: "stopped" } });
+      },
+
+      getSingboxStatus: async () => {
+        const state = await transport.getSingboxStatus?.() ?? { kind: "idle" as const };
+        set({ singboxState: state });
+        return state;
+      },
+
+      startSingbox: async (config: string, port?: number, routingMode?: string, profileName?: string) => {
+        set({ singboxState: { kind: "starting" } });
+        try {
+          const mode = routingMode || get().singboxRoutingMode;
+          const state = await transport.startSingbox?.(config, port, mode, profileName);
+          if (state) {
+            set({ singboxState: state });
+            return state.kind === "running";
+          }
+          return false;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          set({ singboxState: { kind: "error", message } });
+          return false;
+        }
+      },
+
+      stopSingbox: async () => {
+        await transport.stopSingbox?.();
+        set({ singboxState: { kind: "stopped" } });
+      },
+
+      testSingboxNode: async (server: string, port: number, timeoutMs?: number) => {
+        return (await transport.testSingboxNode?.(server, port, timeoutMs)) ?? 0;
+      },
+
+      parseSingboxLink: async (link: string) => {
+        if (!transport.parseSingboxLink) throw new Error("Link parsing not available");
+        return await transport.parseSingboxLink(link);
+      },
+
+      fetchSingboxSubscription: async (url: string) => {
+        if (!transport.fetchSingboxSubscription) throw new Error("Subscription fetching not available");
+        return await transport.fetchSingboxSubscription(url);
+      },
+
+      setSingboxRoutingMode: (mode: "rule" | "global") => {
+        set({ singboxRoutingMode: mode });
+      },
+
+      getMhrvStatus: async () => {
+        try {
+          const res = await transport.getMhrvStatus?.();
+          if (res) {
+            const [state, config] = res;
+            set((prev) => ({
+              mhrvState: state,
+              mhrvConfig: config ? { ...prev.mhrvConfig, ...config } : prev.mhrvConfig,
+            }));
+            return state;
+          }
+        } catch {
+          // ignore status check failure
+        }
+        return get().mhrvState;
+      },
+
+      startMhrv: async (customConfig?: import("../telegram/types").MhrvConfig) => {
+        const configToUse = customConfig || get().mhrvConfig;
+        set({ mhrvState: { kind: "starting" } });
+        try {
+          const state = await transport.startMhrv?.(configToUse);
+          if (state?.kind === "running") {
+            set({ mhrvState: state });
+            // Auto-apply MHRV local SOCKS5 proxy so TDLib routes through Google Relay
+            const mhrvProfile = {
+              id: "mhrv-relay",
+              name: "⚡ Google Relay (MHRV)",
+              endpoint: {
+                type: "socks5" as const,
+                server: "127.0.0.1",
+                port: state.socks5Port,
+                username: "",
+                password: "",
+                secret: "",
+                httpOnly: false,
+              },
+            };
+            const currentSettings = get().proxySettings;
+            if (currentSettings) {
+              const existingIndex = currentSettings.profiles.findIndex((p) => p.id === "mhrv-relay");
+              const profiles = existingIndex >= 0
+                ? currentSettings.profiles.map((p) => (p.id === "mhrv-relay" ? mhrvProfile : p))
+                : [mhrvProfile, ...currentSettings.profiles].slice(0, 20);
+              const next = { ...currentSettings, mode: "custom" as const, profiles, activeProfileId: "mhrv-relay" };
+              await get().saveProxySettings(next);
+            }
+            return true;
+          }
+          set({ mhrvState: state ?? { kind: "idle" } });
+          return false;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          set({ mhrvState: { kind: "error", message } });
+          return false;
+        }
+      },
+
+      stopMhrv: async () => {
+        try {
+          const state = await transport.stopMhrv?.();
+          set({ mhrvState: state ?? { kind: "stopped" } });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          set({ mhrvState: { kind: "error", message } });
+        }
+      },
+
+      testMhrv: async (customConfig?: import("../telegram/types").MhrvConfig) => {
+        const configToUse = customConfig || get().mhrvConfig;
+        set({ mhrvTesting: true, mhrvTestResult: undefined });
+        try {
+          const res = await transport.testMhrv?.(configToUse) ?? {
+            success: false,
+            message: "MHRV test unavailable",
+          };
+          set({ mhrvTesting: false, mhrvTestResult: res });
+          return res;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const res = { success: false, message };
+          set({ mhrvTesting: false, mhrvTestResult: res });
+          return res;
+        }
+      },
+
+      setMhrvConfig: (configUpdate: Partial<import("../telegram/types").MhrvConfig>) => {
+        set((prev) => {
+          const updated = { ...prev.mhrvConfig, ...configUpdate };
+          try {
+            localStorage.setItem("fardgram_mhrv_config", JSON.stringify(updated));
+          } catch {
+            // ignore
+          }
+          return { mhrvConfig: updated };
+        });
+      },
+
+      loadStorageSettings: async () => {
+        set({ storagePending: true, storageError: undefined });
+        try {
+          const storageSettings = await transport.getStorageSettings();
+          set({ storageSettings, storagePending: false });
+        } catch (error) {
+          set({
+            storagePending: false,
+            storageError: error instanceof Error ? error.message : translate("无法读取存储路径设置"),
+          });
+        }
+      },
+
+      saveStorageSettings: async (storageSettings) => {
+        set({ storagePending: true, storageError: undefined });
+        try {
+          const saved = await transport.saveStorageSettings(storageSettings);
+          set({ storageSettings: saved, storagePending: false });
+          scheduleCacheWrite();
+          return true;
+        } catch (error) {
+          set({
+            storagePending: false,
+            storageError: error instanceof Error ? error.message : translate("无法保存存储路径设置"),
+          });
+          return false;
+        }
+      },
+
+      getStorageInventory: () => transport.getStorageInventory(),
+
+      removeMigrationBackup: (id) => transport.removeMigrationBackup(id),
+
+      loadCacheUsage: async () => {
+        set({ storagePending: true, storageError: undefined });
+        try {
+          const cacheUsage = await transport.getCacheUsage();
+          set({ cacheUsage, storagePending: false });
+        } catch (error) {
+          set({
+            storagePending: false,
+            storageError: error instanceof Error ? error.message : translate("无法统计媒体缓存"),
+          });
+        }
+      },
+
+      clearMediaCache: async (categories, olderThanDays) => {
+        if (categories.length === 0) {
+          set({ storageError: translate("至少选择一种缓存类型") });
+          return false;
+        }
+        const current = get();
+        set({ storagePending: true, storageError: undefined, cacheCleanupResult: undefined });
+        try {
+          const result = await transport.clearMediaCache({
+            categories,
+            olderThanDays,
+            protectedPaths: protectedCachePaths({
+              accounts: current.accounts,
+              users: current.users.values(),
+              chats: current.chats.values(),
+              messages: current.messages.values(),
+            }),
+          });
+          emojiPickerController.reset();
+          set({
+            cacheUsage: result.usage,
+            cacheCleanupResult: result,
+            storagePending: false,
+          });
+          return true;
+        } catch (error) {
+          set({
+            storagePending: false,
+            storageError: error instanceof Error ? error.message : translate("无法清理媒体缓存"),
+          });
+          return false;
+        }
+      },
+
+      rebuildCachedSnapshot: async () => {
+        const current = get();
+        if (current.authorization.kind !== "ready" || !current.currentUserId) {
+          set({ storageError: translate("Telegram 就绪后才能重建界面缓存") });
+          return false;
+        }
+        cancelScheduledCacheWrite();
+        set({ storagePending: true, storageError: undefined });
+        try {
+          await cacheWrite.catch(() => undefined);
+          await transport.clearCachedSnapshot();
+          const current = get();
+          await transport.saveCachedSnapshot(snapshotWithHistory(
+            { ...current, chats: chatsWithServerOrders(current.chats) },
+            profileController.getCachedProfiles(),
+          ));
+          set({ cacheHealth: "rebuilt", storagePending: false });
+          return true;
+        } catch (error) {
+          set({
+            cacheHealth: "invalid",
+            storagePending: false,
+            storageError: error instanceof Error ? error.message : translate("无法重建界面缓存"),
+          });
+          return false;
+        }
+      },
+
+      addAccount: async () => {
+        const accountId = `account-${globalThis.crypto.randomUUID()}`;
+        return selectAccountAndReconnect(accountId);
+      },
+
+      switchAccount: selectAccountAndReconnect,
+
+      logOutCurrentAccount: async () => {
+        const accountId = get().activeAccountId;
+        let disconnected = false;
+        accountTransition = true;
+        registeredAccountKey = undefined;
+        set({
+          accountPending: true,
+          accountSwitching: false,
+          accountError: undefined,
+          error: undefined,
+          operationError: undefined,
+        });
+        try {
+          await accountRegistration;
+          await draftSync.flushPending();
+          await flushCachedSnapshot();
+          await transport.logOut();
+          globalThis.localStorage?.setItem("fardgram:pending-account-cleanup", accountId);
+          await transport.disconnect();
+          disconnected = true;
+          await attachmentOutbox.removeAccount(accountId);
+          removeAccountLocalBlocks(accountId);
+          removeAccountActivity(accountId);
+          removeAccountDownloads(accountId);
+          await flushAccountMetadata();
+          globalThis.localStorage?.removeItem(`fardgram:cache-cleanup:${accountId}`);
+          applyAccountState(await transport.removeAccount(accountId));
+          globalThis.localStorage?.removeItem("fardgram:pending-account-cleanup");
+          reloadApplication();
+          return true;
+        } catch (error) {
+          accountTransition = false;
+          set({
+            accountPending: false,
+            accountSwitching: false,
+            accountError: error instanceof Error ? error.message : translate("退出登录失败"),
+          });
+          if (disconnected) set({ phase: "error", error: translate("账号已退出，本地数据清理未完成。重启后将继续清理。") });
+          return false;
+        }
+      },
+
+      selectChat: (chatId, options) => {
+        if (!get().chats.has(chatId)) {
+          set({ operationError: translate("会话不存在或当前账号无权访问") });
+          return;
+        }
+        const previousChatId = get().activeChatId;
+        const previousTopicId = get().activeTopicId;
+        if (previousChatId && previousChatId !== chatId) {
+          void draftSync.flush(topicKey(previousChatId, previousTopicId));
+        }
+        const targetChat = get().chats.get(chatId);
+        const restoredTopicId = targetChat?.isForum
+          ? options?.forumTopicId ?? restorableForumTopicId(chatId)
+          : undefined;
+        if (previousChatId !== chatId || previousTopicId !== restoredTopicId) {
+          advanceConversationGeneration();
+        }
+        transport.setConversationFocus?.(chatId);
+        const lastForumTopicIds = restoredTopicId
+          ? touchForumTopic(chatId, restoredTopicId)
+          : new Map(get().lastForumTopicIds);
+        set({
+          activeChatId: chatId,
+          activeTopicId: restoredTopicId,
+          lastForumTopicIds,
+        });
+        scheduleCacheWrite();
+        if (get().authorization.kind !== "ready") return;
+        void mediaFileRestorer.restore();
+        if (targetChat?.isForum) {
+          if (restoredTopicId) loadActiveForumTopic(chatId, restoredTopicId);
+          void refreshForumConversation(chatId);
+        } else {
+          if (!options?.deferHistory) void loadHistory(chatId, "ensure");
+          void markChatRead(chatId);
+          if (targetChat?.kind === "channel") void get().loadChatSponsoredMessages(chatId);
+        }
+        if ((targetChat?.unreadReactionCount ?? 0) > 0) {
+          void refreshUnreadReactionAttention(chatId);
+        }
+      },
+
+      selectForumTopic: (topicId) => {
+        const chatId = get().activeChatId;
+        if (!chatId || !get().chats.get(chatId)?.isForum) return;
+        const previousTopicId = get().activeTopicId;
+        if (previousTopicId && previousTopicId !== topicId) void draftSync.flush(topicKey(chatId, previousTopicId));
+        if (previousTopicId !== topicId) advanceConversationGeneration();
+        const lastForumTopicIds = topicId
+          ? touchForumTopic(chatId, topicId)
+          : new Map(get().lastForumTopicIds);
+        set({ activeTopicId: topicId, lastForumTopicIds });
+        scheduleCacheWrite();
+        if (topicId) loadActiveForumTopic(chatId, topicId);
+      },
+
+      loadForumTopics: forumController.loadForumTopics,
+      resolveForumTopic: forumController.resolveForumTopic,
+      createForumTopic: forumController.createForumTopic,
+      editForumTopic: forumController.editForumTopic,
+      setForumTopicClosed: forumController.setForumTopicClosed,
+      setForumTopicPinned: forumController.setForumTopicPinned,
+
+      refreshChatMembership: async (chatId) => {
+        const generation = accountGeneration;
+        if (accountTransition || get().authorization.kind !== "ready") return false;
+        try {
+          await transport.refreshChatMembership(chatId);
+          return generation === accountGeneration && !accountTransition;
+        } catch (error) {
+          if (generation === accountGeneration && !accountTransition) set({ operationError: chatJoinError(error) });
+          return false;
+        }
+      },
+      joinChat: async (input) => {
+        const generation = accountGeneration;
+        const isCurrent = () => generation === accountGeneration && !accountTransition;
+        const key = chatJoinKey(input);
+        if ("chatId" in input) chatJoinTargets.set(key, input.chatId);
+        if (!isCurrent() || get().authorization.kind !== "ready" || get().chatJoinStates.has(key)) return undefined;
+        if (!connectionPresentation(get().connectionStatus).operational) {
+          set({ operationError: translate("联网后才能加入会话") });
+          return undefined;
+        }
+        const update = (status?: "joining" | "requested" | "joined") => {
+          const states = new Map(get().chatJoinStates);
+          if (status) states.set(key, status); else states.delete(key);
+          set({ chatJoinStates: states });
+        };
+        update("joining");
+        set({ operationError: undefined });
+        try {
+          const result = await transport.joinChat(input);
+          if (!isCurrent()) return undefined;
+          update(result.kind);
+          if (result.kind === "joined") {
+            chatJoinTargets.set(key, result.chatId);
+            chatJoinTargets.set(chatJoinKey({ chatId: result.chatId }), result.chatId);
+            const states = new Map(get().chatJoinStates);
+            states.set(chatJoinKey({ chatId: result.chatId }), "joined");
+            set({ chatJoinStates: states });
+          }
+          return result;
+        } catch (error) {
+          if (!isCurrent()) return undefined;
+          update();
+          set({ operationError: chatJoinError(error) });
+          return undefined;
+        }
+      },
+      resolveTelegramLink: async (url) => {
+        const accountId = get().activeAccountId;
+        const generation = accountGeneration;
+        if (accountTransition) return undefined;
+        try {
+          const target = await transport.resolveTelegramLink(url);
+          if (get().activeAccountId !== accountId || generation !== accountGeneration || accountTransition) return undefined;
+          if (target && "kind" in target && target.kind === "chatInvite") {
+            const key = chatJoinKey({ inviteLink: target.preview.inviteLink });
+            target.preview.chatId ??= chatJoinTargets.get(key);
+            if (target.preview.chatId) chatJoinTargets.set(key, target.preview.chatId);
+          }
+          if (target && "kind" in target && target.kind === "stickerSet") emojiPickerController.rememberStickerSet(target.stickerSet);
+          if (target && "kind" in target && target.kind === "unsupported") {
+            set({ operationError: target.reason });
+          } else if (!target) {
+            set({ operationError: translate("无法识别或打开此 Telegram 链接") });
+          } else {
+            set({ operationError: undefined });
+          }
+          return target;
+        } catch (error) {
+          if (get().activeAccountId !== accountId || generation !== accountGeneration || accountTransition) return undefined;
+          set({ operationError: chatJoinError(error) });
+          return undefined;
+        }
+      },
+
+      loadMoreChats: loadChats,
+      setChatPinned: (chatListId, chatId, pinned) => manageChat(
+        chatId,
+        translate("无法更新置顶状态"),
+        translate("Telegram 未确认置顶状态"),
+        () => transport.setChatPinned(chatListId, chatId, pinned),
+        () => {
+          const chat = get().chats.get(chatId);
+          return Boolean(chat) && isChatPinnedInFolder(chat!, chatListId) === pinned;
+        },
+      ),
+      reorderPinnedChats: async (chatListId, orderedChatIds) => {
+        const generation = accountGeneration;
+        const isCurrent = () => generation === accountGeneration && !accountTransition;
+        if (!isCurrent() || get().authorization.kind !== "ready" || pendingPinnedReorders.has(chatListId)) return false;
+        const pinnedChats = filterAndSortChats(get().chats.values(), chatListId, "")
+          .filter((chat) => isChatPinnedInFolder(chat, chatListId));
+        const currentIds = pinnedChats.map((chat) => chat.id);
+        const uniqueIds = [...new Set(orderedChatIds)];
+        if (
+          uniqueIds.length !== currentIds.length ||
+          uniqueIds.some((chatId) => !currentIds.includes(chatId))
+        ) return false;
+        if (uniqueIds.every((chatId, index) => chatId === currentIds[index])) return true;
+
+        if (currentIds.some((id) => get().chatManagementPending.has(id))) return false;
+        const serverOrders = new Map(pinnedChats.map((chat) => [chat.id, chat.listOrderByFolder?.[chatListId]]));
+        const optimisticOrders = new Map<string, string>();
+        const chats = new Map(get().chats);
+        const rankBase = BigInt(uniqueIds.length);
+        for (const [index, chatId] of uniqueIds.entries()) {
+          const chat = chats.get(chatId);
+          if (!chat) return false;
+          const order = String(rankBase - BigInt(index));
+          optimisticOrders.set(chatId, order);
+          chats.set(chatId, {
+            ...chat,
+            listOrderByFolder: { ...chat.listOrderByFolder, [chatListId]: order },
+          });
+        }
+        pendingPinnedReorders.set(chatListId, { serverOrders, optimisticOrders });
+        set({ chats, operationError: undefined });
+
+        const settleOrder = () => {
+          const latest = new Map(get().chats);
+          for (const [id, order] of serverOrders) {
+            const chat = latest.get(id);
+            if (chat) latest.set(id, withListOrder(chat, chatListId, order));
+          }
+          pendingPinnedReorders.delete(chatListId);
+          set({ chats: latest });
+        };
+
+        try {
+          await transport.setPinnedChats(chatListId, uniqueIds);
+          if (!isCurrent()) return false;
+          const confirmedIds = filterAndSortChats(chatsWithServerOrders(get().chats).values(), chatListId, "")
+            .filter((chat) => isChatPinnedInFolder(chat, chatListId)).map((chat) => chat.id);
+          if (confirmedIds.length !== uniqueIds.length || uniqueIds.some((id, index) => confirmedIds[index] !== id)) {
+            throw new Error(translate("Telegram 未确认置顶顺序"));
+          }
+          settleOrder();
+          await flushCachedSnapshot().catch(() => {
+            if (isCurrent()) set({ cacheHealth: "invalid" });
+          });
+          return isCurrent();
+        } catch (error) {
+          if (!isCurrent()) return false;
+          settleOrder();
+          await flushCachedSnapshot().catch(() => {
+            if (isCurrent()) set({ cacheHealth: "invalid" });
+          });
+          if (!isCurrent()) return false;
+          set({
+            operationError: error instanceof Error ? error.message : translate("无法调整置顶顺序"),
+          });
+          return false;
+        }
+      },
+      setChatMuted: (chatId, muted) => {
+        if (get().chats.get(chatId)?.kind === "saved") {
+          set({ operationError: translate("收藏夹不支持静音") });
+          return Promise.resolve(false);
+        }
+        return manageChat(
+          chatId,
+          translate("无法更新通知设置"),
+          translate("Telegram 未确认静音状态"),
+          () => transport.setChatMuted(chatId, muted),
+          () => get().chats.get(chatId)?.muted === muted,
+        );
+      },
+      setChatArchived: (chatId, archived) => manageChat(
+        chatId,
+        archived ? translate("无法归档会话") : translate("无法移出归档"),
+        translate("Telegram 未确认{{value0}}状态", {
+          value0: archived ? translate("归档") : translate("取消归档"),
+        }),
+        () => transport.setChatArchived(chatId, archived),
+        () => get().chats.get(chatId)?.folderIds.includes(
+          archived ? "archive" : "main",
+        ) === true,
+      ),
+      leaveGroup: async (chatId) => {
+        const chat = get().chats.get(chatId);
+        if ((chat?.kind !== "group" && chat?.kind !== "channel") || chat.isMember === false) {
+          set({ operationError: translate("当前会话无法退出") });
+          return false;
+        }
+        const succeeded = await manageChat(
+          chatId,
+          chat.kind === "channel" ? translate("无法退出频道") : translate("无法退出群组"),
+          translate("Telegram 未确认退出状态"),
+          () => transport.leaveChat(chatId),
+          () => get().chats.get(chatId)?.isMember === false,
+        );
+        if (succeeded) selectAfterChatRemoval(chatId);
+        return succeeded;
+      },
+      deletePrivateChat: async (chatId, forEveryone = false) => {
+        const chat = get().chats.get(chatId);
+        if (chat?.kind !== "direct" || (forEveryone ? chat.canDeleteForAllUsers : chat.canDeleteForSelf) !== true) {
+          set({ operationError: forEveryone ? translate("此会话不支持为双方删除") : translate("此会话不支持仅为自己删除") });
+          return false;
+        }
+        const version = historyDeletionVersions.get(chatId) ?? 0;
+        const succeeded = await manageChat(chatId, translate("无法删除会话"),
+          translate("Telegram 未确认会话删除"), () => transport.deletePrivateChat(chatId, forEveryone),
+          () => (historyDeletionVersions.get(chatId) ?? 0) > version);
+        if (succeeded) selectAfterChatRemoval(chatId);
+        return succeeded;
+      },
+      stopBot: (chatId) => {
+        const chat = get().chats.get(chatId);
+        if (chat?.kind !== "direct" || !chat.peerId || get().users.get(chat.peerId)?.isBot !== true) {
+          set({ operationError: translate("只能停用机器人会话") });
+          return Promise.resolve(false);
+        }
+        return manageChat(chatId, translate("无法停用机器人"), translate("Telegram 未确认机器人停用"),
+          () => transport.setMessageSenderBlocked(chat.peerId!, "user", true),
+          () => get().chats.get(chatId)?.isBlocked === true);
+      },
+      createChatFolder: async (title, chatIds) => {
+        const requestedChatIds = [...new Set(chatIds)];
+        const uniqueChatIds = requestedChatIds.filter((chatId) => {
+          const chat = get().chats.get(chatId);
+          return chat !== undefined && isFolderChatEligible(chat);
+        });
+        if (requestedChatIds.length > 0 && uniqueChatIds.length === 0) {
+          set({ operationError: translate("请至少选择一个可加入文件夹的会话") });
+          return undefined;
+        }
+        if (uniqueChatIds.length > FOLDER_DIRECT_CHAT_LIMIT) {
+          set({ operationError: translate("文件夹最多可直接包含 {{value0}} 个会话", { value0: FOLDER_DIRECT_CHAT_LIMIT }) });
+          return undefined;
+        }
+        const folder = await manageFolder(
+          translate("无法创建文件夹"),
+          translate("Telegram 未确认新文件夹"),
+          () => transport.createChatFolder(title, uniqueChatIds),
+          (created) => get().folders.some((item) =>
+            item.id === created.id && item.title === created.title
+          ) && uniqueChatIds.every((chatId) =>
+            get().chats.get(chatId)?.folderIds.includes(created.id)
+          ),
+        );
+        return folder?.id;
+      },
+      renameChatFolder: async (folderId, title) => Boolean(await manageFolder(
+        translate("无法重命名文件夹"),
+        translate("Telegram 未确认文件夹名称"),
+        () => transport.renameChatFolder(folderId, title),
+        (renamed) => get().folders.some((folder) =>
+          folder.id === folderId && folder.title === renamed.title
+        ),
+      )),
+      deleteChatFolder: async (folderId) => Boolean(await manageFolder(
+        translate("无法删除文件夹"),
+        translate("Telegram 未确认文件夹删除"),
+        async () => {
+          await transport.deleteChatFolder(folderId);
+          return true;
+        },
+        () => !get().folders.some((folder) => folder.id === folderId) &&
+          [...get().chats.values()].every((chat) => !chat.folderIds.includes(folderId)),
+      )),
+      reorderChatFolders: async (orderedFolderIds) => {
+        const state = get();
+        const generation = accountGeneration;
+        const isCurrent = () => generation === accountGeneration && !accountTransition;
+        const reorderableFolders = state.folders.filter((folder) => folder.id !== "archive");
+        const currentIds = reorderableFolders.map((folder) => folder.id);
+        const uniqueIds = [...new Set(orderedFolderIds)];
+        if (
+          state.authorization.kind !== "ready" ||
+          !isCurrent() ||
+          state.folderManagementPending ||
+          uniqueIds.length !== orderedFolderIds.length ||
+          uniqueIds.length !== currentIds.length ||
+          uniqueIds.some((folderId) => !currentIds.includes(folderId))
+        ) return false;
+        if (uniqueIds.every((folderId, index) => folderId === currentIds[index])) return true;
+
+        const originalIds = state.folders.map((folder) => folder.id);
+        const reorder = { generation, order: uniqueIds, serverFolders: undefined as ChatFolder[] | undefined };
+        pendingFolderReorder = reorder;
+        const byId = new Map(reorderableFolders.map((folder) => [folder.id, folder]));
+        const optimisticFolders = [
+          ...uniqueIds.map((folderId) => byId.get(folderId)!),
+          ...state.folders.filter((folder) => folder.id === "archive"),
+        ];
+        set({
+          folders: optimisticFolders,
+          folderManagementPending: true,
+          operationError: undefined,
+        });
+        try {
+          await transport.reorderChatFolders(uniqueIds);
+          if (!isCurrent()) return false;
+          const confirmedIds = (reorder.serverFolders ?? get().folders)
+            .filter((folder) => folder.id !== "archive")
+            .map((folder) => folder.id);
+          if (confirmedIds.length !== uniqueIds.length || !uniqueIds.every((folderId, index) => folderId === confirmedIds[index])) {
+            throw new Error(translate("Telegram 未确认文件夹顺序"));
+          }
+          pendingFolderReorder = undefined;
+          await flushCachedSnapshot().catch(() => {
+            if (isCurrent()) set({ cacheHealth: "invalid" });
+          });
+          return isCurrent();
+        } catch (error) {
+          if (!isCurrent()) return false;
+          const latestFolders = get().folders;
+          const latestIds = latestFolders
+            .filter((folder) => folder.id !== "archive")
+            .map((folder) => folder.id);
+          if (reorder.serverFolders) {
+            set({ folders: reorder.serverFolders });
+          } else if (latestIds.length === uniqueIds.length && uniqueIds.every((folderId, index) => folderId === latestIds[index])) {
+            const latestById = new Map(latestFolders.map((folder) => [folder.id, folder]));
+            set({ folders: originalIds.flatMap((id) => latestById.has(id) ? [latestById.get(id)!] : []) });
+          }
+          set({ operationError: errorMessage(error, translate("无法调整文件夹顺序")) });
+          scheduleCacheWrite();
+          return false;
+        } finally {
+          if (pendingFolderReorder === reorder) pendingFolderReorder = undefined;
+          if (isCurrent()) set({ folderManagementPending: false });
+        }
+      },
+      setChatFolderMembership: async (folderId, chatId, included) => {
+        const chat = get().chats.get(chatId);
+        if (included && chat && !chat.folderIds.includes(folderId) &&
+          [...get().chats.values()].filter((item) => item.folderIds.includes(folderId)).length >= FOLDER_DIRECT_CHAT_LIMIT) {
+          set({ operationError: translate("文件夹最多可直接包含 {{value0}} 个会话", { value0: FOLDER_DIRECT_CHAT_LIMIT }) });
+          return false;
+        }
+        return Boolean(await manageFolder(
+          translate("无法更新文件夹成员"),
+          translate("Telegram 未确认文件夹成员状态"),
+          async () => {
+            await transport.setChatFolderMembership(folderId, chatId, included);
+            return true;
+          },
+          () => get().chats.get(chatId)?.folderIds.includes(folderId) === included,
+        ));
+      },
+      markChatFolderRead: async (folderId) => {
+        const state = get();
+        if (
+          state.authorization.kind !== "ready" ||
+          state.folderManagementPending ||
+          !state.folders.some((folder) => folder.id === folderId)
+        ) return false;
+        const unreadChatIds = [...state.chats.values()]
+          .filter((chat) => chat.folderIds.includes(folderId) && chat.unreadCount > 0)
+          .map((chat) => chat.id);
+        if (unreadChatIds.length === 0) return true;
+
+        set({ folderManagementPending: true, operationError: undefined });
+        try {
+          const results = await Promise.all(
+            unreadChatIds.map((chatId) => markChatRead(chatId, false)),
+          );
+          if (results.some((result) => !result)) return false;
+          scheduleCacheWrite();
+          return true;
+        } finally {
+          set({ folderManagementPending: false });
+        }
+      },
+      focusHistoryWindow: (chatId, messageId, topicId) => {
+        const state = get();
+        const resolvedTopic = state.chats.get(chatId)?.isForum
+          ? topicId ?? (messageId ? state.messages.get(chatId)?.find(message => message.id === messageId)?.topicId : undefined) ??
+            (state.activeChatId === chatId ? state.activeTopicId : state.lastForumTopicIds.get(chatId))
+          : undefined;
+        return history.focus(chatId, resolvedTopic, messageId);
+      },
+      loadMoreHistory: (chatId) => {
+        const topicId = get().activeChatId === chatId ? get().activeTopicId : undefined;
+        return topicId ? loadForumTopicHistory(chatId, topicId, "older") : loadHistory(chatId, "older");
+      },
+      loadNewerHistory: (chatId, topicId) => history.newer(chatId, topicId),
+      loadChatSponsoredMessages: async (chatId) => {
+        if (get().authorization.kind !== "ready" || get().chats.get(chatId)?.kind !== "channel") return;
+        try {
+          const sponsored = await transport.getChatSponsoredMessages(chatId);
+          if (get().chats.get(chatId)?.kind !== "channel") return;
+          const next = new Map(get().sponsoredMessages);
+          next.set(chatId, sponsored);
+          set({ sponsoredMessages: next });
+        } catch {
+          // Sponsored messages are optional and unavailable on older TDLib builds.
+        }
+      },
+      clickChatSponsoredMessage: (chatId, messageId, isMediaClick = false) =>
+        transport.clickChatSponsoredMessage(chatId, messageId, isMediaClick),
+      loadMessage: async (chatId, messageId, options) => {
+        const generation = accountGeneration;
+        const navigationGeneration = conversationGeneration;
+        const isCurrent = () => generation === accountGeneration &&
+          options?.isCurrent?.() !== false && (!options?.onlyIfActive || (
+            get().activeChatId === chatId && navigationGeneration === conversationGeneration
+          ));
+        if (!isCurrent()) return false;
+        if (!options?.forceContext && (get().messages.get(chatId) ?? []).some((message) => message.id === messageId)) {
+          return true;
+        }
+        if (get().authorization.kind !== "ready") return false;
+        try {
+          // The entry context and the first history page are independent TDLib
+          // reads.  Do not serialize them behind the initial page: a cold chat
+          // otherwise pays both network round trips before its target can settle.
+          // Generation checks below make either result safe to merge when it
+          // arrives first, and active-only callers still discard stale results.
+          if (!isCurrent()) return false;
+          if (!options?.forceContext && (get().messages.get(chatId) ?? []).some((message) => message.id === messageId)) {
+            return true;
+          }
+          const context = await transport.getMessageContext(chatId, messageId, 31);
+          if (!isCurrent()) return false;
+          let message = context.find((item) =>
+            item.chatId === chatId && item.id === messageId
+          );
+          if (!message) message = await transport.getMessage(chatId, messageId);
+          if (!isCurrent()) return false;
+          if (!message || message.chatId !== chatId || message.id !== messageId) return false;
+          history.context(chatId, get().chats.get(chatId)?.isForum ? message.topicId : undefined, messageId, [...context, message]);
+          const messages = new Map(get().messages);
+          messages.set(
+            chatId,
+            upsertMessages(
+              messages.get(chatId) ?? [],
+              [...context.filter((item) => item.chatId === chatId), message],
+            ),
+          );
+          set({ messages, operationError: undefined });
+          publishMessageChange({
+            type: "upsert",
+            messages: [...context.filter((item) => item.chatId === chatId), message],
+            liveMessages: [],
+          });
+          scheduleCacheWrite();
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      loadMessageThreadHistory: async (chatId, messageId, limit = 100, fromMessageId) => {
+        if (get().authorization.kind !== "ready") return undefined;
+        const generation = accountGeneration;
+        try {
+          // A channel post's comments live in its linked discussion chat. Resolve
+          // that chat and root message before asking TDLib for the history; using
+          // the channel id for both requests can produce an unexpected-chat error.
+          const reference = fromMessageId
+            ? get().messages.get(chatId)?.find(message => message.id === messageId)?.discussionThread
+            : undefined;
+          const thread = reference ? { ...reference, messages: [] } : await transport.getMessageThread(chatId, messageId);
+          if (generation !== accountGeneration) return undefined;
+          if (!thread) return { chatId, messageId, messages: [], hasMore: false };
+          let page: import("../telegram/types").MessageThreadHistoryPage;
+          let historyError = false;
+          try {
+            page = await transport.getMessageThreadHistory(thread.chatId, thread.messageId, limit, fromMessageId);
+          } catch {
+            historyError = true;
+            page = { messages: [], nextFromMessageId: fromMessageId, hasMore: true };
+          }
+          if (generation !== accountGeneration) return undefined;
+          const threadMessages = [...thread.messages, ...page.messages];
+          const uniqueThreadMessages = [...new Map(
+            threadMessages.map((message) => [`${message.chatId}:${message.id}`, message]),
+          ).values()];
+          const messages = new Map(get().messages);
+          const channelPost = messages.get(chatId)?.find((message) => message.id === messageId)
+            ?? uniqueThreadMessages.find((message) => message.chatId === chatId && message.id === messageId);
+          const resolvedChannelPost = channelPost
+            ? {
+                ...channelPost,
+                discussionThread: { chatId: thread.chatId, messageId: thread.messageId },
+              }
+            : undefined;
+          const cacheMessages = resolvedChannelPost
+            ? [...uniqueThreadMessages, resolvedChannelPost]
+            : uniqueThreadMessages;
+          const messagesByChat = new Map<string, Message[]>();
+          for (const message of cacheMessages) {
+            const current = messagesByChat.get(message.chatId) ?? messages.get(message.chatId) ?? [];
+            messagesByChat.set(message.chatId, upsertMessage(current, message));
+          }
+          for (const [messageChatId, nextMessages] of messagesByChat) {
+            messages.set(messageChatId, nextMessages);
+          }
+          set({ messages, operationError: undefined });
+          publishMessageChange({ type: "upsert", messages: cacheMessages, liveMessages: [] });
+          scheduleCacheWrite();
+          return { ...page, chatId: thread.chatId, messageId: thread.messageId, messages: uniqueThreadMessages, error: historyError };
+        } catch (error) {
+          if (generation !== accountGeneration) return undefined;
+          const message = error instanceof Error ? error.message : String(error);
+          if (/message has no (thread|comments)|can't get message thread/i.test(message)) {
+            set({ operationError: undefined });
+            return { chatId, messageId, messages: [], hasMore: false };
+          }
+          set({ operationError: errorMessage(error, translate("无法加载帖子留言")) });
+          return undefined;
+        }
+      },
+      sendMessageToThread: (chatId, replyToMessageId, text, entities, replyQuote, options) =>
+        get().sendMessage(text, replyToMessageId, replyQuote, entities, options?.disableNotification, {
+          chatId,
+          discussionThreadId: options?.threadId ?? get().messages.get(chatId)?.find(message => message.id === replyToMessageId)?.messageThreadId ?? get().messages.get(chatId)?.find(message => message.id === replyToMessageId)?.topicId ?? replyToMessageId,
+          clearDraft: false,
+        }),
+      sendFilesToThread: (chatId, replyToMessageId, attachments, caption, captionEntities, replyQuote, options) =>
+        get().sendFiles(attachments, caption, captionEntities, replyToMessageId, replyQuote, options?.disableNotification, {
+          chatId,
+          discussionThreadId: options?.threadId ?? get().messages.get(chatId)?.find(message => message.id === replyToMessageId)?.messageThreadId ?? get().messages.get(chatId)?.find(message => message.id === replyToMessageId)?.topicId ?? replyToMessageId,
+          clearDraft: false,
+        }),
+      markActiveChatRead: async () => {
+        const chatId = get().activeChatId;
+        if (chatId) await markActiveConversationRead(chatId);
+      },
+      markMessageThreadRead: async (chatId, messageIds) => {
+        if (get().authorization.kind !== "ready" || get().connectionStatus !== "online" || !documentIsVisible()) return false;
+        const requested = new Set(messageIds);
+        const visibleIds = (get().messages.get(chatId) ?? [])
+          .filter(message => requested.has(message.id) && !message.outgoing && !outboxItemId(message.id))
+          .map(message => message.id);
+        if (!visibleIds.length) return true;
+        try {
+          await transport.markMessageThreadRead(chatId, visibleIds);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      viewChannelMessages: async (chatId, messageIds) => {
+        const state = get();
+        if (state.activeChatId !== chatId || state.chats.get(chatId)?.kind !== "channel" ||
+            state.authorization.kind !== "ready" || state.connectionStatus !== "online" || !documentIsVisible()) return false;
+        const requested = new Set(messageIds);
+        const ids = (state.messages.get(chatId) ?? []).filter(message => requested.has(message.id) &&
+          message.isChannelPost && !message.isLocallyDeleted && !message.isRemoving &&
+          !outboxItemId(message.id) && message.delivery !== "sending" && message.delivery !== "failed").map(message => message.id);
+        if (!ids.length) return true;
+        try {
+          await transport.viewChannelMessages(chatId, ids);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      markLocalBlockedUserReactionsRead: async (userId) => {
+        const blockedSenderIds = localBlockedReactionUserIds();
+        if (userId) blockedSenderIds.add(userId);
+        const chatIds = new Set<string>();
+        for (const [chatId, messages] of get().messages) {
+          if (messages.some((message) => messageHasUnreadLocalBlockedReaction(message, blockedSenderIds))) {
+            chatIds.add(chatId);
+          }
+        }
+        await Promise.all([...chatIds].map((chatId) => markBlockedChatReactionsRead(chatId)));
+      },
+
+      refreshUnreadMentions: (chatId) => refreshUnreadAttention(chatId, "mention"),
+
+      dismissMessageAttention: (chatId, messageIds) => {
+        const uniqueMessageIds = [...new Set(messageIds.filter(Boolean))];
+        markSeenChatReactionsRead(chatId, uniqueMessageIds);
+        const chatMessages = get().messages.get(chatId) ?? [];
+        const pendingMessageIds = uniqueMessageIds.filter((messageId) => {
+          const key = `${chatId}:${messageId}`;
+          const message = chatMessages.find((candidate) => candidate.id === messageId);
+          return Boolean(
+            message && messageHasPrimaryAttention(message) &&
+            !attentionReadRequests.has(key) && !acknowledgedAttentionMessages.has(key),
+          );
+        });
+        if (pendingMessageIds.length === 0) return;
+        const requestGeneration = attentionReadGeneration;
+        for (const messageId of pendingMessageIds) {
+          attentionReadRequests.add(`${chatId}:${messageId}`);
+        }
+        void transport.markMessageAttentionRead(chatId, pendingMessageIds)
+          .then(() => {
+            if (requestGeneration !== attentionReadGeneration) return;
+            const unreadAttentionMessageIds = new Map(get().unreadAttentionMessageIds);
+            // A successful view request precedes TDLib's authoritative mention-read update.
+            // Keep server-backed mentions reachable until that update also clears the sidebar count.
+            const readIds = new Set(pendingMessageIds.filter((messageId) => {
+              const message = get().messages.get(chatId)?.find(candidate => candidate.id === messageId);
+              return !message?.containsUnreadMention && !message?.containsUnreadReaction;
+            }));
+            const remaining = (unreadAttentionMessageIds.get(chatId) ?? [])
+              .filter((candidate) => !readIds.has(candidate));
+            if (remaining.length > 0) unreadAttentionMessageIds.set(chatId, remaining);
+            else unreadAttentionMessageIds.delete(chatId);
+            for (const messageId of pendingMessageIds) {
+              acknowledgedAttentionMessages.add(`${chatId}:${messageId}`);
+            }
+            while (acknowledgedAttentionMessages.size > 2_048) {
+              acknowledgedAttentionMessages.delete(
+                acknowledgedAttentionMessages.values().next().value!,
+              );
+            }
+            set({ unreadAttentionMessageIds });
+          })
+          .catch((error) => {
+            if (requestGeneration !== attentionReadGeneration) return;
+            set({ operationError: errorMessage(error, translate("无法更新提醒已读状态")) });
+          })
+          .finally(() => {
+            if (requestGeneration !== attentionReadGeneration) return;
+            for (const messageId of pendingMessageIds) {
+              attentionReadRequests.delete(`${chatId}:${messageId}`);
+            }
+          });
+      },
+
+      loadMessageProperties: async (chatId, messageId, force = false, signal) => {
+        if (signal?.aborted) return undefined;
+        const generation = accountGeneration;
+        const accountId = get().activeAccountId;
+        const isCurrent = () => !signal?.aborted && generation === accountGeneration && accountId === get().activeAccountId;
+        const requestedMessage = (get().messages.get(chatId) ?? [])
+          .find((message) => message.id === messageId);
+        if (!requestedMessage) return undefined;
+        if (!connectionPresentation(get().connectionStatus).operational) return requestedMessage.permissions;
+        if (requestedMessage.permissions && !force) return requestedMessage.permissions;
+        try {
+          const permissions = await transport.getMessageProperties(chatId, messageId);
+          if (!isCurrent()) return undefined;
+          const currentMessages = get().messages.get(chatId) ?? [];
+          const message = currentMessages.find((item) => item.id === messageId);
+          if (!message || message !== requestedMessage) return undefined;
+          const messages = new Map(get().messages);
+          messages.set(chatId, upsertMessage(currentMessages, { ...message, permissions }));
+          set({ messages, operationError: undefined });
+          return permissions;
+        } catch (error) {
+          if (!isCurrent()) return undefined;
+          set({
+            operationError: error instanceof Error ? error.message : translate("无法读取消息操作权限"),
+          });
+          return undefined;
+        }
+      },
+
+      loadRawMessage: async (chatId, messageId) => {
+        try {
+          const raw = await transport.getRawMessage(chatId, messageId);
+          if (!raw) {
+            set({ operationError: translate("找不到原始消息") });
+            return undefined;
+          }
+          set({ operationError: undefined });
+          return raw;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法读取原始消息")) });
+          return undefined;
+        }
+      },
+
+      searchChatMessages: searchController.searchChatMessages,
+      loadMoreChatMessages: searchController.loadMoreChatMessages,
+      cancelChatMessageSearch: searchController.cancelChatMessageSearch,
+      clearChatMessageSearch: searchController.clearChatMessageSearch,
+      searchGlobal: searchController.searchGlobal,
+      loadMoreGlobalSearch: searchController.loadMoreGlobalSearch,
+      cancelGlobalSearch: searchController.cancelGlobalSearch,
+      clearGlobalSearch: searchController.clearGlobalSearch,
+
+      loadCurrentUserProfile: profileController.loadCurrentUserProfile,
+      updateCurrentUserProfile: profileController.updateCurrentUserProfile,
+      changeCurrentUserAvatar: profileController.changeCurrentUserAvatar,
+
+      loadChatProfile: profileController.loadChatProfile,
+
+      loadMoreChatProfileMembers: profileController.loadMoreChatProfileMembers,
+
+      loadUserProfile: profileController.loadUserProfile,
+
+      clearProfile: profileController.clearProfile,
+
+      loadContacts: profileController.loadContacts,
+
+      startPrivateChat: async (userId) => {
+        set({ contactPendingUserId: userId, contactsError: undefined });
+        try {
+          const chat = await transport.createPrivateChat(userId);
+          const chats = new Map(get().chats);
+          chats.set(chat.id, chat);
+          set({ chats, contactPendingUserId: undefined });
+          scheduleCacheWrite();
+          return chat.id;
+        } catch (error) {
+          set({
+            contactPendingUserId: undefined,
+            contactsError: errorMessage(error, translate("无法发起私聊")),
+          });
+          return undefined;
+        }
+      },
+
+      createChat: async (input) => {
+        if (get().chatCreationPending) return undefined;
+        set({ chatCreationPending: true, operationError: undefined });
+        try {
+          const chat = await transport.createChat(input);
+          const chats = new Map(get().chats);
+          chats.set(chat.id, chat);
+          const messages = new Map(get().messages);
+          if (!messages.has(chat.id)) messages.set(chat.id, []);
+          set({
+            chats,
+            messages,
+            activeChatId: chat.id,
+            chatCreationPending: false,
+            chatFilter: "main",
+          });
+          scheduleCacheWrite();
+          return chat.id;
+        } catch (error) {
+          set({
+            chatCreationPending: false,
+            operationError: errorMessage(error, translate("无法创建群组或频道")),
+          });
+          return undefined;
+        }
+      },
+
+      loadChatManagement: (chatId, memberOffset = 0) => {
+        if (!requireManagementCapability(chatId, "canOpenManagement", translate("当前账号没有群组管理权限"))) {
+          set({ groupManagement: undefined, groupManagementLoading: false, groupManagementError: translate("当前账号没有群组管理权限") });
+          return Promise.resolve(undefined);
+        }
+        const key = `${chatId}:${memberOffset}`;
+        const existing = groupManagementLoads.get(key);
+        if (existing) return existing;
+        const request = (async () => {
+          set({ groupManagementLoading: true, groupManagementError: undefined });
+          try {
+            const value = await transport.getChatManagement(chatId, memberOffset);
+            const current = get().groupManagement;
+            const merged = memberOffset > 0 && current?.chatId === chatId
+              ? {
+                  ...value,
+                  members: [
+                    ...current.members,
+                    ...value.members.filter((member) => !current.members.some((item) => item.user.id === member.user.id)),
+                  ],
+                  memberOffset: 0,
+                }
+              : value;
+            const chats = new Map(get().chats);
+            const chat = chats.get(chatId);
+            if (chat) chats.set(chatId, { ...chat, management: value.capabilities });
+            const chatAdministratorLabels = new Map(get().chatAdministratorLabels);
+            chatAdministratorLabels.set(chatId, value.administratorLabels ?? {});
+            set({
+              chats,
+              chatAdministratorLabels,
+              groupManagement: merged,
+              groupManagementLoading: false,
+            });
+            return merged;
+          } catch (error) {
+            set({ groupManagementLoading: false, groupManagementError: errorMessage(error, translate("无法读取群组管理资料")) });
+            return undefined;
+          } finally {
+            groupManagementLoads.delete(key);
+          }
+        })();
+        groupManagementLoads.set(key, request);
+        return request;
+      },
+
+      loadChatAdministratorLabels: (chatId, force = false) => {
+        const chat = get().chats.get(chatId);
+        if (!chat || (chat.kind !== "group" && chat.kind !== "channel")) {
+          return Promise.resolve({});
+        }
+        const cached = get().chatAdministratorLabels.get(chatId);
+        if (cached && !force) return Promise.resolve(cached);
+        const existing = chatAdministratorLabelLoads.get(chatId);
+        if (existing) return existing;
+        const generation = chatAdministratorLabelsGeneration;
+        const request = transport.getChatAdministratorLabels(chatId).catch(() => ({})).then((labels) => {
+          if (generation !== chatAdministratorLabelsGeneration) return labels;
+          const chatAdministratorLabels = new Map(get().chatAdministratorLabels);
+          chatAdministratorLabels.set(chatId, labels);
+          set({ chatAdministratorLabels });
+          return labels;
+        }).finally(() => {
+          if (chatAdministratorLabelLoads.get(chatId) === request) {
+            chatAdministratorLabelLoads.delete(chatId);
+          }
+        });
+        chatAdministratorLabelLoads.set(chatId, request);
+        return request;
+      },
+
+      addChatMembers: async (chatId, userIds) => {
+        if (!requireManagementCapability(chatId, "canAddMembers", translate("当前账号没有邀请成员权限"))) return false;
+        try {
+          await transport.addChatMembers(chatId, userIds);
+          await get().loadChatManagement(chatId, 0);
+          set({ operationError: undefined });
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法添加成员")) });
+          return false;
+        }
+      },
+
+      setChatMemberStatus: async (chatId, userId, status) => {
+        const management = get().groupManagement?.chatId === chatId ? get().groupManagement : undefined;
+        const member = management?.members.find((item) => item.user.id === userId);
+        const capability = status.kind === "administrator" || member?.status === "administrator"
+          ? "canPromoteMembers"
+          : status.kind === "restricted" || status.kind === "banned" || member?.status === "restricted" || member?.status === "banned"
+            ? "canRestrictMembers"
+            : member?.status === "left" ? "canAddMembers" : undefined;
+        if (capability && !requireManagementCapability(
+          chatId,
+          capability,
+          capability === "canPromoteMembers"
+            ? translate("当前账号没有管理员任免权限")
+            : capability === "canRestrictMembers" ? translate("当前账号没有限制成员权限") : translate("当前账号没有邀请成员权限"),
+        )) return false;
+        if (!capability && !managementCapabilitiesFor(chatId)?.canOpenManagement) {
+          set({ operationError: translate("当前账号没有成员管理权限") });
+          return false;
+        }
+        try {
+          await transport.setChatMemberStatus({ chatId, userId, status });
+          await get().loadChatManagement(chatId, 0);
+          set({ operationError: undefined });
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法更新成员权限")) });
+          return false;
+        }
+      },
+
+      setChatMemberTag: async (chatId, userId, tag) => {
+        if (!requireManagementCapability(chatId, "canManageTags", translate("当前账号没有修改成员标签的权限"))) return false;
+        try {
+          await transport.setChatMemberTag(chatId, userId, tag);
+          await get().loadChatManagement(chatId, 0);
+          set({ operationError: undefined });
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法更新成员标签")) });
+          return false;
+        }
+      },
+
+      setChatPermissions: async (chatId, permissions) => {
+        if (!requireManagementCapability(chatId, "canManagePermissions", translate("当前账号没有修改默认权限的权限"))) return false;
+        try {
+          await transport.setChatPermissions(chatId, permissions);
+          await get().loadChatManagement(chatId, 0);
+          set({ operationError: undefined });
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法更新群组默认权限")) });
+          return false;
+        }
+      },
+
+      setChatSlowModeDelay: async (chatId, delaySeconds) => {
+        if (!requireManagementCapability(chatId, "canManageSlowMode", translate("当前账号没有修改慢速模式的权限"))) return false;
+        try {
+          await transport.setChatSlowModeDelay(chatId, delaySeconds);
+          await get().loadChatManagement(chatId, 0);
+          set({ operationError: undefined });
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法更新慢速模式")) });
+          return false;
+        }
+      },
+
+      transferChatOwnership: async (chatId, userId, password) => {
+        if (!requireManagementCapability(chatId, "canTransferOwnership", translate("当前账号不能转移所有权"))) return false;
+        try {
+          await transport.transferChatOwnership(chatId, userId, password);
+          await get().loadChatManagement(chatId, 0);
+          set({ operationError: undefined });
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法转移所有者")) });
+          return false;
+        }
+      },
+
+      loadChatEventLog: async (input) => {
+        if (!requireManagementCapability(input.chatId, "canViewEventLog", translate("当前账号没有查看管理日志的权限"))) return undefined;
+        try {
+          const page = await transport.getChatEventLog(input);
+          set({ operationError: undefined });
+          return page;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法读取管理日志")) });
+          return undefined;
+        }
+      },
+
+      getChatInviteLinks: async (input) => {
+        if (!requireManagementCapability(input.chatId, "canManageInvites", translate("当前账号没有管理邀请链接的权限"))) return undefined;
+        const capabilities = managementCapabilitiesFor(input.chatId);
+        if (
+          capabilities?.canManageAllInvites !== true &&
+          input.creatorUserId &&
+          input.creatorUserId !== get().currentUserId
+        ) {
+          set({ operationError: translate("管理员只能读取自己创建的邀请链接") });
+          return undefined;
+        }
+        try { return await transport.getChatInviteLinks(input); }
+        catch (error) { set({ operationError: errorMessage(error, translate("无法读取邀请链接")) }); return undefined; }
+      },
+
+      createChatInviteLink: async (input) => {
+        if (!requireManagementCapability(input.chatId, "canManageInvites", translate("当前账号没有管理邀请链接的权限"))) return undefined;
+        try { const link = await transport.createChatInviteLink(input); set({ operationError: undefined }); return link; }
+        catch (error) { set({ operationError: errorMessage(error, translate("无法创建邀请链接")) }); return undefined; }
+      },
+
+      editChatInviteLink: async (input) => {
+        if (!requireManagementCapability(input.chatId, "canManageInvites", translate("当前账号没有管理邀请链接的权限"))) return undefined;
+        try { const link = await transport.editChatInviteLink(input); set({ operationError: undefined }); return link; }
+        catch (error) { set({ operationError: errorMessage(error, translate("无法编辑邀请链接")) }); return undefined; }
+      },
+
+      revokeChatInviteLink: async (chatId, inviteLink) => {
+        if (!requireManagementCapability(chatId, "canManageInvites", translate("当前账号没有管理邀请链接的权限"))) return false;
+        try { await transport.revokeChatInviteLink(chatId, inviteLink); set({ operationError: undefined }); return true; }
+        catch (error) { set({ operationError: errorMessage(error, translate("无法撤销邀请链接")) }); return false; }
+      },
+
+      getChatJoinRequests: async (input) => {
+        if (!requireManagementCapability(input.chatId, "canManageInvites", translate("当前账号没有处理入群申请的权限"))) return undefined;
+        if (managementCapabilitiesFor(input.chatId)?.canManageAllInvites !== true && !input.inviteLink) {
+          set({ operationError: translate("管理员只能读取自己邀请链接的入群申请") });
+          return undefined;
+        }
+        try { return await transport.getChatJoinRequests(input); }
+        catch (error) { set({ operationError: errorMessage(error, translate("无法读取入群申请")) }); return undefined; }
+      },
+
+      processChatJoinRequest: async (chatId, userId, approve) => {
+        if (!requireManagementCapability(chatId, "canManageInvites", translate("当前账号没有处理入群申请的权限"))) return false;
+        try { await transport.processChatJoinRequest(chatId, userId, approve); set({ operationError: undefined }); return true; }
+        catch (error) { set({ operationError: errorMessage(error, translate("无法处理入群申请")) }); return false; }
+      },
+
+      processChatJoinRequests: async (chatId, inviteLink, approve) => {
+        if (!requireManagementCapability(chatId, "canManageInvites", translate("当前账号没有处理入群申请的权限"))) return false;
+        if (managementCapabilitiesFor(chatId)?.canManageAllInvites !== true && !inviteLink) {
+          set({ operationError: translate("管理员只能处理自己邀请链接的入群申请") });
+          return false;
+        }
+        try { await transport.processChatJoinRequests(chatId, inviteLink, approve); set({ operationError: undefined }); return true; }
+        catch (error) { set({ operationError: errorMessage(error, translate("无法批量处理入群申请")) }); return false; }
+      },
+
+      getChatMentionSuggestions: async (chatId, query, recentUserIds) => {
+        const generation = accountGeneration;
+        if (accountTransition) return [];
+        try {
+          const users = await transport.getChatMentionSuggestions(chatId, query, recentUserIds);
+          return generation === accountGeneration && !accountTransition ? users : [];
+        } catch { return []; }
+      },
+
+      getBotCommandSuggestions: async (chatId, query = "", botUsername) => {
+        try { return await transport.getBotCommandSuggestions(chatId, query, botUsername); }
+        catch { return []; }
+      },
+
+      getCallbackQueryAnswer: async (messageId, data, preferredChatId) => {
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        if (!location) return undefined;
+        try {
+          const answer = await transport.getCallbackQueryAnswer(location.chatId, messageId, data);
+          set({ operationError: undefined });
+          return answer;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法处理机器人操作")) });
+          return undefined;
+        }
+      },
+
+      getInlineQueryResults: async (chatId, botUsername, query, offset = "") => {
+        try { return await transport.getInlineQueryResults(chatId, botUsername, query, offset); }
+        catch { return undefined; }
+      },
+
+      sendInlineQueryResultMessage: async (chatId, botUserId, queryId, resultId, replyToMessageId, topicId) => {
+        try { await transport.sendInlineQueryResultMessage(chatId, botUserId, queryId, resultId, replyToMessageId, topicId); recordConversationSentMessages(get().activeAccountId, chatId); set({ operationError: undefined }); return true; }
+        catch (error) { set({ operationError: errorMessage(error, translate("无法发送 Inline 结果")) }); return false; }
+      },
+
+      sendBotStartMessage: async (chatId, botUserId, parameter = "") => {
+        try { await transport.sendBotStartMessage(chatId, botUserId, parameter); recordConversationSentMessages(get().activeAccountId, chatId); set({ operationError: undefined }); return true; }
+        catch (error) { set({ operationError: errorMessage(error, translate("无法启动机器人")) }); return false; }
+      },
+
+      loadBlockedSenders: async () => {
+        set({ blockedSendersLoading: true });
+        try { set({ blockedSenders: await transport.getBlockedSenders(), blockedSendersLoading: false }); }
+        catch (error) { set({ blockedSendersLoading: false, operationError: errorMessage(error, translate("无法读取黑名单")) }); }
+      },
+
+      setMessageSenderBlocked: async (senderId, kind, blocked) => {
+        try {
+          await transport.setMessageSenderBlocked(senderId, kind, blocked);
+          const blockedSenders = blocked ? await transport.getBlockedSenders() : get().blockedSenders.filter((sender) => !(sender.id === senderId && sender.kind === kind));
+          set({ blockedSenders, operationError: undefined });
+          return true;
+        } catch (error) { set({ operationError: errorMessage(error, blocked ? translate("无法屏蔽对象") : translate("无法解除屏蔽")) }); return false; }
+      },
+
+      getChatReportOptions: async (chatId, messageIds) => {
+        return get().reportChat({ chatId, messageIds, optionId: "", text: "" });
+      },
+
+      reportChat: async (input) => {
+        const generation = accountGeneration;
+        if (accountTransition) throw new Error(translate("账号已切换，请重新打开举报"));
+        const result = await transport.reportChat(input);
+        if (generation !== accountGeneration || accountTransition) {
+          throw new Error(translate("账号已切换，请重新打开举报"));
+        }
+        return result;
+      },
+
+      loadReportMessages: async (input) => {
+        const generation = accountGeneration;
+        const ensureCurrent = () => {
+          if (generation !== accountGeneration || accountTransition) {
+            throw new Error(translate("账号已切换，请重新打开举报"));
+          }
+        };
+        ensureCurrent();
+        // Reuse server search without replacing the conversation's search/history state.
+        const page = await transport.searchChatMessages({ ...input, limit: 30 });
+        ensureCurrent();
+        const messages: Message[] = [];
+        for (let offset = 0; offset < page.messages.length; offset += 6) {
+          ensureCurrent();
+          const batch = await Promise.all(page.messages.slice(offset, offset + 6).map(async (message) => {
+            if (message.chatId !== input.chatId || message.isLocallyDeleted) return undefined;
+            const permissions = await transport.getMessageProperties(input.chatId, message.id);
+            return permissions.canReport === true ? { ...message, permissions } : undefined;
+          }));
+          ensureCurrent();
+          messages.push(...batch.filter((message): message is Message & { permissions: import("../telegram/types").MessagePermissions } => Boolean(message)));
+        }
+        return { ...page, messages };
+      },
+
+      getActiveSessions: sessionController.getActiveSessions,
+      terminateSession: sessionController.terminateSession,
+      terminateAllOtherSessions: sessionController.terminateAllOtherSessions,
+      getPrivacySettingRules: sessionController.getPrivacySettingRules,
+      setPrivacySettingRules: sessionController.setPrivacySettingRules,
+
+      setMessageReaction: async (messageId, emoji, chosen, preferredChatId) => {
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        if (!location) return;
+        const { chatId, messages: currentMessages, message: original } = location;
+        const optimistic = withEmojiReaction(original, emoji, chosen, get().currentUserId);
+        if (optimistic === original) return;
+        const messages = new Map(get().messages);
+        messages.set(chatId, upsertMessage(currentMessages, optimistic));
+        set({ messages, operationError: undefined });
+        try {
+          await transport.setMessageReaction({ chatId, messageId, emoji, chosen });
+          scheduleCacheWrite();
+        } catch (error) {
+          const latestMessages = get().messages.get(chatId) ?? [];
+          const latest = latestMessages.find((message) => message.id === messageId);
+          const latestReaction = latest?.interaction?.reactions.find(
+            (reaction) => reaction.type.kind === "emoji" && reaction.type.emoji === emoji,
+          );
+          if (latest && Boolean(latestReaction?.chosen) === chosen) {
+            const rollback = new Map(get().messages);
+            rollback.set(chatId, upsertMessage(latestMessages, original));
+            set({ messages: rollback });
+          }
+          set({
+            operationError: error instanceof Error ? error.message : translate("无法更新表情回应"),
+          });
+        }
+      },
+
+      getMessageReactionSenders: async (messageId, type, offset, preferredChatId) => {
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        if (!location) throw new Error(translate("消息不存在"));
+        return transport.getMessageReactionSenders({
+          chatId: location.chatId,
+          messageId,
+          type,
+          offset,
+          limit: 100,
+        });
+      },
+
+      setPollAnswer: async (messageId, optionPositions, preferredChatId) => {
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        if (!location) return false;
+        try {
+          await transport.setPollAnswer({ chatId: location.chatId, messageId, optionPositions });
+          set({ operationError: undefined });
+          scheduleCacheWrite();
+          return true;
+        } catch (error) {
+          set({
+            operationError: error instanceof Error ? error.message : translate("无法提交投票"),
+          });
+          return false;
+        }
+      },
+
+      loadPinnedMessages: async (chatId) => {
+        if (!get().chats.has(chatId)) return [];
+        try {
+          const pinned = await transport.getPinnedMessages(chatId);
+          if (get().operationError) set({ operationError: undefined });
+          return pinned;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法读取置顶消息")) });
+          return [];
+        }
+      },
+
+      pinMessage: async (messageId, disableNotification, onlyForSelf, preferredChatId) => {
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        const chatId = location?.chatId;
+        if (!chatId) return false;
+        if (!await verifyPinPermission(chatId, messageId)) return false;
+        try {
+          await transport.pinMessage({
+            chatId,
+            messageId,
+            disableNotification,
+            onlyForSelf,
+          });
+          const messages = new Map(get().messages);
+          messages.set(chatId, (messages.get(chatId) ?? []).map((message) =>
+            message.id === messageId ? { ...message, isPinned: true, permissions: undefined } : message
+          ));
+          set({ messages, operationError: undefined });
+          scheduleCacheWrite();
+          return true;
+        } catch (error) {
+          set({ operationError: pinOperationError(error, translate("无法置顶消息")) });
+          return false;
+        }
+      },
+
+      unpinMessage: async (messageId, preferredChatId) => {
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        const chatId = location?.chatId;
+        if (!chatId) return false;
+        if (!await verifyPinPermission(chatId, messageId)) return false;
+        try {
+          await transport.unpinMessage(chatId, messageId);
+          const messages = new Map(get().messages);
+          messages.set(chatId, (messages.get(chatId) ?? []).map((message) =>
+            message.id === messageId ? { ...message, isPinned: false, permissions: undefined } : message
+          ));
+          set({ messages, operationError: undefined });
+          scheduleCacheWrite();
+          return true;
+        } catch (error) {
+          set({ operationError: pinOperationError(error, translate("无法取消置顶消息")) });
+          return false;
+        }
+      },
+
+      setChatMessageAutoDeleteTime: async (chatId, messageAutoDeleteTime) => {
+        const targetChat = get().chats.get(chatId);
+        if (!targetChat) return false;
+        if (
+          (targetChat.kind === "group" || targetChat.kind === "channel") &&
+          !requireManagementCapability(chatId, "canChangeInfo", translate("当前账号没有修改群资料的权限"))
+        ) return false;
+        if (targetChat.kind !== "direct" && targetChat.kind !== "group" && targetChat.kind !== "channel") {
+          set({ operationError: translate("当前会话不支持自动删除设置") });
+          return false;
+        }
+        try {
+          await transport.setChatMessageAutoDeleteTime({
+            chatId,
+            messageAutoDeleteTime,
+          });
+          const chats = new Map(get().chats);
+          const chat = chats.get(chatId);
+          if (chat) chats.set(chatId, { ...chat, messageAutoDeleteTime });
+          set({ chats, operationError: undefined });
+          scheduleCacheWrite();
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法设置自动删除")) });
+          return false;
+        }
+      },
+
+      loadSharedMedia: async (input, force = false) => {
+        if (accountTransition || !get().chats.has(input.chatId)) return undefined;
+        const generation = accountGeneration;
+        const reset = !input.fromMessageId;
+        if (reset && !force) {
+          const cached = sharedMediaIndex.read(input);
+          if (cached) return cached;
+        }
+        try {
+          const page = await transport.searchSharedMedia(input);
+          if (generation !== accountGeneration || accountTransition) return undefined;
+          const merged = sharedMediaIndex.merge(input, page, reset);
+          set({ operationError: undefined });
+          return merged;
+        } catch (error) {
+          if (generation !== accountGeneration || accountTransition) return undefined;
+          set({ operationError: errorMessage(error, translate("无法读取共享媒体")) });
+          return undefined;
+        }
+      },
+
+      deleteMessagesFromChat: async (chatId, messageIds, revoke) => {
+        const uniqueIds = [...new Set(messageIds)];
+        if (!get().chats.has(chatId) || uniqueIds.length === 0 || uniqueIds.length > 100) {
+          return false;
+        }
+        try {
+          if (!await verifyDeleteScope(chatId, uniqueIds, revoke)) return false;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法确认消息删除权限")) });
+          return false;
+        }
+        const deletedIds: string[] = [];
+        let failure: unknown;
+        for (const messageId of uniqueIds) {
+          try {
+            await transport.deleteMessage({ chatId, messageId, revoke });
+            deletedIds.push(messageId);
+          } catch (error) {
+            failure ??= error;
+          }
+        }
+        if (deletedIds.length > 0) {
+          for (const messageId of deletedIds) {
+            removedMessageIds.add(`${chatId}:${messageId}`);
+            markMessageRemoving(chatId, messageId);
+          }
+          sharedMediaIndex.remove(chatId, deletedIds);
+          scheduleCacheWrite();
+        }
+        set({
+          operationError: failure
+            ? errorMessage(failure, translate("已删除 {{value0}} 条，部分消息删除失败", { value0: deletedIds.length }))
+            : undefined,
+        });
+        return !failure;
+      },
+
+      getCachedEmojiPicker: emojiPickerController.getCachedEmojiPicker,
+      emojiRevision: 0,
+      loadEmojiPicker: emojiPickerController.loadEmojiPicker,
+      getCachedStickerSet: emojiPickerController.getCachedStickerSet,
+      loadStickerSet: emojiPickerController.loadStickerSet,
+      addStickerSet: emojiPickerController.addStickerSet,
+      removeStickerSet: emojiPickerController.removeStickerSet,
+      getCachedStickerOutline: emojiPickerController.getCachedStickerOutline,
+      loadStickerOutline: emojiPickerController.loadStickerOutline,
+
+      searchStickers: async (query, chatId) => {
+        const normalized = query.trim();
+        if (!normalized) return [];
+        const accountId = get().activeAccountId;
+        try {
+          const results = await transport.searchStickers(normalized, chatId);
+          return get().activeAccountId === accountId ? results : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+
+      getCachedEmojiAsset: emojiPickerController.getCachedEmojiAsset,
+      loadEmojiAsset: emojiPickerController.loadEmojiAsset,
+
+      sendSticker: async (asset, replyToMessageId, replyQuote, preferredChatId, disableNotification) => {
+        const accountId = get().activeAccountId;
+        const chatId = preferredChatId ?? get().activeChatId;
+        const topicId = get().activeChatId === chatId ? get().activeTopicId : undefined;
+        if (!chatId) return false;
+        if (!connectionPresentation(get().connectionStatus).operational) {
+          set({ operationError: translate("联网后才能发送贴纸") });
+          return false;
+        }
+        const localOnlyReply = replyToMessageId
+          ? get().messages.get(chatId)?.some((message) => message.id === replyToMessageId && message.isLocallyDeleted) === true
+          : false;
+        try {
+          await transport.sendSticker({
+            chatId,
+            topicId,
+            asset,
+            replyToMessageId: localOnlyReply ? undefined : replyToMessageId,
+            replyQuote: localOnlyReply ? undefined : replyToMessageId ? replyQuote : undefined,
+            disableNotification,
+          });
+          if (get().activeAccountId !== accountId) return false;
+          emojiPickerController.rememberSentSticker(asset);
+          recordConversationSentMessages(get().activeAccountId, chatId);
+          set({ operationError: undefined });
+          scheduleCacheWrite();
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("贴纸发送失败")) });
+          return false;
+        }
+      },
+
+      sendAnimation: async (asset, replyToMessageId, replyQuote, preferredChatId, disableNotification) => {
+        const chatId = preferredChatId ?? get().activeChatId;
+        const topicId = get().activeChatId === chatId ? get().activeTopicId : undefined;
+        if (!chatId) return false;
+        if (!connectionPresentation(get().connectionStatus).operational) {
+          set({ operationError: translate("联网后才能发送 GIF") });
+          return false;
+        }
+        const localOnlyReply = replyToMessageId
+          ? get().messages.get(chatId)?.some((message) => message.id === replyToMessageId && message.isLocallyDeleted) === true
+          : false;
+        try {
+          await transport.sendAnimation({
+            chatId,
+            topicId,
+            asset,
+            replyToMessageId: localOnlyReply ? undefined : replyToMessageId,
+            replyQuote: localOnlyReply ? undefined : replyToMessageId ? replyQuote : undefined,
+            disableNotification,
+          });
+          recordConversationSentMessages(get().activeAccountId, chatId);
+          set({ operationError: undefined });
+          scheduleCacheWrite();
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("GIF 发送失败")) });
+          return false;
+        }
+      },
+
+      setSearchQuery: searchController.setSearchQuery,
+      setChatFilter: (chatFilter) => {
+        set({ chatFilter });
+        scheduleCacheWrite();
+        void loadChats(chatFilter);
+      },
+
+      updateChatDraft: (chatId, text, replyToMessageId, replyQuote, entities) => {
+        if (!get().chats.has(chatId)) return;
+        const topicId = get().activeChatId === chatId ? get().activeTopicId : undefined;
+        const key = topicKey(chatId, topicId);
+        const current = get().drafts.get(key);
+        const next: ChatDraft = {
+          chatId,
+          topicId,
+          text,
+          ...(entities?.length ? { entities } : {}),
+          replyToMessageId,
+          replyQuote: replyToMessageId ? replyQuote : undefined,
+          updatedAt: new Date().toISOString(),
+          pending: true,
+        };
+        if (draftSignature(current) === draftSignature(next)) return;
+        const drafts = new Map(get().drafts);
+        drafts.set(key, next);
+        set({ drafts });
+        draftSync.expect(key, draftForSync(next), DRAFT_SYNC_DELAY_MS);
+        scheduleCacheWrite();
+      },
+
+      updateThreadDraft: (draftKey, chatId, text, replyToMessageId, replyQuote, entities) => {
+        if (!get().chats.has(chatId) && !get().messages.has(chatId)) return;
+        const current = get().drafts.get(draftKey);
+        const next: ChatDraft = {
+          chatId,
+          localKey: draftKey,
+          text,
+          ...(entities?.length ? { entities } : {}),
+          replyToMessageId,
+          replyQuote: replyToMessageId ? replyQuote : undefined,
+          updatedAt: new Date().toISOString(),
+          pending: false,
+        };
+        if (draftSignature(current) === draftSignature(next)) return;
+        const drafts = new Map(get().drafts);
+        drafts.set(draftKey, next);
+        set({ drafts });
+        scheduleCacheWrite();
+      },
+
+      loadLocalAttachmentDraft: async (draftKey) => {
+        const localDraft = get().localAttachmentDrafts.get(draftKey);
+        if (!localDraft) return [];
+        try {
+          const stored = await attachmentOutbox.get(localDraft.batchId, get().activeAccountId);
+          if (stored && stored.attachments.length === localDraft.attachments.length) {
+            return stored.attachments;
+          }
+        } catch {
+          // Invalid local attachment drafts are discarded below.
+        }
+        discardLocalAttachmentDraft(draftKey);
+        set({ operationError: translate("附件草稿已失效，请重新选择文件") });
+        return [];
+      },
+
+      saveLocalAttachmentDraft: async (draftKey, chatId, attachments, options) => {
+        if (!get().chats.has(chatId) || attachments.length === 0) return false;
+        const accountId = get().activeAccountId;
+        const generation = (localAttachmentDraftGenerations.get(draftKey) ?? 0) + 1;
+        localAttachmentDraftGenerations.set(draftKey, generation);
+        const batchId = `draft:${globalThis.crypto.randomUUID()}`;
+        const updatedAt = new Date().toISOString();
+        try {
+          const metadata = await describeOutgoingAttachments(batchId, attachments);
+          if (get().activeAccountId !== accountId) return false;
+          await attachmentOutbox.put({
+            id: batchId,
+            accountId,
+            createdAt: updatedAt,
+            persistent: true,
+            recovery: { draftKey, chatId, ...options },
+            attachments,
+            metadata,
+          });
+          if (get().activeAccountId !== accountId || localAttachmentDraftGenerations.get(draftKey) !== generation) {
+            await attachmentOutbox.remove(batchId).catch(() => undefined);
+            return false;
+          }
+          const previous = get().localAttachmentDrafts.get(draftKey);
+          const localAttachmentDrafts = new Map(get().localAttachmentDrafts);
+          localAttachmentDrafts.set(draftKey, {
+            draftKey,
+            chatId,
+            batchId,
+            attachments: metadata,
+            ...options,
+            updatedAt,
+          });
+          set({ localAttachmentDrafts, operationError: undefined });
+          await flushUnsentState();
+          if (previous?.batchId && previous.batchId !== batchId) {
+            await attachmentOutbox.remove(previous.batchId).catch(() => undefined);
+          }
+          return true;
+        } catch (error) {
+          // A failed acknowledgement may still follow a successful disk commit.
+          // Keep both blob versions until committed references can be reconciled.
+          if (localAttachmentDraftGenerations.get(draftKey) === generation) {
+            set({ operationError: errorMessage(error, translate("无法保存附件草稿")) });
+          }
+          return false;
+        }
+      },
+
+      updateLocalAttachmentDraftOptions: (draftKey, options) => {
+        const current = get().localAttachmentDrafts.get(draftKey);
+        if (!current) return;
+        const localAttachmentDrafts = new Map(get().localAttachmentDrafts);
+        localAttachmentDrafts.set(draftKey, {
+          ...current,
+          ...options,
+          updatedAt: new Date().toISOString(),
+        });
+        set({ localAttachmentDrafts });
+        scheduleCacheWrite();
+      },
+
+      clearLocalAttachmentDraft: async (draftKey) => {
+        const current = get().localAttachmentDrafts.get(draftKey);
+        localAttachmentDraftGenerations.set(
+          draftKey,
+          (localAttachmentDraftGenerations.get(draftKey) ?? 0) + 1,
+        );
+        if (!current) return;
+        const localAttachmentDrafts = new Map(get().localAttachmentDrafts);
+        localAttachmentDrafts.delete(draftKey);
+        set({ localAttachmentDrafts });
+        await flushUnsentState();
+        await attachmentOutbox.remove(current.batchId).catch(() => undefined);
+      },
+
+      setChatTyping: async (chatId, typing) => {
+        if (get().authorization.kind !== "ready") return;
+        try {
+          await transport.setChatTyping(chatId, typing, get().activeChatId === chatId ? get().activeTopicId : undefined);
+        } catch {
+          // Typing state is ephemeral and must not replace actionable operation errors.
+        }
+      },
+
+      sendMessage: async (text, replyToMessageId, replyQuote, entities, disableNotification, context) => {
+        const sendGeneration = accountGeneration;
+        const chatId = context?.chatId ?? get().activeChatId;
+        const topicId = context ? context.topicId : get().activeTopicId;
+        const clearDraft = context?.clearDraft !== false;
+        const formatted = trimComposerFormattedText(text, entities ?? []);
+        const normalizedText = formatted.text;
+        if (!chatId || !normalizedText) return false;
+        if (!context?.discussionThreadId && get().chats.get(chatId)?.kind === "group" &&
+          (get().chats.get(chatId)?.isMember === false || get().chats.get(chatId)?.canSendMessages === false)) {
+          set({ operationError: translate("当前会话不允许发送消息") });
+          return false;
+        }
+        if (!context?.discussionThreadId && get().chats.get(chatId)?.kind === "channel" && !canPostToChannel(get().chats.get(chatId))) {
+          set({ operationError: translate("当前账号没有在此频道发布消息的权限") });
+          return false;
+        }
+        const draftKey = topicKey(chatId, topicId);
+        const previousDraft = clearDraft ? get().drafts.get(draftKey) : undefined;
+        const queueMessage = async (retry?: RetryableSendError) => {
+          if (sendGeneration !== accountGeneration) return false;
+          const previousOutbox = get().outbox;
+          const previousMessages = get().messages;
+          const previousDrafts = get().drafts;
+          const canClearDraft = clearDraft && draftSignature(previousDrafts.get(draftKey)) === draftSignature(previousDraft);
+          const item: QueuedOutgoingMessage = {
+            id: globalThis.crypto.randomUUID(),
+            chatId,
+            topicId,
+            discussionThreadId: context?.discussionThreadId,
+            ...(clearDraft ? {} : { clearDraft: false }),
+            text: normalizedText,
+            ...(formatted.entities.length ? { entities: formatted.entities } : {}),
+            replyToMessageId,
+            replyQuote: replyToMessageId ? replyQuote : undefined,
+            disableNotification,
+            createdAt: new Date().toISOString(),
+            status: "queued",
+            ...(retry ? outboxRetryState(retry) : {}),
+          };
+          const outbox = [...previousOutbox, item];
+          const drafts = new Map(previousDrafts);
+          if (canClearDraft) drafts.delete(draftKey);
+          const clearGeneration = canClearDraft ? draftSync.expect(draftKey, undefined) : undefined;
+          set({
+            drafts,
+            outbox,
+            messages: messagesWithOutbox(
+              previousMessages,
+              outbox,
+              get().currentUserId ?? "self",
+            ),
+            operationError: undefined,
+          });
+          try {
+            await flushCachedSnapshot();
+            if (sendGeneration !== accountGeneration) return false;
+            recordConversationSentMessages(get().activeAccountId, chatId);
+            void flushOutbox();
+            return true;
+          } catch (error) {
+            if (sendGeneration !== accountGeneration) return false;
+            if (clearGeneration !== undefined) draftSync.cancelExpectation(draftKey, clearGeneration);
+            if (canClearDraft && previousDraft?.pending) {
+              draftSync.expect(draftKey, draftForSync(previousDraft));
+            }
+            set({
+              drafts: previousDrafts,
+              outbox: previousOutbox,
+              messages: previousMessages,
+              cacheHealth: "invalid",
+              operationError: errorMessage(error, translate("无法保存离线发送队列")),
+            });
+            return false;
+          }
+        };
+        if (!connectionPresentation(get().connectionStatus).operational) return queueMessage();
+        if (clearDraft) await draftSync.flush(draftKey);
+        if (sendGeneration !== accountGeneration) return false;
+        const clearGeneration = clearDraft ? draftSync.expect(draftKey, undefined) : undefined;
+        try {
+          await transport.sendMessage({
+            chatId,
+            topicId,
+            text: normalizedText,
+            entities: formatted.entities,
+            replyToMessageId,
+            replyQuote: replyToMessageId ? replyQuote : undefined,
+            disableNotification,
+            clearDraft,
+          });
+          if (sendGeneration !== accountGeneration) return false;
+          if (clearGeneration !== undefined) draftSync.markAwaitingAck(draftKey, clearGeneration);
+          const currentDraft = get().drafts.get(draftKey);
+          if (clearDraft && draftSignature(currentDraft) === draftSignature(previousDraft)) {
+            const drafts = new Map(get().drafts);
+            drafts.delete(draftKey);
+            set({ drafts, operationError: undefined });
+          } else {
+            set({ operationError: undefined });
+          }
+          scheduleCacheWrite();
+          recordConversationSentMessages(get().activeAccountId, chatId);
+          return true;
+        } catch (error) {
+          if (sendGeneration !== accountGeneration) return false;
+          if (clearGeneration !== undefined) draftSync.cancelExpectation(draftKey, clearGeneration);
+          if (error instanceof RetryableSendError) return queueMessage(error);
+          const currentDraft = get().drafts.get(draftKey);
+          if (previousDraft && draftSignature(currentDraft) === draftSignature(previousDraft)) {
+            const restored = { ...previousDraft, pending: true };
+            const drafts = new Map(get().drafts);
+            drafts.set(draftKey, restored);
+            set({ drafts });
+            draftSync.expect(draftKey, draftForSync(restored), 0);
+          }
+          set({ operationError: error instanceof Error ? error.message : translate("消息发送失败") });
+          return false;
+        }
+      },
+
+      editMessage: async (messageId, text, entities, preferredChatId) => {
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        const chatId = location?.chatId;
+        const formatted = trimComposerFormattedText(text, entities ?? []);
+        const normalizedText = formatted.text;
+        const content = location?.message.content;
+        const caption = content && isCaptionContent(content) ? content : undefined;
+        if (!chatId || (!normalizedText && !caption)) return false;
+        try {
+          await transport.editMessage({
+            chatId,
+            messageId,
+            text: normalizedText,
+            entities: formatted.entities,
+            ...(caption ? { contentType: "caption" as const, showCaptionAboveMedia: caption.showCaptionAboveMedia } : {}),
+          });
+          set({ operationError: undefined });
+          return true;
+        } catch (error) {
+          set({ operationError: error instanceof Error ? error.message : translate("消息编辑失败") });
+          return false;
+        }
+      },
+
+      deleteMessage: async (messageId, revoke, preferredChatId) => {
+        const queuedItemId = outboxItemId(messageId);
+        if (queuedItemId) {
+          const item = get().outbox.find((candidate) => candidate.id === queuedItemId);
+          if (!item) return false;
+          setOutbox(get().outbox.filter((candidate) => candidate.id !== queuedItemId));
+          if (!await persistOutboxState()) return false;
+          if (item.attachments?.length) {
+            await attachmentOutbox.remove(queuedItemId).catch(() => undefined);
+          }
+          set({ operationError: undefined });
+          return true;
+        }
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        const chatId = location?.chatId;
+        if (!chatId) return false;
+        if (location.message.isLocallyDeleted) {
+          removeMessageImmediately(chatId, messageId);
+          set({ operationError: undefined });
+          scheduleCacheWrite();
+          return true;
+        }
+        try {
+          if (!await verifyDeleteScope(chatId, [messageId], revoke)) return false;
+          await transport.deleteMessage({ chatId, messageId, revoke });
+          removedMessageIds.add(`${chatId}:${messageId}`);
+          markMessageRemoving(chatId, messageId);
+          set({ operationError: undefined });
+          sharedMediaIndex.remove(chatId, [messageId]);
+          scheduleCacheWrite();
+          return true;
+        } catch (error) {
+          set({ operationError: error instanceof Error ? error.message : translate("消息删除失败") });
+          return false;
+        }
+      },
+
+      forwardMessages: async (fromChatId, messageIds, toChatId, toTopicId, description) => {
+        if (accountTransition || !get().chats.has(fromChatId) || !get().chats.has(toChatId)) return undefined;
+        const generation = accountGeneration;
+        const accountId = get().activeAccountId;
+        const isCurrent = () => generation === accountGeneration && !accountTransition;
+        const uniqueMessageIds = [...new Set(messageIds)];
+        if (uniqueMessageIds.length === 0) return undefined;
+        if (uniqueMessageIds.length > 100) {
+          set({ operationError: translate("单次最多转发 100 条消息") });
+          return undefined;
+        }
+        const sourceMessages = new Map((get().messages.get(fromChatId) ?? []).map(message => [message.id, message]));
+        try {
+          const result: ForwardMessagesResult = { forwardedCount: 0, failedMessageIds: [] };
+          for (let index = 0; index < uniqueMessageIds.length;) {
+            if (!isCurrent()) return undefined;
+            const message = sourceMessages.get(uniqueMessageIds[index]);
+            const batchIds = [uniqueMessageIds[index++]];
+            // Only combine adjacent live messages, keeping archived copies in place.
+            if (!message?.isLocallyDeleted) {
+              while (index < uniqueMessageIds.length && !sourceMessages.get(uniqueMessageIds[index])?.isLocallyDeleted) {
+                batchIds.push(uniqueMessageIds[index++]);
+              }
+            }
+            try {
+              if (!message?.isLocallyDeleted) {
+                const forwarded = await transport.forwardMessages({ fromChatId, toChatId, toTopicId, messageIds: batchIds });
+                result.forwardedCount += forwarded.forwardedCount;
+                result.failedMessageIds.push(...forwarded.failedMessageIds);
+              } else if (message.content.kind === "media" || message.content.kind === "file") {
+                await transport.sendMediaCopy({ chatId: toChatId, topicId: toTopicId, content: message.content });
+                result.forwardedCount += 1;
+              } else {
+                const author = senderNameForMessage(message, get().users, get().chats.get(fromChatId)!, get().chats);
+                const quote = retainedMessageQuote(message.content, author, undefined, message.senderId);
+                if (!quote.text) throw new Error(translate("消息转发失败"));
+                await transport.sendMessage({ chatId: toChatId, topicId: toTopicId, ...quote, clearDraft: false });
+                result.forwardedCount += 1;
+              }
+            } catch {
+              result.failedMessageIds.push(...batchIds);
+            }
+            if (!isCurrent()) return undefined;
+          }
+          const normalizedDescription = description?.trim();
+          let descriptionError: string | undefined;
+          if (result.forwardedCount > 0 && normalizedDescription) {
+            try {
+              await transport.sendMessage({
+                chatId: toChatId,
+                topicId: toTopicId,
+                text: normalizedDescription,
+                entities: [],
+                clearDraft: false,
+              });
+            } catch (error) {
+              descriptionError = errorMessage(error, translate("转发成功，但描述发送失败"));
+            }
+          }
+          if (!isCurrent()) return undefined;
+          set({
+            operationError: descriptionError ?? (result.failedMessageIds.length > 0
+              ? translate("{{value0}} 条消息已转发，{{value1}} 条失败", { value0: result.forwardedCount, value1: result.failedMessageIds.length })
+              : undefined),
+          });
+          if (result.forwardedCount > 0) {
+            recordConversationSentMessages(
+              accountId,
+              toChatId,
+              result.forwardedCount + (normalizedDescription && !descriptionError ? 1 : 0),
+            );
+          }
+          scheduleCacheWrite();
+          return result;
+        } catch (error) {
+          if (!isCurrent()) return undefined;
+          set({ operationError: error instanceof Error ? error.message : translate("消息转发失败") });
+          return undefined;
+        }
+      },
+
+      cacheFile: async (fileId, priority) => {
+        if (retainedMessages.forFile(fileId).some(({ content }) =>
+          (content.kind === "media" || content.kind === "file") && content.fileId === fileId &&
+          content.isDownloaded && content.localPath)) return;
+        // Callers retry opportunistic preview downloads without surfacing a
+        // global runtime error, so preserve the rejection signal here.
+        await transport.cacheFile(fileId, priority);
+      },
+
+      releaseFile: (fileId) => {
+        transport.releaseFile?.(fileId);
+      },
+
+      recoverFile: async (fileId, priority) => {
+        try {
+          await transport.recoverFile(fileId, priority);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+
+      streamFile: async (fileId, size, mimeType) => {
+        const generation = accountGeneration;
+        try {
+          const source = await transport.streamFile({ fileId, size, mimeType });
+          if (generation !== accountGeneration) return undefined;
+          set({ operationError: undefined });
+          return source;
+        } catch (error) {
+          if (generation !== accountGeneration) return undefined;
+          set({ operationError: error instanceof Error ? error.message : translate("视频流加载失败") });
+          return undefined;
+        }
+      },
+
+      suspendFileStream: async (fileId, source) => {
+        try {
+          await transport.suspendFileStream(fileId, source);
+        } catch {
+          // Pausing playback is best-effort and should not surface a global
+          // operation error when the stream already finished or disappeared.
+        }
+      },
+
+      downloadFile: async (fileId, fileName) => {
+        const generation = accountGeneration;
+        try {
+          const retained = retainedMessages.forFile(fileId).find(({ content }) =>
+            (content.kind === "media" || content.kind === "file") && content.fileId === fileId &&
+            content.isDownloaded && content.localPath);
+          const content = retained?.content;
+          const sourcePath = content?.kind === "media" || content?.kind === "file" ? content.localPath : undefined;
+          const path = await transport.downloadFile(fileId, fileName, sourcePath);
+          if (generation === accountGeneration) set({ operationError: undefined });
+          return path;
+        } catch (error) {
+          if (generation === accountGeneration) set({ operationError: errorMessage(error, translate("文件下载失败")) });
+          throw error;
+        }
+      },
+
+      cancelFileDownload: async (fileId) => {
+        try {
+          await transport.cancelFileDownload(fileId);
+          set({ operationError: undefined });
+        } catch (error) {
+          set({ operationError: error instanceof Error ? error.message : translate("取消文件下载失败") });
+        }
+      },
+
+      openFile: async (sourcePath, fileId) => {
+        try {
+          await transport.openFile(sourcePath);
+          set({ operationError: undefined });
+          return true;
+        } catch (error) {
+          if (fileId !== undefined) {
+            try {
+              await transport.recoverFile(fileId, 32);
+              set({ operationError: translate("文件缓存已失效并已重新下载，请再次打开") });
+              return false;
+            } catch {
+              // Preserve the original open error when recovery also fails.
+            }
+          }
+          set({ operationError: error instanceof Error ? error.message : translate("无法打开文件") });
+          return false;
+        }
+      },
+
+      saveFileToDownloads: async (sourcePath, fileName) => {
+        try {
+          await transport.saveFileToDownloads(sourcePath, fileName);
+          set({ operationError: undefined });
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法保存文件")) });
+        }
+      },
+
+      saveFileAs: async (sourcePath, fileName) => {
+        try {
+          await transport.saveFileAs(sourcePath, fileName);
+          set({ operationError: undefined });
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法另存文件")) });
+        }
+      },
+
+      openDownloadDirectory: async () => {
+        try {
+          await transport.openDownloadDirectory();
+          set({ operationError: undefined });
+        } catch (error) {
+          set({ operationError: error instanceof Error ? error.message : translate("无法打开下载目录") });
+        }
+      },
+
+      retryMessage: async (messageId, preferredChatId) => {
+        const itemId = outboxItemId(messageId);
+        const location = itemId
+          ? undefined
+          : messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        const chatId = location?.chatId ?? preferredChatId ?? get().activeChatId;
+        if (!chatId) return;
+        if (itemId) {
+          const previous = get().outbox;
+          const item = previous.find((candidate) => candidate.id === itemId);
+          if (!item) return;
+          setOutbox(previous.map((candidate) =>
+            candidate.id === itemId
+              ? { ...candidate, status: "queued", error: undefined, retryAt: undefined, retryAttempt: undefined }
+              : candidate,
+          ));
+          try {
+            await flushCachedSnapshot();
+          } catch (error) {
+            setOutbox(previous);
+            set({
+              cacheHealth: "invalid",
+              operationError: errorMessage(error, translate("无法保存重试队列")),
+            });
+            return;
+          }
+          await flushOutbox();
+          return;
+        }
+        try {
+          await transport.retryMessage(chatId, messageId);
+          set({ operationError: undefined });
+        } catch (error) {
+          set({ operationError: error instanceof Error ? error.message : translate("消息重试失败") });
+        }
+      },
+
+      sendFile: async (file) => {
+        const chatId = get().activeChatId;
+        const topicId = get().activeTopicId;
+        if (!chatId) return false;
+        if (file && !connectionPresentation(get().connectionStatus).operational) {
+          return get().sendFiles([await inspectOutgoingAttachment(file)]);
+        }
+        try {
+          const sent = await transport.sendFile({ chatId, topicId, file });
+          if (sent) {
+            recordConversationSentMessages(get().activeAccountId, chatId);
+            set({ operationError: undefined });
+          }
+          return sent;
+        } catch (error) {
+          set({ operationError: error instanceof Error ? error.message : translate("文件发送失败") });
+          return false;
+        }
+      },
+
+      sendFiles: async (
+        attachments,
+        caption,
+        captionEntities,
+        replyToMessageId,
+        replyQuote,
+        disableNotification,
+        context,
+      ) => {
+        const sendGeneration = accountGeneration;
+        const chatId = context?.chatId ?? get().activeChatId;
+        const topicId = context ? context.topicId : get().activeTopicId;
+        if (!chatId || attachments.length === 0) return false;
+        if (!context?.discussionThreadId && get().chats.get(chatId)?.kind === "group" &&
+          (get().chats.get(chatId)?.isMember === false || get().chats.get(chatId)?.canSendMessages === false)) {
+          set({ operationError: translate("当前会话不允许发送消息") });
+          return false;
+        }
+        if (!context?.discussionThreadId && get().chats.get(chatId)?.kind === "channel" && !canPostToChannel(get().chats.get(chatId))) {
+          set({ operationError: translate("当前账号没有在此频道发布消息的权限") });
+          return false;
+        }
+        const formattedCaption = trimComposerFormattedText(caption ?? "", captionEntities ?? []);
+        const queueFiles = async (remaining: typeof attachments, retry?: RetryableSendError, captionConsumed = false) => {
+          if (sendGeneration !== accountGeneration) return false;
+          if (remaining.length === 0) return true;
+          const id = globalThis.crypto.randomUUID();
+          const createdAt = new Date().toISOString();
+          const captionText = captionConsumed ? "" : formattedCaption.text;
+          const accountId = get().activeAccountId;
+          try {
+            const metadata = await describeOutgoingAttachments(id, remaining);
+            if (sendGeneration !== accountGeneration) return false;
+            await attachmentOutbox.put({ id, accountId, createdAt, attachments: remaining, metadata, recovery: { chatId, topicId, discussionThreadId: context?.discussionThreadId, replyToMessageId, replyQuote, caption: captionText } });
+            if (sendGeneration !== accountGeneration) return false;
+            const previousOutbox = get().outbox;
+            const previousMessages = get().messages;
+            const item: QueuedOutgoingMessage = {
+              id,
+              chatId,
+              topicId,
+              discussionThreadId: context?.discussionThreadId,
+              text: captionText || metadata.map(({ name }) => name).join("、"),
+              caption: captionText || undefined,
+              ...(!captionConsumed && formattedCaption.entities.length ? { entities: formattedCaption.entities } : {}),
+              replyToMessageId,
+              replyQuote: replyToMessageId ? replyQuote : undefined,
+              disableNotification,
+              kind: "attachments",
+              attachments: metadata,
+              createdAt,
+              status: "queued",
+              ...(retry ? outboxRetryState(retry) : {}),
+            };
+            setOutbox([...get().outbox, item]);
+            set({ operationError: undefined });
+            if (!await persistOutboxState()) {
+              if (sendGeneration !== accountGeneration) return false;
+              set({ outbox: previousOutbox, messages: previousMessages });
+              return false;
+            }
+            if (sendGeneration !== accountGeneration) return false;
+            recordConversationSentMessages(get().activeAccountId, chatId, attachments.length);
+            void flushOutbox();
+            return true;
+          } catch (error) {
+            if (sendGeneration !== accountGeneration) return false;
+            await attachmentOutbox.remove(id, accountId).catch(() => undefined);
+            set({ operationError: errorMessage(error, translate("无法保存离线附件")) });
+            return false;
+          }
+        };
+        if (!connectionPresentation(get().connectionStatus).operational) return queueFiles(attachments);
+        const accepted = new Set<(typeof attachments)[number]>();
+        try {
+          const sent = await transport.sendFiles({
+            chatId,
+            topicId,
+            attachments,
+            caption: formattedCaption.text || undefined,
+            captionEntities: formattedCaption.entities,
+            replyToMessageId,
+            replyQuote: replyToMessageId ? replyQuote : undefined,
+            disableNotification,
+            onGroupAccepted: async group => { group.forEach(attachment => accepted.add(attachment)); },
+          });
+          if (sendGeneration !== accountGeneration) return false;
+          if (sent) {
+            recordConversationSentMessages(get().activeAccountId, chatId, attachments.length);
+            set({ operationError: undefined });
+          }
+          return sent;
+        } catch (error) {
+          if (sendGeneration !== accountGeneration) return false;
+          if (error instanceof RetryableSendError) {
+            return queueFiles(attachments.filter(attachment => !accepted.has(attachment)), error, accepted.size > 0);
+          }
+          set({ operationError: error instanceof Error ? error.message : translate("附件发送失败") });
+          return false;
+        }
+      },
+
+      cancelFileUpload: async (messageId, preferredChatId) => {
+        const itemId = outboxItemId(messageId);
+        if (itemId) {
+          const item = get().outbox.find((candidate) => candidate.id === itemId);
+          if (!item) return;
+          setOutbox(get().outbox.filter((candidate) => candidate.id !== itemId));
+          if (!await persistOutboxState()) return;
+          await attachmentOutbox.remove(itemId).catch(() => undefined);
+          set({ operationError: undefined });
+          return;
+        }
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        const chatId = location?.chatId;
+        if (!chatId) return;
+        try {
+          await transport.cancelFileUpload(chatId, messageId);
+          // A cancelled upload is not a user-visible deletion. Remove it from
+          // the projection immediately so the virtual list can reclaim its row.
+          removeMessageImmediately(chatId, messageId);
+          set({ operationError: undefined });
+          scheduleCacheWrite();
+        } catch (error) {
+          set({ operationError: error instanceof Error ? error.message : translate("取消上传失败") });
+        }
+      },
+
+      clearError: () => set({ error: undefined }),
+      clearOperationError: () => set({ operationError: undefined }),
+    };
+  });
+
+export const telegramStore = createTelegramStore(createTelegramTransport());
+
+export const useTelegramStore = <T,>(selector: (state: TelegramState) => T) =>
+  useStore(telegramStore, selector);

@@ -1,0 +1,408 @@
+import {
+  Fragment,
+  lazy,
+  Suspense,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
+import { useTelegramStore } from "../store/telegramStore";
+import { telegramUrlDisplayText } from "../telegram/telegramLinks";
+import type { MessageTextEntity } from "../telegram/types";
+import { handleExternalLinkClick, safeExternalHref as safeHref } from "../utils/externalLinks";
+import { highlightedText, textHighlightRanges } from "../utils/textHighlight";
+import { isRtlText } from "../utils/textDirection";
+import { TextSpoiler, TextSpoilerGroup } from "./Spoiler";
+import { CollapsibleBlockQuote, type CollapseQuoteHandler, type ExpandQuoteHandler } from "./CollapsibleBlockQuote";
+
+const MarkdownText = lazy(() => import("./MarkdownText"));
+
+interface MessageRichTextProps {
+  text: string;
+  chatId?: string;
+  entities?: MessageTextEntity[];
+  className?: string;
+  highlightQuery?: string;
+  onOpenMention?: (username?: string, userId?: string) => void;
+  onSearchHashtag?: (hashtag: string) => void;
+  onCollapseQuote?: CollapseQuoteHandler;
+  onExpandQuote?: ExpandQuoteHandler;
+}
+
+const entityHref = (entity: MessageTextEntity, value: string) => {
+  if (entity.kind === "textUrl") return safeHref(entity.href);
+  if (entity.kind === "url") return safeHref(value);
+  if (entity.kind === "email") return safeHref(`mailto:${value}`);
+  if (entity.kind === "phone") return safeHref(`tel:${value}`);
+  if (entity.kind === "mention" && /^@[A-Za-z0-9_]{5,32}$/.test(value)) {
+    return safeHref(`https://t.me/${value.slice(1)}`);
+  }
+  if (entity.kind === "mentionName" && entity.userId && /^-?\d+$/.test(entity.userId)) {
+    return safeHref(`tg://user?id=${encodeURIComponent(entity.userId)}`);
+  }
+  return undefined;
+};
+
+function MentionLink({
+  entity,
+  value,
+  children,
+  onOpenMention,
+  chatId,
+}: {
+  entity: MessageTextEntity;
+  value: string;
+  children: ReactNode;
+  onOpenMention?: (username?: string, userId?: string) => void;
+  chatId?: string;
+}) {
+  const username = entity.kind === "mention" && /^@[A-Za-z0-9_]{5,32}$/.test(value)
+    ? value.slice(1)
+    : undefined;
+  const resolved = useTelegramStore((state) => {
+    const userId = entity.userId ?? (username
+      ? state.userIdsByUsername.get(username.toLocaleLowerCase())
+      : undefined);
+    const user = userId ? state.users.get(userId) : undefined;
+    return user
+      ? `${user.id}\u0000${user.displayName}\u0000${user.username ?? ""}`
+      : "";
+  });
+  const [resolvedUserId, displayName, resolvedUsername] = resolved
+    ? resolved.split("\u0000")
+    : [];
+  const targetUsername = (username ?? resolvedUsername) || undefined;
+  const targetUserId = resolvedUserId || entity.userId;
+  const isAdministrator = useTelegramStore((state) => Boolean(
+    chatId && targetUserId && Object.hasOwn(state.chatAdministratorLabels.get(chatId) ?? {}, targetUserId),
+  ));
+  const href = targetUserId && /^\d+$/.test(targetUserId)
+    ? `tg://user?id=${encodeURIComponent(targetUserId)}`
+    : targetUsername
+      ? `https://t.me/${encodeURIComponent(targetUsername)}`
+      : "#";
+  const openMention = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!onOpenMention) {
+      handleExternalLinkClick(event);
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    onOpenMention(targetUsername, targetUserId);
+  };
+  return (
+    <a href={href} className={`message-mention${isAdministrator ? " is-administrator" : ""}`} onClick={openMention}>
+      {displayName || children}
+    </a>
+  );
+}
+
+function HashtagLink({
+  value,
+  children,
+  onSearchHashtag,
+}: {
+  value: string;
+  children: ReactNode;
+  onSearchHashtag?: (hashtag: string) => void;
+}) {
+  const hashtag = value.startsWith("#") ? value : `#${value}`;
+  const searchHashtag = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onSearchHashtag?.(hashtag);
+  };
+  return (
+    <a
+      className="message-hashtag"
+      href={`#search-${encodeURIComponent(hashtag.slice(1))}`}
+      onClick={searchHashtag}
+    >
+      {children}
+    </a>
+  );
+}
+
+const wrapEntity = (
+  entity: MessageTextEntity,
+  value: string,
+  children: ReactNode,
+  key: string,
+  onOpenMention?: (username?: string, userId?: string) => void,
+  onSearchHashtag?: (hashtag: string) => void,
+  chatId?: string,
+) => {
+  switch (entity.kind) {
+    case "bold": return <strong key={key}>{children}</strong>;
+    case "italic": return <em key={key}>{children}</em>;
+    case "underline": return <u key={key}>{children}</u>;
+    case "strikethrough": return <del key={key}>{children}</del>;
+    case "spoiler": return (
+      <TextSpoiler key={key} spoilerId={`${entity.offset}:${entity.length}`}>
+        {children}
+      </TextSpoiler>
+    );
+    case "customEmoji": return (
+      <span key={key} className="rich-custom-emoji" data-custom-emoji-id={entity.customEmojiId}>
+        {children}
+      </span>
+    );
+    case "dateTime": return entity.dateTime
+      ? <time key={key} dateTime={new Date(entity.dateTime.unixTime * 1_000).toISOString()}>{children}</time>
+      : <Fragment key={key}>{children}</Fragment>;
+    case "code": return <code key={key}>{children}</code>;
+    case "pre": return <code key={key} className="rich-pre" data-language={entity.language}>{children}</code>;
+    case "blockquote": return <span key={key} className="rich-blockquote">{children}</span>;
+    case "hashtag": return (
+      <HashtagLink key={key} value={value} onSearchHashtag={onSearchHashtag}>
+        {children}
+      </HashtagLink>
+    );
+    case "url":
+    case "textUrl":
+    case "email":
+    case "phone": {
+      const href = entityHref(entity, value);
+      const linkChildren = entity.kind === "url"
+        ? telegramUrlDisplayText(value) ?? children
+        : children;
+      return href
+        ? <a key={key} href={href} target="_blank" rel="noreferrer" onClick={handleExternalLinkClick}>{linkChildren}</a>
+        : <Fragment key={key}>{children}</Fragment>;
+    }
+    case "mention":
+    case "mentionName": {
+      return (
+        <MentionLink
+          key={key}
+          entity={entity}
+          value={value}
+          onOpenMention={onOpenMention}
+          chatId={chatId}
+        >
+          {children}
+        </MentionLink>
+      );
+    }
+  }
+};
+
+const renderInlineRange = (
+  text: string,
+  entities: MessageTextEntity[],
+  startOffset: number,
+  endOffset: number,
+  keyPrefix: string,
+  highlightRanges: ReturnType<typeof textHighlightRanges>,
+  onOpenMention?: (username?: string, userId?: string) => void,
+  onSearchHashtag?: (hashtag: string) => void,
+  chatId?: string,
+) => {
+  const overlapping = entities.filter((entity) =>
+    entity.offset < endOffset && entity.offset + entity.length > startOffset,
+  );
+  const atomicLinkRanges = overlapping.filter((entity) =>
+    entity.kind === "hashtag" || entity.kind === "mention" || entity.kind === "mentionName" ||
+    (entity.kind === "url" && Boolean(telegramUrlDisplayText(
+      text.slice(entity.offset, entity.offset + entity.length),
+    )))
+  );
+  const boundaries = [...new Set([
+    startOffset,
+    endOffset,
+    ...overlapping.flatMap((entity) => [
+      Math.max(startOffset, entity.offset),
+      Math.min(endOffset, entity.offset + entity.length),
+    ]),
+    ...highlightRanges
+      .filter((range) => range.start < endOffset && range.end > startOffset)
+      .flatMap((range) => [
+        Math.max(startOffset, range.start),
+        Math.min(endOffset, range.end),
+      ]),
+  ])].filter((boundary) => !atomicLinkRanges.some((entity) =>
+    boundary > entity.offset && boundary < entity.offset + entity.length
+  )).sort((left, right) => left - right);
+
+  return boundaries.slice(0, -1).map((start, index) => {
+    const end = boundaries[index + 1];
+    if (end <= start) return null;
+    const value = text.slice(start, end);
+    const active = overlapping
+      .filter((entity) => entity.offset <= start && entity.offset + entity.length >= end)
+      .sort((left, right) => left.offset - right.offset || right.length - left.length);
+    // Hide the mention prefix before wrapping styles; keep protocol text and offsets intact.
+    const displayValue = value.startsWith("@") && active.some((entity) =>
+      (entity.kind === "mention" || entity.kind === "mentionName") && entity.offset === start
+    ) ? value.slice(1) : value;
+    let node = active.reduceRight<ReactNode>(
+      (children, entity, entityIndex) => wrapEntity(
+        entity,
+        text.slice(entity.offset, entity.offset + entity.length),
+        children,
+        `${keyPrefix}:${start}:${end}:${entityIndex}`,
+        onOpenMention,
+        onSearchHashtag,
+        chatId,
+      ),
+      displayValue,
+    );
+    if (highlightRanges.some((range) => range.start <= start && range.end >= end)) {
+      node = <mark className="message-search-highlight">{node}</mark>;
+    }
+    return <Fragment key={`${keyPrefix}:${start}:${end}`}>{node}</Fragment>;
+  });
+};
+
+const renderEntities = (
+  text: string,
+  entities: MessageTextEntity[],
+  highlightQuery?: string,
+  onOpenMention?: (username?: string, userId?: string) => void,
+  onSearchHashtag?: (hashtag: string) => void,
+  onCollapseQuote?: CollapseQuoteHandler,
+  onExpandQuote?: ExpandQuoteHandler,
+  chatId?: string,
+) => {
+  const highlightRanges = textHighlightRanges(text, highlightQuery);
+  const valid = entities.filter((entity) =>
+    entity.offset >= 0 && entity.length > 0 && entity.offset + entity.length <= text.length,
+  );
+  const sortedQuotes = valid
+    .filter((entity) => entity.kind === "blockquote")
+    .sort((left, right) => left.offset - right.offset || right.length - left.length);
+  const blockquotes: Array<{ offset: number; length: number }> = [];
+  for (const quote of sortedQuotes) {
+    const previous = blockquotes.at(-1);
+    const previousEnd = previous ? previous.offset + previous.length : 0;
+    if (previous && (quote.offset <= previousEnd || /^[\t \r\n]*$/.test(text.slice(previousEnd, quote.offset)))) {
+      // Adjacent server entities form one local folding surface. Keep source offsets intact.
+      previous.length = Math.max(previousEnd, quote.offset + quote.length) - previous.offset;
+    } else {
+      blockquotes.push({ offset: quote.offset, length: quote.length });
+    }
+  }
+  const inlineEntities = valid.filter((entity) => entity.kind !== "blockquote");
+  if (blockquotes.length === 0) {
+    return renderInlineRange(
+      text,
+      inlineEntities,
+      0,
+      text.length,
+      "inline",
+      highlightRanges,
+      onOpenMention,
+      onSearchHashtag,
+      chatId,
+    );
+  }
+
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  for (const quote of blockquotes) {
+    const quoteStart = Math.max(cursor, quote.offset);
+    const quoteEnd = quote.offset + quote.length;
+    if (quoteEnd <= cursor) continue;
+    // A block already starts/ends a line. Consume its structural separator,
+    // keeping extra blank lines and all entity offsets in the original text.
+    const before = text.slice(cursor, quoteStart);
+    const beforeEnd = quoteStart - (/[^\r\n]/.test(before) ? before.match(/\r?\n$/)?.[0].length ?? 0 : 0);
+    const trailingBreak = text.slice(quoteStart, quoteEnd).match(/\r?\n$/)?.[0].length ?? 0;
+    const contentEnd = quoteEnd - trailingBreak;
+    if (quoteStart > cursor) {
+      nodes.push(...renderInlineRange(
+        text,
+        inlineEntities,
+        cursor,
+        beforeEnd,
+        `plain:${cursor}`,
+        highlightRanges,
+        onOpenMention,
+        onSearchHashtag,
+        chatId,
+      ));
+    }
+    nodes.push(
+      <CollapsibleBlockQuote
+        key={`quote:${quote.offset}:${quote.length}`}
+        quoteText={text.slice(quoteStart, contentEnd)}
+        resetKey={`${quote.offset}:${quote.length}:${text.slice(quoteStart, quoteEnd)}`}
+        onCollapse={onCollapseQuote}
+        onExpand={onExpandQuote}
+      >
+        {renderInlineRange(
+          text,
+          inlineEntities,
+          quoteStart,
+          contentEnd,
+          `quote:${quote.offset}`,
+          highlightRanges,
+          onOpenMention,
+          onSearchHashtag,
+          chatId,
+        )}
+      </CollapsibleBlockQuote>,
+    );
+    cursor = quoteEnd + (trailingBreak ? 0 : text.slice(quoteEnd).match(/^\r?\n/)?.[0].length ?? 0);
+  }
+  if (cursor < text.length) {
+    nodes.push(...renderInlineRange(
+      text,
+      inlineEntities,
+      cursor,
+      text.length,
+      `plain:${cursor}`,
+      highlightRanges,
+      onOpenMention,
+      onSearchHashtag,
+      chatId,
+    ));
+  }
+  return nodes;
+};
+
+export function MessageRichText({
+  text,
+  chatId,
+  entities,
+  className = "",
+  highlightQuery,
+  onOpenMention,
+  onSearchHashtag,
+  onCollapseQuote,
+  onExpandQuote,
+}: MessageRichTextProps) {
+  const isRtl = isRtlText(text);
+  const dir = isRtl ? "rtl" : "ltr";
+  if (entities && entities.length > 0) {
+    return (
+      <TextSpoilerGroup
+        className={`message-rich-text ${className}`}
+        data-rich-text="entities"
+        dir={dir}
+        resetKey={text}
+      >
+        {renderEntities(
+          text,
+          entities,
+          highlightQuery,
+          onOpenMention,
+          onSearchHashtag,
+          onCollapseQuote,
+          onExpandQuote,
+          chatId,
+        )}
+      </TextSpoilerGroup>
+    );
+  }
+
+  return (
+    <Suspense fallback={(
+      <div className={`message-rich-text is-loading ${className}`} data-rich-text="loading" dir={dir}>
+        {highlightedText(text, highlightQuery)}
+      </div>
+    )}>
+      <MarkdownText text={text} className={className} highlightQuery={highlightQuery} dir={dir}
+        onCollapseQuote={onCollapseQuote} onExpandQuote={onExpandQuote} />
+    </Suspense>
+  );
+}

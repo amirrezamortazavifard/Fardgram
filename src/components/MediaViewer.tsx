@@ -1,0 +1,300 @@
+import { messageCanBeSaved } from "../telegram/messageLifecycle";
+import { getTdlibDataCenterLocation, parseTdlibRemoteFileDataCenter } from "../telegram/fileDataCenter";
+import { translate } from "../i18n";
+import { ChevronLeft, ChevronRight, Download, ImageOff, LoaderCircle, Play } from "lucide-react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type WheelEvent } from "react";
+import { useModalFocus } from "../hooks/useModalFocus";
+import { useStableVisibility } from "../hooks/useStableVisibility";
+import { useImageViewport } from "../hooks/useImageViewport";
+import { adjacentPhotoId, photoThumbnailWindow, type ViewerMessage } from "../utils/mediaViewerModel";
+import { photoSources } from "../media/photoSources";
+import { canWarmViewerImage, hasViewerImage, retainViewerImage } from "../media/viewerImages";
+import { localMediaSource } from "../media/localMediaSource";
+import { logPerformance } from "../utils/performanceMonitor";
+import { MediaProgressRing } from "./MediaProgressRing";
+import { StableImage } from "./StableImage";
+import { ViewerImage } from "./ViewerImage";
+
+export interface MediaViewerProps {
+  messages: ViewerMessage[];
+  activeMessageId: string;
+  onActiveMessageChange: (messageId: string) => void;
+  onClose: () => void;
+  allowSave?: boolean;
+  preparedPreview?: { sourcePath: string; url: string };
+  onPhotoReady?: () => void;
+  onDownload: (fileId: number, fileName: string) => Promise<void>;
+  onSave: (sourcePath: string, fileName: string) => Promise<void>;
+  video?: {
+    surface: ReactNode;
+    controls: ReactNode;
+    immersive: boolean;
+    windowed: boolean;
+    idle: boolean;
+    width?: number;
+    height?: number;
+    interact: () => void;
+    startDragging: () => void;
+  };
+}
+
+function usePhotoSource(message: ViewerMessage, thumbnail = false) {
+  const content = message.content;
+  const sources = useMemo(() => photoSources(content.mediaType === "photo" ? content : { ...content, localPath: undefined }, thumbnail), [content.localPath, content.thumbnailPath, content.previewDataUrl, content.mediaType, thumbnail]);
+  const [failedSources, setFailedSources] = useState<Set<string>>(() => new Set());
+  const available = sources.filter(source => !failedSources.has(source));
+  const source = available[0];
+  return {
+    source,
+    preview: available[1],
+    failed: sources.length > 0 && !source,
+    onError: () => {
+      if (source) setFailedSources(current => new Set(current).add(source));
+    },
+    retry: () => setFailedSources(new Set()),
+  };
+}
+
+const MediaViewerThumbnail = memo(function MediaViewerThumbnail({ message, selected, onSelect }: {
+  message: ViewerMessage; selected: boolean; onSelect: (id: string) => void;
+}) {
+  const { source, onError } = usePhotoSource(message, true);
+  return <button className={selected ? "is-active" : undefined} type="button"
+    aria-label={translate("查看 {{value0}}", { value0: message.content.fileName })}
+    aria-current={selected ? "true" : undefined} onClick={() => onSelect(message.id)}>
+    {source ? <StableImage src={source} alt="" loading="eager" decoding="async" onError={onError} /> : <ImageOff size={18} />}
+    {message.content.mediaType !== "photo" && <Play className="media-viewer-thumbnail-play" size={16} fill="currentColor" />}
+    {message.content.isDownloading && <span className="media-progress" role="progressbar"
+      aria-label={translate("下载 {{value0}}", { value0: message.content.fileName })}
+      aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((message.content.progress ?? 0) * 100)}>
+      <span><MediaProgressRing progress={message.content.progress} /></span>
+    </span>}
+  </button>;
+});
+
+function PhotoSurface({ message, onDownload, onDimensions, preparedPreview, onPhotoReady }: {
+  message: ViewerMessage; onDownload: MediaViewerProps["onDownload"]; onDimensions: (width: number, height: number) => void;
+  preparedPreview?: MediaViewerProps["preparedPreview"]; onPhotoReady?: () => void;
+}) {
+  const { source, preview, failed, onError, retry } = usePhotoSource(message);
+  const [hasReadyImage, setHasReadyImage] = useState(false);
+  const startedAt = useRef(performance.now());
+  const showDownloading = useStableVisibility(Boolean(message.content.isDownloading));
+  const content = message.content;
+  const placeholder = preparedPreview && preparedPreview.sourcePath === content.localPath ? preparedPreview.url : preview;
+  const canDownload = messageCanBeSaved(message) && content.fileId !== undefined && content.canDownload !== false && !content.isDownloading && !content.isDownloaded;
+  return source ? <>
+    {/* Start the original immediately; a slow preview must never gate its load. */}
+    {!hasReadyImage && placeholder && <StableImage className="media-viewer-placeholder" src={placeholder} alt="" aria-hidden="true" draggable={false} onReady={onPhotoReady} />}
+    <ViewerImage source={source} alt={content.caption || content.fileName} onError={onError}
+    onReady={(image, cached) => {
+      setHasReadyImage(true);
+      if (source === localMediaSource(content.localPath)) {
+        onDimensions(image.naturalWidth, image.naturalHeight);
+      }
+      onPhotoReady?.();
+      logPerformance("ui_media_viewer_image", { durationMs: performance.now() - startedAt.current, phase: 1, cached });
+    }} /></> : <div className="media-viewer-empty" role="status">
+    {showDownloading ? <LoaderCircle className="spin" size={34} /> : <ImageOff size={38} strokeWidth={1.5} />}
+    <span>{failed ? translate("图片加载失败") : showDownloading ? translate("图片正在下载") : translate("原图尚未下载")}</span>
+    {failed && <button type="button" onClick={retry}>{translate("重试加载")}</button>}
+    {canDownload && <button type="button" onClick={() => void onDownload(content.fileId!, content.fileName)}>
+      <Download size={17} />{translate("下载原图")}
+    </button>}
+  </div>;
+}
+
+export function MediaViewer(props: MediaViewerProps) {
+  const active = props.messages.find(message => message.id === props.activeMessageId);
+  return active ? <Viewer {...props} active={active} /> : null;
+}
+
+function Viewer({ messages, activeMessageId, active, onActiveMessageChange, onClose, allowSave = true, onDownload, onSave, video, preparedPreview, onPhotoReady }: MediaViewerProps & { active: ViewerMessage }) {
+  const content = active.content;
+  const identity = `${active.chatId}:${active.id}`;
+  const stageRef = useRef<HTMLElement>(null);
+  const dialogRef = useModalFocus<HTMLDivElement>(onClose, false, stageRef);
+  const [naturalSize, setNaturalSize] = useState<{ identity: string; source?: string; width: number; height: number }>();
+  const dimensions = {
+    width: video?.width || (naturalSize?.identity === identity ? naturalSize.width : content.width || 1280),
+    height: video?.height || (naturalSize?.identity === identity ? naturalSize.height : content.height || 800),
+  };
+  const viewport = useImageViewport(identity, dimensions);
+  const previousId = adjacentPhotoId(messages, activeMessageId, -1);
+  const nextId = adjacentPhotoId(messages, activeMessageId, 1);
+  const previousSource = localMediaSource(messages.find(message => message.id === previousId && message.content.mediaType === "photo")?.content.localPath);
+  const nextSource = localMediaSource(messages.find(message => message.id === nextId && message.content.mediaType === "photo")?.content.localPath);
+  const originalReady = naturalSize?.identity === identity && naturalSize.source === content.localPath;
+  useEffect(() => {
+    if (!originalReady) return;
+    let cancelled = false;
+    const images: ReturnType<typeof retainViewerImage>[] = [];
+    // The visible original owns the decode budget first. Warm neighbors one at
+    // a time only after it is ready, and cancel pending work on navigation.
+    const timer = globalThis.setTimeout(() => {
+      void (async () => {
+        for (const source of new Set([previousSource, nextSource])) {
+          if (cancelled) return;
+          if (!source || hasViewerImage(source)) continue;
+          const neighbor = messages.find(message => localMediaSource(message.content.localPath) === source)?.content;
+          if (!canWarmViewerImage(neighbor?.width, neighbor?.height)) continue;
+          const image = retainViewerImage(source, "low");
+          images.push(image);
+          try {
+            await image.promise;
+          } catch { /* A failed neighbor must not prevent viewing the current photo. */ }
+          finally { image.release(); }
+        }
+      })();
+    }, 140);
+    return () => {
+      cancelled = true; globalThis.clearTimeout(timer);
+      for (const image of images) image.release();
+    };
+  }, [identity, content.localPath, originalReady, previousSource, nextSource]);
+  const thumbnailSlotRef = useRef<HTMLDivElement>(null);
+  const [thumbnailLimit, setThumbnailLimit] = useState(1);
+  const [actionError, setActionError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  const actionGeneration = useRef(0);
+  const navigationId = useRef(activeMessageId);
+  const keyboard = useRef({ previousId, nextId, onActiveMessageChange, viewport, video });
+  useLayoutEffect(() => { keyboard.current = { previousId, nextId, onActiveMessageChange, viewport, video }; });
+  useLayoutEffect(() => {
+    actionGeneration.current++;
+    navigationId.current = activeMessageId;
+    setActionError(undefined); setSaving(false);
+  }, [identity]);
+
+  useLayoutEffect(() => {
+    const element = thumbnailSlotRef.current;
+    if (!element) return;
+    const measure = () => {
+      const capacity = Math.max(1, Math.min(9, Math.floor((element.clientWidth - 16 + 7) / 65)));
+      setThumbnailLimit(capacity % 2 === 0 ? capacity - 1 : capacity);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element); measure();
+    return () => observer.disconnect();
+  }, []);
+  const thumbnails = useMemo(() => photoThumbnailWindow(messages, activeMessageId, thumbnailLimit), [messages, activeMessageId, thumbnailLimit]);
+
+  useLayoutEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return;
+      if (event.target instanceof HTMLElement && event.target.matches("input, select, textarea")) return;
+      const state = keyboard.current;
+      state.video?.interact();
+      if (state.video && !event.ctrlKey) return;
+      const id = event.key === "ArrowLeft" ? state.previousId : event.key === "ArrowRight" ? state.nextId : undefined;
+      if (id) { event.preventDefault(); state.onActiveMessageChange(id); }
+      else if (event.key === "+" || event.key === "=") { event.preventDefault(); state.viewport.zoomBy(1.5); }
+      else if (event.key === "-") { event.preventDefault(); state.viewport.zoomBy(1 / 1.5); }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleWheel = (event: WheelEvent<HTMLElement>) => {
+    event.preventDefault();
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 240 : 1);
+    if (!Number.isFinite(delta) || delta === 0) return;
+    if (event.ctrlKey) {
+      if (!video) viewport.zoomBy(Math.exp(-delta * Math.log(1.5) / 240), { x: event.clientX, y: event.clientY });
+      return;
+    }
+    // Track every event, including a burst delivered before React commits.
+    const target = adjacentPhotoId(messages, navigationId.current, delta < 0 ? -1 : 1);
+    if (target) { navigationId.current = target; onActiveMessageChange(target); }
+  };
+  const canDownload = messageCanBeSaved(active) && content.fileId !== undefined && content.canDownload !== false && !content.isDownloading && !content.isDownloaded;
+  const canSave = allowSave && messageCanBeSaved(active) && Boolean(content.localPath);
+  // Re-derive from the file ID so snapshots written by older clients cannot
+  // continue presenting the account's DC as this image's storage location.
+  const dc = content.remoteId ? parseTdlibRemoteFileDataCenter(content.remoteId) : undefined;
+  const imageDetails = [
+    translate("数据中心：{{value0}}", { value0: dc ? `DC${dc}, ${getTdlibDataCenterLocation(dc)}` : translate("未知") }),
+    translate("尺寸：{{value0}}", { value0: (video?.width && video.height) || naturalSize?.identity === identity || (content.width && content.height) ? `${dimensions.width} × ${dimensions.height}` : translate("未知") }),
+    translate("大小：{{value0}}", { value0: content.sizeLabel }),
+  ];
+  const save = async () => {
+    const generation = actionGeneration.current;
+    setSaving(true); setActionError(undefined);
+    try {
+      if (canSave) await onSave(content.localPath!, content.fileName);
+      else if (canDownload) await onDownload(content.fileId!, content.fileName);
+    } catch { if (actionGeneration.current === generation) setActionError(translate("文件下载失败")); }
+    finally { if (actionGeneration.current === generation) setSaving(false); }
+  };
+  return <div className={`media-viewer-backdrop ${video ? "has-video" : ""} ${video?.immersive ? "is-immersive" : ""} ${video?.windowed ? "is-windowed" : ""} ${video?.idle ? "is-idle" : ""}`} role="presentation"
+    onPointerMove={video?.interact} onKeyDown={video?.interact}>
+    <div ref={dialogRef} className="media-viewer" role="dialog" aria-modal="true"
+      aria-label={video ? translate("媒体查看器：{{value0}}", { value0: content.fileName }) : translate("图片查看器：{{value0}}", { value0: content.fileName })} tabIndex={-1}>
+      <main ref={stageRef} tabIndex={-1} className="media-viewer-stage" onWheel={handleWheel}>
+        <div ref={viewport.fitRef} className="media-viewer-canvas" onPointerDown={event => {
+          if (event.button === 0 && event.target === event.currentTarget) onClose();
+        }}>
+          {video ? <div className="media-viewer-video-stage" aria-description={video.windowed ? translate("拖动播放器") : undefined} onPointerDown={event => {
+            if (event.button === 0 && video.windowed && !(event.target as HTMLElement).closest("button, input")) {
+              event.preventDefault(); video.startDragging(); return;
+            }
+            if (event.button === 0 && event.target === event.currentTarget && !video.windowed) onClose();
+          }}>{video.surface}</div> : <div ref={viewport.viewportRef} className={`media-viewer-viewport ${viewport.zoom > 1 ? "is-pannable" : ""}`}
+            onPointerDown={event => {
+              if (event.button !== 0) return;
+              if (event.target === event.currentTarget) { event.preventDefault(); onClose(); return; }
+              viewport.onPointerDown(event);
+            }} onPointerMove={viewport.onPointerMove} onPointerUp={viewport.onPointerUp}
+            onPointerCancel={viewport.onPointerCancel} onLostPointerCapture={viewport.onLostPointerCapture}
+            onDoubleClick={event => {
+              // Pointer capture retargets the click to the viewport after a
+              // zoomed image is pressed. Hit-test the image instead of target.
+              const surface = viewport.surfaceRef.current;
+              const bounds = surface?.getBoundingClientRect();
+              if (surface?.querySelector(".media-viewer-image") && bounds && event.clientX >= bounds.left &&
+                  event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom) {
+                viewport.toggleActualSize({ x: event.clientX, y: event.clientY });
+              }
+            }}>
+            <div ref={viewport.surfaceRef} className="media-viewer-surface">
+              <PhotoSurface key={identity} message={active} preparedPreview={preparedPreview} onPhotoReady={onPhotoReady} onDownload={async (fileId, fileName) => {
+                const generation = actionGeneration.current;
+                try { await onDownload(fileId, fileName); }
+                catch { if (actionGeneration.current === generation) setActionError(translate("文件下载失败")); }
+              }}
+                onDimensions={(width, height) => setNaturalSize(current => current?.identity === identity && current.source === content.localPath && current.width === width && current.height === height ? current : { identity, source: content.localPath, width, height })} />
+            </div>
+          </div>}
+          {previousId && <button className="media-viewer-nav is-previous" type="button" aria-label={translate("上一张")} title={translate("上一张")} onClick={() => onActiveMessageChange(previousId)}><ChevronLeft size={28} /></button>}
+          {nextId && <button className="media-viewer-nav is-next" type="button" aria-label={translate("下一张")} title={translate("下一张")} onClick={() => onActiveMessageChange(nextId)}><ChevronRight size={28} /></button>}
+          {viewport.zoom > 1 && <output className="media-viewer-zoom" aria-label={translate("图片缩放比例")}>{viewport.percentage}%</output>}
+        </div>
+        <footer className="media-viewer-footer">
+          {video?.controls}
+          {content.caption && <div className="media-viewer-caption-wrap">
+            <p className="media-viewer-caption" aria-live="polite">{content.caption}</p>
+          </div>}
+          <div className="media-viewer-controls">
+            <aside className="media-viewer-details" aria-label={video ? translate("媒体详细信息") : translate("图片详细信息")}>
+              {imageDetails.map(detail => <span key={detail}>{detail}</span>)}
+            </aside>
+            <div className="media-viewer-thumbnail-slot" ref={thumbnailSlotRef}>
+              {messages.length > 1 && <nav className="media-viewer-thumbnails" aria-label={video ? translate("会话媒体预览") : translate("会话图片预览")}>
+                {thumbnails.map(message => <MediaViewerThumbnail key={`${message.chatId}:${message.id}`} message={message} selected={message.id === activeMessageId} onSelect={onActiveMessageChange} />)}
+              </nav>}
+            </div>
+            <div className="media-viewer-actions">
+              <span className="media-viewer-counter">{messages.findIndex(message => message.id === activeMessageId) + 1} / {messages.length}</span>
+              <button className="media-viewer-download" type="button" aria-label={video ? translate("下载视频") : translate("下载图片")} aria-busy={content.isDownloading || saving || undefined}
+                title={content.isDownloading ? translate("下载中") : canSave ? translate("保存到下载目录") : video ? translate("下载视频") : translate("下载原图")}
+                disabled={saving || content.isDownloading || (!canSave && !canDownload)} onClick={() => void save()}>
+                {content.isDownloading || saving ? <LoaderCircle className="spin" size={19} /> : <Download size={19} />}
+              </button>
+            </div>
+          </div>
+          {actionError && <div className="media-viewer-action-error" role="alert">{actionError}</div>}
+        </footer>
+      </main>
+    </div>
+  </div>;
+}
