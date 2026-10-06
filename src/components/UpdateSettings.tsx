@@ -20,6 +20,7 @@ export function UpdateSettings() {
   const [update, setUpdate] = useState<AppUpdateInfo>();
   const [progress, setProgress] = useState<AppUpdateProgress>();
   const [lastChecked, setLastChecked] = useState<string>();
+  const [errorMessage, setErrorMessage] = useState<string>();
 
   useEffect(() => {
     let active = true;
@@ -41,12 +42,15 @@ export function UpdateSettings() {
   const check = async () => {
     setState("checking");
     setUpdate(undefined);
+    setErrorMessage(undefined);
     try {
       const next = await appUpdater.check();
       setUpdate(next);
       setState(next ? "available" : "current");
       setLastChecked(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMessage(msg);
       setState("error");
     }
   };
@@ -108,7 +112,7 @@ export function UpdateSettings() {
           ) : state === "error" ? (
             <>
               <AlertCircle size={18} color="var(--color-status-danger, #ef4444)" />
-              <span>Update check failed. Check your internet connection or GitHub access.</span>
+              <span>{errorMessage ? `Update check failed: ${errorMessage}` : "Update check failed. Check your internet connection or GitHub access."}</span>
             </>
           ) : distribution === "portable" ? (
             <span>Portable editions are updated by downloading the latest archive release.</span>

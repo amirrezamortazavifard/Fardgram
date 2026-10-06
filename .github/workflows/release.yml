@@ -107,4 +107,5 @@ jobs:
             - Smart MTProto & custom proxy engine
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
           args: --target ${{ matrix.target }}
