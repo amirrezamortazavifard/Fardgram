@@ -51,7 +51,7 @@ pub fn current_kind() -> DistributionKind {
 }
 
 pub fn supports_native_updater() -> bool {
-    !cfg!(debug_assertions) && current_kind() == DistributionKind::Installed
+    current_kind() == DistributionKind::Installed
 }
 
 fn program_directory() -> Result<PathBuf, String> {
