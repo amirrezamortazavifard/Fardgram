@@ -28,6 +28,7 @@
     "test:native-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native-smoke.ps1",
     "tdlib:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tdlib.ps1",
     "tdlib:fetch": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-tdlib.ps1",
+    "tdlib:fetch:unix": "node scripts/fetch-tdlib-unix.mjs",
     "tdlib:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-tdlib-runtime.ps1",
     "verify:tdlib": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-tdlib.ps1",
     "test:watch": "vitest",

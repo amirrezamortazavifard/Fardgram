@@ -152,6 +152,8 @@ const ATTACHMENT_KIND_LABELS: Record<OutgoingAttachment["kind"], string> = {
   get photo() { return translate("图片"); },
   get video() { return translate("视频"); },
   get audio() { return translate("音频"); },
+  get voice() { return translate("语音"); },
+  get videoNote() { return translate("视频消息"); },
   animation: "GIF",
   get document() { return translate("文件"); },
 };

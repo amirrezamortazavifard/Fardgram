@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (e.g. v0.5.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build (${{ matrix.platform }} - ${{ matrix.target }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+            use_pwsh: true
+          - platform: 'ubuntu-22.04'
+            target: 'x86_64-unknown-linux-gnu'
+            use_pwsh: false
+          - platform: 'macos-latest'
+            target: 'aarch64-apple-darwin'
+            use_pwsh: false
+          - platform: 'macos-13'
+            target: 'x86_64-apple-darwin'
+            use_pwsh: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Prepare TDLib runtime (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          pwsh -File scripts/fetch-tdlib.ps1
+
+      - name: Prepare TDLib runtime (Linux & macOS)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          node scripts/fetch-tdlib-unix.mjs
+
+      - name: Build and release Tauri application
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.event.inputs.tag_name || github.ref_name }}
+          releaseName: 'Fardgram ${{ github.event.inputs.tag_name || github.ref_name }}'
+          releaseBody: |
+            ## Fardgram Official Multi-Platform Release
+
+            ### Supported Platforms
+            - **Windows**: `.exe` (NSIS Installer) & `.msi`
+            - **Linux**: `.AppImage` (Universal Portable) & `.deb` (Debian/Ubuntu)
+            - **macOS (Apple Silicon & Intel)**: `.dmg` disk image (arm64 & x86_64)
+
+            ### Highlights
+            - Modern, focused Telegram desktop client powered by Tauri & TDLib
+            - First-class RTL (Persian / Arabic) support
+            - Smart MTProto & custom proxy engine
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}

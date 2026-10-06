@@ -3,7 +3,7 @@ import { translate } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { tdNumber, type TdObject } from "./tdlibMapper";
 import { numericId } from "./tdlibRequests";
-import type { MessageTextEntity } from "./types";
+import type { MessageTextEntity, OutgoingAttachmentKind } from "./types";
 import { TdRequestError } from "./sendErrors";
 
 type PendingRequest = {
@@ -25,7 +25,7 @@ export interface PreparedPastedFile {
 }
 
 export interface PreparedPastedAttachment extends PreparedPastedFile {
-  kind: "photo" | "video" | "audio" | "animation" | "document";
+  kind: OutgoingAttachmentKind;
   width?: number;
   height?: number;
   duration?: number;

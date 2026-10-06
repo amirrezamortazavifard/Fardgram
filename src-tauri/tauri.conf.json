@@ -39,9 +39,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis"
-    ],
+    "targets": "all",
     "shortDescription": "A focused third-party Telegram client",
     "copyright": "Copyright (c) 2026 Fardgram contributors",
     "license": "MIT",
@@ -55,6 +53,18 @@
       "allowDowngrades": false,
       "nsis": {
         "installMode": "currentUser"
+      }
+    },
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.15"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37",
+          "libayatana-appindicator3-1 | libappindicator3-1"
+        ]
       }
     }
   }
