@@ -1,3 +1,5 @@
+#[cfg(windows)]
+use tauri::Manager;
 use tauri::{App, AppHandle};
 
 const MAIN_WINDOW_LABEL: &str = "main";
