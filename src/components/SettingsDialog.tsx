@@ -80,6 +80,7 @@ import { MotionPresence } from "./MotionPresence";
 import { PerformanceMonitor } from "./PerformanceMonitor";
 import { UpdateSettings } from "./UpdateSettings";
 import { SafetySettings } from "./SafetySettings";
+import { ApiCredentialsSettings } from "./ApiCredentialsSettings";
 import { ProxySettingsEditor } from "./ProxySettingsEditor";
 import { mergeProxySettingsDraft } from "../telegram/proxySettings";
 import type { LanguagePreference } from "../i18n";
@@ -106,6 +107,7 @@ type SettingsCategoryId =
   | "chats"
   | "shortcuts"
   | "advanced"
+  | "api"
   | "performance"
   | "diagnostics"
   | "updates"
@@ -127,6 +129,7 @@ const categories: SettingsCategory[] = [
   { id: "chats", label: "Chats & Appearance", icon: MessageCircle, searchTerms: "theme wallpaper font density spacing collapse lines display unread badge" },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard, searchTerms: "shortcuts hotkeys keyboard navigation edit message" },
   { id: "advanced", label: "Advanced & Storage", icon: SlidersHorizontal, searchTerms: "advanced proxy connection network storage cache downloads language auto-download" },
+  { id: "api", label: "Telegram API & TDLib", icon: Code2, searchTerms: "api api_id api_hash tdlib credentials developer token app key my.telegram.org monitor connection telemetry dc" },
   { id: "performance", label: "Performance Monitor", icon: Activity, searchTerms: "performance monitor fps memory latency render startup" },
   { id: "diagnostics", label: "Diagnostics & Privacy", icon: ShieldCheck, searchTerms: "diagnostics privacy blocked users sessions crashes report" },
   { id: "updates", label: "Software Updates", icon: CloudDownload, searchTerms: "updates version download check release" },
@@ -574,6 +577,8 @@ export function SettingsDialog({ onClose, standalone = false }: SettingsDialogPr
               language={language}
               onLanguageChange={(nextLanguage) => setPreference("language", nextLanguage)}
             />
+          ) : activeCategory === "api" ? (
+            <ApiCredentialsSettings />
           ) : activeCategory === "updates" ? (
             <UpdateSettings />
           ) : activeCategory === "performance" ? (

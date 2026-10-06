@@ -1,3 +1,4 @@
+pub mod api_credentials;
 mod assets;
 pub(crate) mod media_stream;
 mod runtime_log;
@@ -546,7 +547,7 @@ impl TelegramRuntime {
 
     fn start(&self, app: &AppHandle) -> Result<(), String> {
         self.prepare(app);
-        let credentials = api_credentials()?;
+        let credentials = api_credentials(Some(app))?;
         let configuration = TdlibConfiguration::new(app, credentials)?;
         let proxy_runtime = app.state::<crate::proxy::recovery::ProxyRuntime>();
         // Load and validate persisted intent before allocating a TDLib client.
@@ -742,7 +743,7 @@ impl TelegramRuntime {
             backend: "tdlib",
             linked: inner.engine.is_some(),
             state: inner.phase,
-            credentials_configured: api_credentials().is_ok(),
+            credentials_configured: api_credentials(Some(app)).is_ok(),
             library_path: inner
                 .library_path
                 .as_ref()
@@ -1228,16 +1229,25 @@ fn flush_pending_updates(app: &AppHandle, updates: &mut Vec<Value>) -> Result<()
     Ok(())
 }
 
-fn api_credentials() -> Result<ApiCredentials, String> {
+fn api_credentials(app: Option<&AppHandle>) -> Result<ApiCredentials, String> {
+    if let Some(app) = app {
+        if let Ok(Some(custom)) = api_credentials::load_custom_credentials(app) {
+            return Ok(ApiCredentials {
+                api_id: custom.api_id,
+                api_hash: custom.api_hash,
+            });
+        }
+    }
+
     let api_id = crate::development::environment_value("NOTGRAM_API_ID")
         .or_else(|| option_env!("NOTGRAM_API_ID").map(str::to_string))
-        .ok_or_else(|| "缺少 NOTGRAM_API_ID".to_string())?
+        .ok_or_else(|| "Missing Telegram API ID (NOTGRAM_API_ID or custom settings)".to_string())?
         .parse::<i32>()
-        .map_err(|_| "NOTGRAM_API_ID 必须是有效整数".to_string())?;
+        .map_err(|_| "Telegram API ID must be a valid integer".to_string())?;
     let api_hash = crate::development::environment_value("NOTGRAM_API_HASH")
         .or_else(|| option_env!("NOTGRAM_API_HASH").map(str::to_string))
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| "缺少 NOTGRAM_API_HASH".to_string())?;
+        .ok_or_else(|| "Missing Telegram API Hash (NOTGRAM_API_HASH or custom settings)".to_string())?;
     Ok(ApiCredentials { api_id, api_hash })
 }
 
@@ -2209,3 +2219,79 @@ pub async fn telegram_pick_chat_photo(
 pub fn telegram_shutdown(runtime: State<'_, TelegramRuntime>) -> Result<(), String> {
     runtime.shutdown()
 }
+
+#[tauri::command]
+pub fn telegram_get_api_credentials(
+    app: AppHandle,
+    runtime: State<'_, TelegramRuntime>,
+) -> Result<api_credentials::TelegramApiCredentialsInfo, String> {
+    api_credentials::get_api_credentials_info(&app, &runtime)
+}
+
+#[tauri::command]
+pub fn telegram_save_api_credentials(
+    app: AppHandle,
+    runtime: State<'_, TelegramRuntime>,
+    api_id: i32,
+    api_hash: String,
+    app_title: Option<String>,
+    short_name: Option<String>,
+) -> Result<api_credentials::TelegramApiCredentialsInfo, String> {
+    api_credentials::save_custom_credentials(&app, api_id, api_hash, app_title, short_name)?;
+    api_credentials::get_api_credentials_info(&app, &runtime)
+}
+
+#[tauri::command]
+pub fn telegram_clear_api_credentials(
+    app: AppHandle,
+    runtime: State<'_, TelegramRuntime>,
+) -> Result<api_credentials::TelegramApiCredentialsInfo, String> {
+    api_credentials::remove_custom_credentials(&app)?;
+    api_credentials::get_api_credentials_info(&app, &runtime)
+}
+
+#[tauri::command]
+pub fn telegram_test_api_credentials(
+    api_id: i32,
+    api_hash: String,
+) -> Result<api_credentials::ApiCredentialsTestResult, String> {
+    let api_id_valid = api_id > 0;
+    let clean_hash = api_hash.trim().to_ascii_lowercase();
+    let api_hash_valid = clean_hash.len() == 32 && clean_hash.chars().all(|c| c.is_ascii_hexdigit());
+
+    let mut hints = Vec::new();
+    let mut error_message = None;
+
+    if !api_id_valid {
+        hints.push("App api_id must be a positive 32-bit integer (e.g. 2040123).".into());
+        error_message = Some("Invalid api_id format".into());
+    } else {
+        hints.push(format!("api_id ({api_id}) is a valid positive integer."));
+    }
+
+    if !api_hash_valid {
+        if clean_hash.len() != 32 {
+            hints.push(format!("api_hash has length {}, but must be exactly 32 hexadecimal characters.", clean_hash.len()));
+        } else {
+            hints.push("api_hash contains invalid non-hex characters. Only 0-9 and a-f are allowed.".into());
+        }
+        if error_message.is_none() {
+            error_message = Some("Invalid api_hash format".into());
+        }
+    } else {
+        hints.push("api_hash is a valid 128-bit MD5 hexadecimal signature.".into());
+    }
+
+    if api_id_valid && api_hash_valid {
+        hints.push("Credentials structure strictly adheres to Telegram MTProto core requirements.".into());
+    }
+
+    Ok(api_credentials::ApiCredentialsTestResult {
+        valid: api_id_valid && api_hash_valid,
+        api_id_valid,
+        api_hash_valid,
+        error_message,
+        hints,
+    })
+}
+

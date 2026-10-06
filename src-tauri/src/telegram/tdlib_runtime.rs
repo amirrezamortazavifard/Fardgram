@@ -114,7 +114,7 @@ mod tests {
         let engine = TdJson::load(&dll).expect("pinned TDLib must be available");
         crate::development::load_environment();
         let credentials =
-            super::super::api_credentials().expect("local API configuration is required");
+            super::super::api_credentials(None).expect("local API configuration is required");
         let audit_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../.native-smoke");
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

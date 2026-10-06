@@ -1596,3 +1596,29 @@ export interface MhrvTestResult {
   latencyMs?: number;
   message: string;
 }
+
+export interface TelegramApiCredentialsInfo {
+  configured: boolean;
+  source: "custom" | "environment" | "none";
+  apiId?: number;
+  apiHash?: string;
+  isCustom: boolean;
+  customSaved: boolean;
+  appTitle?: string;
+  shortName?: string;
+  createdAt?: string;
+  envApiId?: number;
+  envApiHashPresent: boolean;
+  configFilePath: string;
+  tdlibState: string;
+  linked: boolean;
+}
+
+export interface ApiCredentialsTestResult {
+  valid: boolean;
+  apiIdValid: boolean;
+  apiHashValid: boolean;
+  errorMessage?: string;
+  hints: string[];
+}
+
