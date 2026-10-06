@@ -1,4 +1,4 @@
-use tauri::{App, AppHandle, Manager};
+use tauri::{App, AppHandle};
 
 const MAIN_WINDOW_LABEL: &str = "main";
 

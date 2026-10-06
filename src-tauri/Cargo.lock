@@ -1022,7 +1022,7 @@ dependencies = [
 
 [[package]]
 name = "fardgram"
-version = "0.5.0-rc.5"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "dotenvy",

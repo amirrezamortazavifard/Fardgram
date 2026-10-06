@@ -723,7 +723,7 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                 || folder_ids.iter().any(|value| {
                     value
                         .as_i64()
-                        .is_none_or(|id| id <= 0 || id > i32::MAX.into() || !unique_ids.insert(id))
+                        .is_none_or(|id| id <= 0 || id > i64::from(i32::MAX) || !unique_ids.insert(id))
                 })
                 || request
                     .get("main_chat_list_position")
