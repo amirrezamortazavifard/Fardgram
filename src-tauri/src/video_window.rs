@@ -37,7 +37,7 @@ pub async fn fardgram_open_video_window(
     let show_fullscreen = fullscreen;
     let mut builder = WebviewWindowBuilder::new(&app, label, url)
         .data_directory(crate::distribution::webview_data_directory(&app)?)
-        .title("Fardgram 视频")
+        .title("Fardgram Video")
         .inner_size(width, height)
         .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         .resizable(true)

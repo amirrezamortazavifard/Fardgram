@@ -25,23 +25,23 @@ impl TdJson {
     pub(crate) fn load(path: &Path) -> Result<Self, String> {
         let path = path
             .canonicalize()
-            .map_err(|error| format!("无法解析 {}: {error}", path.display()))?;
+            .map_err(|error| format!("Failed to resolve {}: {error}", path.display()))?;
         let library = unsafe { load_library(&path) }
-            .map_err(|error| format!("无法加载 {}: {error}", path.display()))?;
+            .map_err(|error| format!("Failed to load {}: {error}", path.display()))?;
         let create_client_id = unsafe {
             *library
                 .get::<TdCreateClientId>(b"td_create_client_id\0")
-                .map_err(|error| format!("缺少 td_create_client_id: {error}"))?
+                .map_err(|error| format!("Missing td_create_client_id: {error}"))?
         };
         let send = unsafe {
             *library
                 .get::<TdSend>(b"td_send\0")
-                .map_err(|error| format!("缺少 td_send: {error}"))?
+                .map_err(|error| format!("Missing td_send: {error}"))?
         };
         let receive = unsafe {
             *library
                 .get::<TdReceive>(b"td_receive\0")
-                .map_err(|error| format!("缺少 td_receive: {error}"))?
+                .map_err(|error| format!("Missing td_receive: {error}"))?
         };
 
         Ok(Self {
@@ -58,9 +58,9 @@ impl TdJson {
 
     pub(crate) fn send_value(&self, client_id: i32, request: &Value) -> Result<(), String> {
         let serialized = serde_json::to_string(request)
-            .map_err(|error| format!("无法序列化 TDLib 请求: {error}"))?;
+            .map_err(|error| format!("Failed to serialize TDLib request: {error}"))?;
         let request =
-            CString::new(serialized).map_err(|_| "TDLib 请求包含无效的空字符".to_string())?;
+            CString::new(serialized).map_err(|_| "TDLib request contains invalid null byte".to_string())?;
         unsafe { (self.send)(client_id, request.as_ptr()) };
         Ok(())
     }
@@ -73,11 +73,11 @@ impl TdJson {
 
         let json = unsafe { CStr::from_ptr(result) }
             .to_str()
-            .map_err(|error| format!("TDLib 返回了无效 UTF-8: {error}"))?
+            .map_err(|error| format!("TDLib returned invalid UTF-8: {error}"))?
             .to_owned();
         serde_json::from_str(&json)
             .map(Some)
-            .map_err(|error| format!("无法解析 TDLib 更新: {error}"))
+            .map_err(|error| format!("Failed to parse TDLib update: {error}"))
     }
 }
 

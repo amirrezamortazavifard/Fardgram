@@ -67,16 +67,16 @@ impl Default for ProxyEndpoint {
 impl ProxyEndpoint {
     fn validate(&self) -> Result<(), String> {
         if self.server.trim().is_empty() {
-            return Err("代理服务器不能为空".to_string());
+            return Err("Proxy server cannot be empty".to_string());
         }
         if self.server.chars().any(char::is_whitespace) {
-            return Err("代理服务器不能包含空白字符".to_string());
+            return Err("Proxy server cannot contain whitespace".to_string());
         }
         if self.port == 0 {
-            return Err("代理端口必须在 1 到 65535 之间".to_string());
+            return Err("Proxy port must be between 1 and 65535".to_string());
         }
         if self.kind == ProxyKind::Mtproto && self.secret.trim().is_empty() {
-            return Err("MTProto 代理必须填写 secret".to_string());
+            return Err("MTProto proxy must include a secret".to_string());
         }
         Ok(())
     }
@@ -130,11 +130,11 @@ impl ProxyProfile {
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         {
-            return Err("代理标识无效".to_string());
+            return Err("Invalid proxy identifier".to_string());
         }
         let name = self.name.trim();
         if name.is_empty() || name.chars().count() > 40 {
-            return Err("代理名称必须为 1 到 40 个字符".to_string());
+            return Err("Proxy name must be between 1 and 40 characters".to_string());
         }
         self.endpoint.validate()
     }
@@ -162,7 +162,7 @@ impl Default for ProxyPreferences {
             custom: None,
             profiles: vec![ProxyProfile {
                 id: "proxy-1".to_string(),
-                name: "代理 1".to_string(),
+                name: "Proxy 1".to_string(),
                 endpoint: ProxyEndpoint::default(),
             }],
             active_profile_id: "proxy-1".to_string(),
@@ -176,7 +176,7 @@ impl ProxyPreferences {
         if self.profiles.is_empty() {
             self.profiles.push(ProxyProfile {
                 id: "proxy-1".to_string(),
-                name: "代理 1".to_string(),
+                name: "Proxy 1".to_string(),
                 endpoint: self.custom.take().unwrap_or_default(),
             });
         }
@@ -194,17 +194,17 @@ impl ProxyPreferences {
 
     fn validate(&self) -> Result<(), String> {
         if self.profiles.len() > 20 {
-            return Err("最多可以保存 20 个代理".to_string());
+            return Err("Maximum of 20 proxies can be saved".to_string());
         }
         let mut ids = std::collections::HashSet::new();
         for profile in &self.profiles {
             profile.validate()?;
             if !ids.insert(&profile.id) {
-                return Err("代理标识不能重复".to_string());
+                return Err("Proxy identifier cannot be duplicated".to_string());
             }
         }
         if self.mode == ProxyMode::Custom && self.profiles.is_empty() {
-            return Err("自定义模式至少需要一个代理".to_string());
+            return Err("Custom mode requires at least one proxy".to_string());
         }
         if !self.profiles.is_empty()
             && !self
@@ -212,7 +212,7 @@ impl ProxyPreferences {
                 .iter()
                 .any(|profile| profile.id == self.active_profile_id)
         {
-            return Err("当前代理不在代理列表中".to_string());
+            return Err("Current proxy is not in the proxy list".to_string());
         }
         Ok(())
     }
@@ -301,7 +301,7 @@ pub fn telegram_apply_discovered_proxies(
     runtime: State<'_, recovery::ProxyRuntime>,
 ) -> Result<ProxySettings, String> {
     if proxies.is_empty() {
-        return Err("لیست پروکسی‌های یافت‌شده خالی است".to_string());
+        return Err("Discovered proxy list is empty".to_string());
     }
 
     let profiles = discovery::discovered_to_profiles(&proxies);
@@ -330,7 +330,7 @@ pub fn telegram_quick_connect_best_proxy(
 ) -> Result<ProxySettings, String> {
     let discovered = discovery::discover_healthy_proxies();
     if discovered.is_empty() {
-        return Err("پروکسی فعالی در حال حاضر یافت نشد. لطفاً مجدداً تلاش کنید.".to_string());
+        return Err("No active proxy found at this time. Please try again.".to_string());
     }
     let profiles = discovery::discovered_to_profiles(&discovered);
     let active_profile_id = profiles[0].id.clone();
@@ -386,9 +386,9 @@ fn proxy_request(endpoint: Option<&ProxyEndpoint>) -> Value {
 
 fn preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
     let directory = crate::distribution::app_config_directory(app)
-        .map_err(|error| format!("无法解析应用配置目录: {error}"))?;
+        .map_err(|error| format!("Failed to resolve app config directory: {error}"))?;
     fs::create_dir_all(&directory)
-        .map_err(|error| format!("无法创建应用配置目录 {}: {error}", directory.display()))?;
+        .map_err(|error| format!("Failed to create app config directory {}: {error}", directory.display()))?;
     Ok(directory.join("proxy-settings.dat"))
 }
 
@@ -476,7 +476,7 @@ pub(crate) fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
         cbData: data
             .len()
             .try_into()
-            .map_err(|_| "受保护的本地数据过大".to_string())?,
+            .map_err(|_| "Protected local data is too large".to_string())?,
         pbData: data.as_ptr() as *mut u8,
     };
     let mut output = CRYPT_INTEGER_BLOB::default();
@@ -493,7 +493,7 @@ pub(crate) fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
     };
     if success == 0 {
         return Err(format!(
-            "Windows 无法加密本地数据: {}",
+            "Windows failed to encrypt local data: {}",
             std::io::Error::last_os_error()
         ));
     }
@@ -517,7 +517,7 @@ pub(crate) fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
         cbData: data
             .len()
             .try_into()
-            .map_err(|_| "受保护的本地数据过大".to_string())?,
+            .map_err(|_| "Protected local data is too large".to_string())?,
         pbData: data.as_ptr() as *mut u8,
     };
     let mut output = CRYPT_INTEGER_BLOB::default();
@@ -534,7 +534,7 @@ pub(crate) fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
     };
     if success == 0 {
         return Err(format!(
-            "Windows 无法解密本地数据: {}",
+            "Windows failed to decrypt local data: {}",
             std::io::Error::last_os_error()
         ));
     }
@@ -602,7 +602,7 @@ mod tests {
     fn rejects_duplicate_proxy_profile_ids() {
         let profile = ProxyProfile {
             id: "duplicate".to_string(),
-            name: "主代理".to_string(),
+            name: "Primary Proxy".to_string(),
             endpoint: ProxyEndpoint::default(),
         };
         let preferences = ProxyPreferences {
@@ -613,7 +613,7 @@ mod tests {
             auto_switch: true,
         };
 
-        assert_eq!(preferences.validate(), Err("代理标识不能重复".to_string()));
+        assert_eq!(preferences.validate(), Err("Proxy identifier cannot be duplicated".to_string()));
     }
 
     #[cfg(target_os = "windows")]

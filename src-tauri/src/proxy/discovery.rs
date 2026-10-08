@@ -333,7 +333,7 @@ pub fn discovered_to_profiles(discovered: &[DiscoveredProxy]) -> Vec<ProxyProfil
             name: if let Some(ref sni) = p.sni_domain {
                 format!("⚡ {} ({}ms)", sni, p.latency_ms)
             } else {
-                format!("⚡ پروکسی {} ({}ms)", index + 1, p.latency_ms)
+                format!("⚡ Proxy {} ({}ms)", index + 1, p.latency_ms)
             },
             endpoint: p.endpoint.clone(),
         })

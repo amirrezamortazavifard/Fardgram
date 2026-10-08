@@ -103,7 +103,7 @@ fn save_cached_file_as(
     let Some(selected) = app
         .dialog()
         .file()
-        .set_title("另存 Telegram 文件")
+        .set_title("Save Telegram File")
         .set_file_name(safe_file_name(&file_name))
         .blocking_save_file()
     else {

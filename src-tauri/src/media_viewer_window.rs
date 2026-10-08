@@ -44,7 +44,7 @@ pub async fn fardgram_open_media_viewer_window(
     };
     let mut builder = WebviewWindowBuilder::new(&app, label, url)
         .data_directory(crate::distribution::webview_data_directory(&app)?)
-        .title("Fardgram 媒体")
+        .title("Fardgram Media")
         .inner_size(width, height)
         .resizable(true)
         .min_inner_size(320.0, 180.0)

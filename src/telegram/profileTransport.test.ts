@@ -43,7 +43,7 @@ describe("profile transport", () => {
     const contacts = await transport.getContacts();
     const privateChat = await transport.createPrivateChat("u-jules");
 
-    expect(account).toMatchObject({ kind: "self", title: "林然" });
+    expect(account).toMatchObject({ kind: "self", title: "Alex Morgan" });
     expect(group).toMatchObject({ kind: "group", canViewMembers: true, memberCount: 4 });
     expect(group.members.map(({ role }) => role)).toEqual([
       "owner",

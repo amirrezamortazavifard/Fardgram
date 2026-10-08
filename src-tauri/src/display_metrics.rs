@@ -26,10 +26,10 @@ fn current_display_refresh_rate(window: &WebviewWindow) -> Result<f64, String> {
 
     let hwnd = window
         .hwnd()
-        .map_err(|error| format!("无法读取窗口句柄: {error}"))?;
+        .map_err(|error| format!("Failed to get window handle: {error}"))?;
     let monitor = unsafe { MonitorFromWindow(hwnd.0, MONITOR_DEFAULTTONEAREST) };
     if monitor.is_null() {
-        return Err("无法定位窗口所在的显示器".to_string());
+        return Err("Failed to locate monitor for window".to_string());
     }
 
     let mut monitor_info = MONITORINFOEXW::default();
@@ -37,7 +37,7 @@ fn current_display_refresh_rate(window: &WebviewWindow) -> Result<f64, String> {
     let monitor_info_ok =
         unsafe { GetMonitorInfoW(monitor, &mut monitor_info.monitorInfo as *mut MONITORINFO) };
     if monitor_info_ok == 0 {
-        return Err("无法读取显示器信息".to_string());
+        return Err("Failed to get monitor information".to_string());
     }
 
     let mut mode = DEVMODEW {
@@ -52,16 +52,16 @@ fn current_display_refresh_rate(window: &WebviewWindow) -> Result<f64, String> {
         )
     };
     if mode_ok == 0 {
-        return Err("无法读取显示器当前模式".to_string());
+        return Err("Failed to get current monitor display mode".to_string());
     }
 
     valid_refresh_rate(mode.dmDisplayFrequency)
-        .ok_or_else(|| "显示器返回了无效的刷新率".to_string())
+        .ok_or_else(|| "Monitor returned invalid refresh rate".to_string())
 }
 
 #[cfg(not(windows))]
 fn current_display_refresh_rate(_window: &WebviewWindow) -> Result<f64, String> {
-    Err("当前平台不提供原生显示器刷新率".to_string())
+    Err("Native display refresh rate not provided on this platform".to_string())
 }
 
 #[tauri::command]

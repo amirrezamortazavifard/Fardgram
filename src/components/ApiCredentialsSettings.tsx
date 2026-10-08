@@ -387,7 +387,7 @@ export function ApiCredentialsSettings() {
         ) : null}
       </section>
 
-      {/* Section 2: Real-time Telemetry & Diagnostics Monitoring (مانیتورینگ و بررسی) */}
+      {/* Section 2: Real-time Telemetry & Diagnostics Monitoring */}
       <section className="settings-section" aria-labelledby="api-monitor-heading">
         <div className="settings-section-heading">
           <Activity size={18} strokeWidth={1.8} />
@@ -499,7 +499,7 @@ export function ApiCredentialsSettings() {
         </div>
       </section>
 
-      {/* Section 3: Register or Update API Credentials (ثبت و تغییر اطلاعات) */}
+      {/* Section 3: Register or Update API Credentials */}
       <section className="settings-section" aria-labelledby="api-register-heading">
         <div className="settings-section-heading">
           <FileCode size={18} strokeWidth={1.8} />

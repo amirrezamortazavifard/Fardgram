@@ -433,8 +433,8 @@ pub fn fardgram_export_diagnostics(
     let Some(selected) = app
         .dialog()
         .file()
-        .set_title("导出 Fardgram 诊断包")
-        .add_filter("ZIP 压缩包", &["zip"])
+        .set_title("Export Fardgram Diagnostics Package")
+        .add_filter("ZIP Archive", &["zip"])
         .set_file_name(format!(
             "Fardgram-diagnostics-{}.zip",
             env!("CARGO_PKG_VERSION")

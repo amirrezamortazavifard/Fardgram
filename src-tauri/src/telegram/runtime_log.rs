@@ -37,7 +37,7 @@ impl RuntimeLogger {
     pub(super) fn new(_app: &AppHandle) -> Result<Self, String> {
         let directory = program_directory()?.join("logs");
         fs::create_dir_all(&directory)
-            .map_err(|error| format!("无法创建日志目录 {}: {error}", directory.display()))?;
+            .map_err(|error| format!("Failed to create log directory {}: {error}", directory.display()))?;
         let logger = Self::with_paths(
             directory.join("fardgram.log"),
             directory.join("fardgram-performance.log"),
@@ -82,7 +82,7 @@ impl RuntimeLogger {
         for path in [backup.as_path(), self.performance_path.as_path()] {
             if path.is_file() {
                 fs::remove_file(path)
-                    .map_err(|error| format!("无法清空性能日志 {}: {error}", path.display()))?;
+                    .map_err(|error| format!("Failed to clear performance log {}: {error}", path.display()))?;
             }
         }
         Ok(())
@@ -157,7 +157,7 @@ impl RuntimeLogger {
                     }
                 }
             })
-            .map_err(|error| format!("无法启动日志写入线程: {error}"))?;
+            .map_err(|error| format!("Failed to start log writer thread: {error}"))?;
         Ok(Self {
             path,
             performance_path,
@@ -189,10 +189,10 @@ impl RuntimeLogger {
         let (sender, receiver) = mpsc::channel();
         self.sender
             .send(LogCommand::Flush(sender))
-            .map_err(|_| "性能日志写入线程不可用".to_string())?;
+            .map_err(|_| "Performance log writer thread unavailable".to_string())?;
         receiver
             .recv_timeout(Duration::from_secs(2))
-            .map_err(|_| "等待性能日志写入超时".to_string())
+            .map_err(|_| "Timed out waiting for performance log write".to_string())
     }
 }
 
@@ -272,10 +272,10 @@ fn write_records(path: &Path, backup_name: &str, records: Vec<LogRecord>) {
 
 fn program_directory() -> Result<PathBuf, String> {
     env::current_exe()
-        .map_err(|error| format!("无法解析程序路径: {error}"))?
+        .map_err(|error| format!("Failed to resolve program path: {error}"))?
         .parent()
         .map(Path::to_path_buf)
-        .ok_or_else(|| "程序路径没有父目录".to_string())
+        .ok_or_else(|| "Program path has no parent directory".to_string())
 }
 
 fn sanitize_log_value(value: Value) -> Value {

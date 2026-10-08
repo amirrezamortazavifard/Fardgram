@@ -1510,14 +1510,11 @@ function AdvancedSettings({
           <label className="auth-field">
             <span>Language</span>
             <select
-              value={language}
+              value="en"
               aria-label="Application display language"
               onChange={(event) => onLanguageChange(event.target.value as LanguagePreference)}
             >
-              <option value="en" lang="en">English (Default)</option>
-              <option value="system">System Language</option>
-              <option value="zh-CN" lang="zh-CN">简体中文</option>
-              <option value="ja" lang="ja">日本語</option>
+              <option value="en" lang="en">English (United States)</option>
             </select>
           </label>
         </section>

@@ -74,15 +74,15 @@ fn launch_on_startup_enabled() -> Result<bool, String> {
         match RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(WINDOWS_RUN_KEY, KEY_READ) {
             Ok(key) => key,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
-            Err(error) => return Err(format!("无法读取 Windows 启动设置：{error}")),
+            Err(error) => return Err(format!("Failed to read Windows startup settings: {error}")),
         };
     let registered = match key.get_value::<String, _>(WINDOWS_RUN_VALUE) {
         Ok(value) => value,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(format!("无法读取 Fardgram 启动设置：{error}")),
+        Err(error) => return Err(format!("Failed to read Fardgram startup settings: {error}")),
     };
     let executable =
-        std::env::current_exe().map_err(|error| format!("无法确定 Fardgram 程序路径：{error}"))?;
+        std::env::current_exe().map_err(|error| format!("Failed to determine Fardgram executable path: {error}"))?;
     Ok(registered.eq_ignore_ascii_case(&startup_command(&executable)))
 }
 
@@ -90,17 +90,17 @@ fn launch_on_startup_enabled() -> Result<bool, String> {
 fn set_launch_on_startup(enabled: bool) -> Result<(), String> {
     let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
         .create_subkey(WINDOWS_RUN_KEY)
-        .map_err(|error| format!("无法打开 Windows 启动设置：{error}"))?;
+        .map_err(|error| format!("Failed to open Windows startup settings: {error}"))?;
     if enabled {
         let executable = std::env::current_exe()
-            .map_err(|error| format!("无法确定 Fardgram 程序路径：{error}"))?;
+            .map_err(|error| format!("Failed to determine Fardgram executable path: {error}"))?;
         key.set_value(WINDOWS_RUN_VALUE, &startup_command(&executable))
-            .map_err(|error| format!("无法启用开机启动：{error}"))
+            .map_err(|error| format!("Failed to enable launch on startup: {error}"))
     } else {
         match key.delete_value(WINDOWS_RUN_VALUE) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(format!("无法关闭开机启动：{error}")),
+            Err(error) => Err(format!("Failed to disable launch on startup: {error}")),
         }
     }
 }
@@ -112,7 +112,7 @@ fn launch_on_startup_enabled() -> Result<bool, String> {
 
 #[cfg(not(windows))]
 fn set_launch_on_startup(_enabled: bool) -> Result<(), String> {
-    Err("当前平台暂不支持开机启动".to_string())
+    Err("Launch on startup is not supported on this platform".to_string())
 }
 
 #[tauri::command]

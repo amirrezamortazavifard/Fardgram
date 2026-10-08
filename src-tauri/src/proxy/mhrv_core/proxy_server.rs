@@ -2480,8 +2480,7 @@ where
     // x.com's GraphQL endpoints concatenate three huge JSON blobs into
     // the query string: `?variables=<json>&features=<json>&fieldToggles=<json>`.
     // The combined URL regularly exceeds Apps Script's URL length limit
-    // (Apps Script returns "بیش از حد مجاز: طول نشانی وب URLFetch" /
-    // "URLFetch URL length exceeded"). The `variables=` portion alone
+    // (Apps Script returns "URLFetch URL length exceeded"). The `variables=` portion alone
     // is enough for x.com to serve the timeline — `features` /
     // `fieldToggles` are client-capability hints it tolerates being
     // absent. Truncating at the first `&` after `?variables=` ships a

@@ -1908,9 +1908,7 @@ export function App() {
     else void loadUserProfile(senderId);
   }, [loadChatProfile, loadUserProfile]);
 
-  const [offlineWorkspaceBypassed, setOfflineWorkspaceBypassed] = useState(false);
-
-  const preserveWorkspaceShell = (accountSwitching || offlineWorkspaceBypassed) && (
+  const preserveWorkspaceShell = accountSwitching && (
     authorization.kind === "preparing" || authorization.kind === "ready"
   );
 
@@ -1949,13 +1947,6 @@ export function App() {
             >
               <Globe size={16} />
               <span>Configure Proxy & Connect</span>
-            </button>
-            <button
-              type="button"
-              className="startup-action-btn secondary"
-              onClick={() => setOfflineWorkspaceBypassed(true)}
-            >
-              <span>Continue in Offline Mode</span>
             </button>
           </div>
         </div>

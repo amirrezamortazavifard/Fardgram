@@ -2534,7 +2534,7 @@ export function Conversation({
                   className="icon-button icon-button-agent"
                   type="button"
                   aria-label="AI Co-pilot"
-                  title="دستیار هوشمند ایجنت برای این چت (AI Co-pilot)"
+                  title="AI Co-pilot assistant for this chat"
                   onClick={onOpenAgent}
                   style={{ color: "#38bdf8" }}
                 >

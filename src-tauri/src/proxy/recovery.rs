@@ -508,7 +508,7 @@ impl ProxyRuntime {
             return Ok(());
         }
         if revision.is_some_and(|revision| revision != state.revision) {
-            return Err("代理设置已变化，请重新打开设置后再保存".into());
+            return Err("Proxy settings have changed. Please reopen settings before saving.".into());
         }
         // Persist intent first. A disk error leaves the active route untouched.
         save_preferences(app, &preferences)?;
@@ -644,7 +644,7 @@ pub fn telegram_recover_connection(
     let state = guard
         .as_mut()
         .filter(|s| s.client_id.is_some())
-        .ok_or("TDLib runtime 尚未启动")?;
+        .ok_or("TDLib runtime has not started")?;
     state.signal(force, Instant::now());
     Ok(())
 }
@@ -657,7 +657,7 @@ pub fn telegram_connection_state(
     guard
         .as_ref()
         .map(Coordinator::snapshot)
-        .ok_or_else(|| "TDLib runtime 尚未启动".into())
+        .ok_or_else(|| "TDLib runtime has not started".into())
 }
 
 #[cfg(test)]

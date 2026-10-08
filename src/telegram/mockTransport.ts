@@ -226,7 +226,7 @@ const defaultMockAccount = (): TelegramAccount => {
   return {
     id: "default",
     userId: mockSnapshot.currentUserId,
-    displayName: user?.displayName ?? "Telegram 账号",
+    displayName: user?.displayName ?? "Telegram Account",
     avatar: clone(user?.avatar ?? { label: "N", color: "#3390ec" }),
   };
 };
@@ -391,7 +391,7 @@ export class MockTelegramTransport implements TelegramTransport {
     return ids;
   }
   private snapshot = clone(mockSnapshot);
-  private mockCurrentUserBio = "Fardgram 演示账号";
+  private mockCurrentUserBio = "Fardgram Account";
   private cachedSnapshot?: CachedTelegramSnapshot;
   private accountState: TelegramAccountState;
   private historyOffsets = new Map<string, number>();
@@ -432,7 +432,7 @@ export class MockTelegramTransport implements TelegramTransport {
     mode: "system",
     profiles: [{
       id: "proxy-1",
-      name: "代理 1",
+      name: "Proxy 1",
       endpoint: {
         type: "http",
         server: "127.0.0.1",
@@ -458,16 +458,16 @@ export class MockTelegramTransport implements TelegramTransport {
 
   private folderTitle(title: string) {
     try {
-      return identityTextField(title, 12, "文件夹名称", true);
+      return identityTextField(title, 12, "Folder name", true);
     } catch {
-      throw new Error("文件夹名称需要包含 1 至 12 个字符，且只能使用受支持字符");
+      throw new Error("Folder name must contain 1 to 12 characters and only use supported characters");
     }
   }
 
   private requireCustomFolder(folderId: string) {
     const folder = this.snapshot.folders.find((item) => item.id === folderId);
     if (!folder || folderId === "main" || folderId === "archive") {
-      throw new Error("找不到自定义文件夹");
+      throw new Error("Custom folder not found");
     }
     return folder;
   }

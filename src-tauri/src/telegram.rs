@@ -418,10 +418,10 @@ pub(crate) fn validate_performance_record(
     details: &Value,
 ) -> Result<&'static str, String> {
     if !ALLOWED_PERFORMANCE_EVENTS.contains(&event) {
-        return Err("不支持的性能日志事件".to_string());
+        return Err("Unsupported performance log event".to_string());
     }
     let Value::Object(fields) = details else {
-        return Err("性能日志详情必须是对象".to_string());
+        return Err("Performance log details must be an object".to_string());
     };
     if fields.len() > 48
         || fields
@@ -431,7 +431,7 @@ pub(crate) fn validate_performance_record(
             .values()
             .any(|value| !matches!(value, Value::Number(_) | Value::Bool(_) | Value::Null))
     {
-        return Err("性能日志详情格式无效".to_string());
+        return Err("Invalid performance log details format".to_string());
     }
 
     if event == "ui_conversation_switch"
@@ -562,7 +562,7 @@ impl TelegramRuntime {
                 inner
                     .last_error
                     .clone()
-                    .unwrap_or_else(|| "未找到 tdjson 动态库".to_string())
+                    .unwrap_or_else(|| "tdjson dynamic library not found".to_string())
             })?;
             let logger = inner.logger.clone();
             let client_id = engine.create_client();
@@ -607,7 +607,7 @@ impl TelegramRuntime {
                     request_tracking,
                 );
             })
-            .map_err(|error| format!("无法启动 TDLib 接收线程: {error}"))?;
+            .map_err(|error| format!("Failed to start TDLib receiver thread: {error}"))?;
         Ok(())
     }
 
@@ -624,11 +624,11 @@ impl TelegramRuntime {
         let running = inner
             .running
             .as_ref()
-            .ok_or_else(|| "TDLib runtime 尚未启动".to_string())?;
+            .ok_or_else(|| "TDLib runtime has not started".to_string())?;
         let engine = inner
             .engine
             .as_ref()
-            .ok_or_else(|| "tdjson 动态库尚未加载".to_string())?;
+            .ok_or_else(|| "tdjson dynamic library is not loaded".to_string())?;
         if let Some(logger) = &inner.logger {
             logger.write("debug", "request_sent", request_log_details(request));
         }
@@ -692,7 +692,7 @@ impl TelegramRuntime {
             let engine = inner
                 .engine
                 .as_ref()
-                .ok_or_else(|| "tdjson 动态库尚未加载".to_string())?;
+                .ok_or_else(|| "tdjson dynamic library is not loaded".to_string())?;
             engine.send_value(running.client_id, &json!({ "@type": "close" }))?;
             if let Some(logger) = &inner.logger {
                 logger.write("info", "runtime_closing", json!({}));
@@ -713,7 +713,7 @@ impl TelegramRuntime {
             }
             thread::sleep(Duration::from_millis(50));
         }
-        Err("等待 TDLib runtime 关闭超时".to_string())
+        Err("Timed out waiting for TDLib runtime to close".to_string())
     }
 
     fn mark_closed(&self, client_id: i32) {
@@ -779,7 +779,7 @@ impl TelegramRuntime {
 
     fn log_performance_batch(&self, records: Vec<PerformanceLogRecord>) -> Result<(), String> {
         if records.is_empty() || records.len() > MAX_PERFORMANCE_LOG_BATCH {
-            return Err("性能日志批次大小无效".to_string());
+            return Err("Invalid performance log batch size".to_string());
         }
         let records = records
             .into_iter()
@@ -862,10 +862,10 @@ impl TdlibConfiguration {
     fn new(app: &AppHandle, credentials: ApiCredentials) -> Result<Self, String> {
         let database_directory = crate::storage::tdlib_database_directory(app)?;
         std::fs::create_dir_all(&database_directory)
-            .map_err(|error| format!("无法创建 TDLib 数据库目录: {error}"))?;
+            .map_err(|error| format!("Failed to create TDLib database directory: {error}"))?;
         let files_directory = crate::storage::tdlib_cache_directory(app)?.join("files");
         std::fs::create_dir_all(&files_directory)
-            .map_err(|error| format!("无法创建 TDLib 文件目录: {error}"))?;
+            .map_err(|error| format!("Failed to create TDLib files directory: {error}"))?;
         Ok(Self {
             credentials,
             database_directory,
@@ -1051,7 +1051,7 @@ fn receive_loop(
                             let message = update
                                 .get("message")
                                 .and_then(Value::as_str)
-                                .unwrap_or("TDLib 参数初始化失败");
+                                .unwrap_or("Failed to initialize TDLib parameters");
                             let _ =
                                 app.emit("telegram://bridge-error", json!({ "message": message }));
                         }
@@ -2148,7 +2148,7 @@ pub async fn telegram_pick_and_send_file(
     let Some(selected) = app
         .dialog()
         .file()
-        .set_title("选择要发送的文件")
+        .set_title("Select Files to Send")
         .blocking_pick_file()
     else {
         return Ok(false);
@@ -2176,8 +2176,8 @@ pub async fn telegram_pick_profile_photo(
     let Some(selected) = app
         .dialog()
         .file()
-        .set_title("选择头像")
-        .add_filter("JPEG 图像", &["jpg", "jpeg"])
+        .set_title("Select Profile Photo")
+        .add_filter("JPEG Images", &["jpg", "jpeg"])
         .blocking_pick_file()
     else {
         return Ok(false);
@@ -2201,8 +2201,8 @@ pub async fn telegram_pick_chat_photo(
     let Some(selected) = app
         .dialog()
         .file()
-        .set_title("选择群组或频道头像")
-        .add_filter("JPEG 图像", &["jpg", "jpeg"])
+        .set_title("Select Group or Channel Photo")
+        .add_filter("JPEG Images", &["jpg", "jpeg"])
         .blocking_pick_file()
     else {
         return Ok(false);

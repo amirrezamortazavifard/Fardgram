@@ -3262,7 +3262,7 @@ describe("profiles and contacts state", () => {
     expect(transport.chatProfileCalls).toBe(2);
     expect(store.getState().profile).toMatchObject({
       target: { kind: "chat", chatId: "chat-product" },
-      value: { title: "产品讨论" },
+      value: { title: "Product Discussion" },
       loading: false,
     });
   });
@@ -3287,7 +3287,7 @@ describe("profiles and contacts state", () => {
     await expect(store.getState().rebuildCachedSnapshot()).resolves.toBe(true);
     const persisted = await transport.loadCachedSnapshot();
     expect(persisted?.profiles).toEqual([
-      expect.objectContaining({ chatId: "chat-product", title: "产品讨论" }),
+      expect.objectContaining({ chatId: "chat-product", title: "Product Discussion" }),
     ]);
 
     const restartedTransport = new CountingProfileTransport({ cachedSnapshot: persisted });
@@ -3296,7 +3296,7 @@ describe("profiles and contacts state", () => {
     await restartedStore.getState().loadChatProfile("chat-product");
 
     expect(restartedTransport.chatProfileCalls).toBe(1);
-    expect(restartedStore.getState().profile.value).toMatchObject({ title: "产品讨论" });
+    expect(restartedStore.getState().profile.value).toMatchObject({ title: "Product Discussion" });
   });
 
   it("discards a profile response after a newer target is requested", async () => {

@@ -232,7 +232,7 @@ export function NavigationRail({
             className={`rail-button rail-agent ${isAgentOpen ? "is-active" : ""}`}
             type="button"
             aria-label="AI Agent"
-            title="AI Agent & Telegram Co-pilot (دستیار هوشمند ایجنت)"
+            title="AI Agent & Telegram Co-pilot"
             onClick={onOpenAgent}
           >
             <span className="rail-icon">

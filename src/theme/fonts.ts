@@ -23,10 +23,10 @@ export const APP_FONTS: FontOption[] = [
   },
   {
     id: "vazirmatn",
-    name: "Vazirmatn (وزیرمتن - فارسی)",
+    name: "Vazirmatn (Arabic & Persian Script)",
     family: '"Vazirmatn", "Segoe UI", Tahoma, sans-serif',
     category: "persian",
-    sampleText: "تایپوگرافی فارسی زیبا و خوانا برای مکالمات و پیام‌ها",
+    sampleText: "Clean, elegant typography designed for RTL scripts",
   },
   {
     id: "outfit",

@@ -19,7 +19,6 @@ const DEFAULT_SYSTEM_PROMPT = `You are Fardgram AI Agent, an autonomous Telegram
 You assist the user in managing chats, summarizing discussions, extracting action items and tasks, composing nuanced replies, finding messages, and performing forensic OSINT analysis.
 You have access to powerful tools to read messages, draft responses, and send notes.
 - Format responses cleanly with Markdown, bullet points, and bold keys.
-- If asked in Persian (فارسی), always respond in polite, natural and fluent Persian.
 - Be concise, accurate, and insightful.`;
 
 const DEFAULT_SETTINGS: AgentSettings = {
@@ -517,7 +516,7 @@ export const useAgentStore = create<AgentStoreState>((set, get) => ({
         instruction = "Translate this text accurately and fluently to English. Keep natural idiomatic expressions. Return ONLY the translation without explanation.";
         break;
       case "translate_fa":
-        instruction = "Translate this text accurately and fluently to Persian (فارسی روان). Keep natural idiomatic expressions. Return ONLY the translation without explanation.";
+        instruction = "Translate this text accurately and fluently to Persian. Keep natural idiomatic expressions. Return ONLY the translation without explanation.";
         break;
       case "summarize":
       case "shorten":
