@@ -85,9 +85,9 @@ if (policy.dataLifecycle?.storage !== "os-user-profile" ||
     policy.dataLifecycle?.cleanup !== "explicit-user-action") {
   throw new Error("Release data lifecycle policy is invalid.");
 }
-if (lifecycle.identifier !== "dev.notgram.desktop.lifecycle" ||
+if ((lifecycle.identifier !== "dev.fardgram.desktop.lifecycle" && lifecycle.identifier !== "dev.notgram.desktop.lifecycle") ||
     previousLifecycle.identifier !== lifecycle.identifier ||
-    lifecycle.productName !== "Notgram Lifecycle" ||
+    (lifecycle.productName !== "Fardgram Lifecycle" && lifecycle.productName !== "Notgram Lifecycle") ||
     previousLifecycle.productName !== lifecycle.productName ||
     compareVersions(previousLifecycle.version, version) >= 0) {
   throw new Error("Isolated installer upgrade configurations are invalid.");

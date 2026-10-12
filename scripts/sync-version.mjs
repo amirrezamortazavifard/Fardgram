@@ -59,11 +59,11 @@ function updateCargoLock(relativePath) {
   const currentText = readText(relativePath);
   const packageBlocks = currentText.split(/(?=^\[\[package\]\][ \t]*\r?$)/m);
   const matchingIndexes = packageBlocks
-    .map((block, index) => (/^name[ \t]*=[ \t]*"notgram"[ \t]*\r?$/m.test(block) ? index : -1))
+    .map((block, index) => (/^name[ \t]*=[ \t]*"(?:fardgram|notgram)"[ \t]*\r?$/m.test(block) ? index : -1))
     .filter((index) => index >= 0);
 
   if (matchingIndexes.length !== 1) {
-    throw new Error(`${relativePath} must contain exactly one notgram package entry.`);
+    throw new Error(`${relativePath} must contain exactly one fardgram package entry.`);
   }
 
   const index = matchingIndexes[0];

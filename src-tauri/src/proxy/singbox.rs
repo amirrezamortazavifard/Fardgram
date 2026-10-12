@@ -253,7 +253,7 @@ fn ensure_binary(runtime: &SingboxRuntime, path: &PathBuf) -> Result<(), String>
 fn download_binary(runtime: &SingboxRuntime, dest: &PathBuf) -> Result<(), String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(DOWNLOAD_TIMEOUT)
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Fardgram/0.5.0")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Fardgram/0.6.0")
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 

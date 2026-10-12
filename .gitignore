@@ -58,3 +58,4 @@ test-results/
 .vscode/
 .DS_Store
 Thumbs.db
+.agents/

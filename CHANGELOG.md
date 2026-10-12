@@ -5,6 +5,15 @@ with prerelease identifiers used for release candidates.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-12
+
+Official Fardgram multi-platform stable release with TDLib runtime, auto-updater manifests, and English language standardization.
+
+### Changed
+- Standardized UI text and notifications across the application to high-grade English.
+- Removed demo login bypass in favor of production authentication flows.
+- Enhanced in-app updater configuration with automated multi-platform release manifests.
+
 ## [0.5.0-rc.5] - 2026-09-18
 
 Windows x64 candidate with an NSIS installer and a portable ZIP. Both packages

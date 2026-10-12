@@ -405,7 +405,7 @@ export class MockTelegramTransport implements TelegramTransport {
   private inlineResults = new Map<string, { botUserId: string; text: string }>();
   private blockedSenders = new Map<string, BlockedSender>();
   private sessions: DeviceSession[] = [
-    { id: "session-current", isCurrent: true, isPasswordPending: false, isUnconfirmed: false, canAcceptSecretChats: true, canAcceptCalls: true, applicationName: "Fardgram", applicationVersion: "0.5.0", deviceModel: "Windows Desktop", platform: "Windows", systemVersion: "11", loggedInAt: new Date(Date.now() - 86_400_000 * 30).toISOString(), lastActiveAt: new Date().toISOString(), ipAddress: "192.0.2.10", location: "Singapore, SG" },
+    { id: "session-current", isCurrent: true, isPasswordPending: false, isUnconfirmed: false, canAcceptSecretChats: true, canAcceptCalls: true, applicationName: "Fardgram", applicationVersion: "0.6.0", deviceModel: "Windows Desktop", platform: "Windows", systemVersion: "11", loggedInAt: new Date(Date.now() - 86_400_000 * 30).toISOString(), lastActiveAt: new Date().toISOString(), ipAddress: "192.0.2.10", location: "Singapore, SG" },
     { id: "session-phone", isCurrent: false, isPasswordPending: false, isUnconfirmed: false, canAcceptSecretChats: true, canAcceptCalls: true, applicationName: "Telegram Android", applicationVersion: "11.2", deviceModel: "Pixel 8", platform: "Android", systemVersion: "15", loggedInAt: new Date(Date.now() - 86_400_000 * 12).toISOString(), lastActiveAt: new Date(Date.now() - 3_600_000).toISOString(), ipAddress: "198.51.100.7", location: "Shanghai, CN" },
   ];
   private privacyRules: Record<PrivacySettingKey, PrivacyRule[]> = {
