@@ -2,7 +2,7 @@
 
   <img src="assets/app-icon.svg" alt="Fardgram Logo" width="128" height="128" />
 
-  # Fardgram (فاردگرام)
+  # Fardgram
 
   **Next-Generation Desktop Telegram Client built with Tauri 2, React 19, TypeScript & TDLib.**  
   *Engineered for Uncompromising Privacy, Built-in Anti-Censorship, Real-Time Network Telemetry & Autonomous AI Assistance.*
@@ -251,15 +251,6 @@ npm run tauri dev
 - **Tauri Core (`src-tauri/`)**: High-performance Rust bridge handling memory-safe IPC, native file dialogues, system tray, and DPAPI key management.
 - **TDLib Integration**: Pinned to official Telegram Database Library v1.8.x with asynchronous `td_send` and non-blocking worker receive loops.
 - **Security & Storage**: Per-account database encryption keys protected by Windows DPAPI; zero plain-text storage of credentials or tokens.
-
----
-
-## 🏷️ GitHub Topics & SEO Tags
-
-To maximize repository visibility and discoverability across GitHub, the following topics are recommended:
-
-`telegram`, `telegram-client`, `tauri`, `tauri-v2`, `tdlib`, `react`, `typescript`, `rust`, `anti-censorship`, `v2ray`, `sing-box`, `vless`, `trojan`, `mtproto`, `proxy`, `ai-agent`, `copilot`, `osint`, `privacy`, `desktop-app`, `windows`, `dark-mode`
-
 ---
 
 ## 📄 License
