@@ -9,6 +9,7 @@ import {
   Mail,
   Phone,
   Settings,
+  Sparkles,
   Timer,
   UserRound,
 } from "lucide-react";
@@ -309,6 +310,19 @@ function AuthLayout({
             <span>Proxy & Anti-Censorship</span>
           </button>
         )}
+        <button
+          type="button"
+          className="auth-connect-btn"
+          style={{ marginTop: 8 }}
+          onClick={() => {
+            window.localStorage.setItem("fardgram_demo_mode", "true");
+            window.location.reload();
+          }}
+          title="Switch to Demo Showcase Account (Ctrl+Shift+D)"
+        >
+          <Sparkles size={15} />
+          <span>Demo Showcase Account (Ctrl+Shift+D)</span>
+        </button>
       </section>
       <button className="auth-settings icon-button" type="button" aria-label={translate("设置")} title={translate("设置")} onClick={onOpenSettings}>
         <Settings size={20} />

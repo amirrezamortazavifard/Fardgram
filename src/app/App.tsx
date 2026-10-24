@@ -412,6 +412,12 @@ export function App() {
         e.preventDefault();
         setAgentOpen((prev) => !prev);
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        const current = window.localStorage.getItem("fardgram_demo_mode") === "true";
+        window.localStorage.setItem("fardgram_demo_mode", current ? "false" : "true");
+        window.location.reload();
+      }
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);

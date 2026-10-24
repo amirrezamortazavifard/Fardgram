@@ -89,12 +89,12 @@ describe("Mock transport fixture contracts", () => {
     it("paginates mock message results in reverse chronological order without overlap", async () => {
       const transport = new MockTelegramTransport();
       const first = await transport.searchGlobal({
-        query: "产品讨论历史消息",
+        query: "Product discussion note",
         filter: "message",
         limit: 10,
       });
       const second = await transport.searchGlobal({
-        query: "产品讨论历史消息",
+        query: "Product discussion note",
         filter: "message",
         offset: first.nextOffset,
         limit: 10,
@@ -117,7 +117,7 @@ describe("Mock transport fixture contracts", () => {
       const transport = new MockTelegramTransport();
 
       await expect(transport.searchGlobal({
-        query: "界面预览",
+        query: "ui_redesign_preview",
         filter: "media",
       })).resolves.toMatchObject({ messages: [{ id: "p-5" }] });
       await expect(transport.searchGlobal({
@@ -130,7 +130,7 @@ describe("Mock transport fixture contracts", () => {
       const transport = new MockTelegramTransport();
 
       const page = await transport.searchGlobal({
-        query: "产品讨论历史消息 36",
+        query: "Product discussion note #36",
         filter: "message",
       });
 

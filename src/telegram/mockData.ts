@@ -27,15 +27,15 @@ export const wideMediaPreviewUrl = `data:image/svg+xml;charset=utf-8,${encodeURI
   </svg>
 `)}`;
 
-const botQuoteHeader = "📢Itsu Ovelu | イツ オベル 82";
-const botQuoteTopics = ["热搜：", "贺子涵", "秦嘉倪", "高三爱情故事", "九门", "24分钟", "蜘蛛侠", "萌小栖", "积石山", "mina"];
+const botQuoteHeader = "📢 Tech Radar | Daily Dispatch #82";
+const botQuoteTopics = ["Trending:", "Rust", "Tauri v2", "Deep Learning", "WebAssembly", "TypeScript", "Performance", "Open Source", "Security", "AI"];
 const botQuoteBody = botQuoteTopics.join(" ");
 const botQuoteText = `${botQuoteHeader}\n${botQuoteBody}`;
 const botQuoteOffset = botQuoteHeader.length + 1;
-const longQuoteIntro = "引用内容会保持消息正文可读";
+const longQuoteIntro = "Quoted context preserves message structure and discussion threads";
 const longQuoteBody = Array.from(
   { length: 8 },
-  (_, index) => `引用文本第 ${index + 1} 行：这是需要保留的完整上下文。`,
+  (_, index) => `Context line ${index + 1}: Preserving complete thread context for audit and team reference.`,
 ).join("\n");
 const longQuoteText = `${longQuoteIntro}\n${longQuoteBody}`;
 const longQuoteOffset = longQuoteIntro.length + 1;
@@ -215,7 +215,7 @@ const olderProductMessages: Message[] = Array.from({ length: 36 }, (_, index) =>
   outgoing: index % 2 !== 0,
   sentAt: new Date(Date.UTC(2026, 6, 30, 0, index)).toISOString(),
   delivery: "read",
-  content: { kind: "text", text: `产品讨论历史消息 ${index + 1}` },
+  content: { kind: "text", text: `Product discussion note #${index + 1}` },
 }));
 
 const olderChenMessages: Message[] = Array.from({ length: 48 }, (_, index) => ({
@@ -225,7 +225,7 @@ const olderChenMessages: Message[] = Array.from({ length: 48 }, (_, index) => ({
   outgoing: index % 2 !== 0,
   sentAt: new Date(Date.UTC(2026, 6, 30, 1, index)).toISOString(),
   delivery: "read",
-  content: { kind: "text", text: `陈默历史消息 ${index + 1}` },
+  content: { kind: "text", text: `Architecture sync note #${index + 1}` },
 }));
 
 const messages: Message[] = [
@@ -237,7 +237,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-08-01T09:17:00+08:00",
     delivery: "read",
-    content: { kind: "service", text: "Mia Chen 加入了群聊", memberUserIds: ["u-mia"] },
+    content: { kind: "service", text: "Mia Chen joined the group", memberUserIds: ["u-mia"] },
   },
   {
     id: "p-rich-message",
@@ -251,37 +251,37 @@ const messages: Message[] = [
       isRtl: false,
       isFull: true,
       text: [
-        "今日小贴士",
-        "保持专注，也别忘了适当休息。",
-        "优先处理最重要的一件事",
-        "喝点水，活动一下身体",
-        "晚上给自己留一点放松时间",
-        "慢一点没关系，持续前进就很好。",
-        "输入　5,709 tokens 缓存输入　3,712 tokens 输出　68 tokens",
+        "Daily Product Briefing",
+        "Stay focused on core features and keep the feedback loop tight.",
+        "Prioritize the high-impact deliverable",
+        "Hydrate and take short micro-breaks",
+        "Reserve quiet time for deep architecture work",
+        "Consistent incremental progress compounds fast.",
+        "Prompt Tokens: 5,709 | Cached: 3,712 | Completion: 68",
         "Bot API 10.2",
         "E = mc^2",
         "Status Ready",
         "Advanced details",
       ].join("\n"),
       blocks: [
-        { kind: "heading", level: 1, text: [{ text: "今日小贴士" }] },
-        { kind: "paragraph", text: [{ text: "保持专注，也别忘了适当休息。" }] },
+        { kind: "heading", level: 1, text: [{ text: "Daily Product Briefing" }] },
+        { kind: "paragraph", text: [{ text: "Stay focused on core features and keep the feedback loop tight." }] },
         {
           kind: "list",
           ordered: false,
           items: [
             {
-              blocks: [{ kind: "paragraph", text: [{ text: "优先处理最重要的一件事", bold: true }] }],
+              blocks: [{ kind: "paragraph", text: [{ text: "Prioritize the high-impact deliverable", bold: true }] }],
               hasCheckbox: false,
               checked: false,
             },
             {
-              blocks: [{ kind: "paragraph", text: [{ text: "喝点水，活动一下身体" }] }],
+              blocks: [{ kind: "paragraph", text: [{ text: "Hydrate and take short micro-breaks" }] }],
               hasCheckbox: false,
               checked: false,
             },
             {
-              blocks: [{ kind: "paragraph", text: [{ text: "晚上给自己留一点放松时间" }] }],
+              blocks: [{ kind: "paragraph", text: [{ text: "Reserve quiet time for deep architecture work" }] }],
               hasCheckbox: false,
               checked: false,
             },
@@ -290,7 +290,7 @@ const messages: Message[] = [
         {
           kind: "quote",
           pull: false,
-          blocks: [{ kind: "paragraph", text: [{ text: "慢一点没关系，持续前进就很好。" }] }],
+          blocks: [{ kind: "paragraph", text: [{ text: "Consistent incremental progress compounds fast." }] }],
         },
         {
           kind: "quote",
@@ -298,14 +298,14 @@ const messages: Message[] = [
           blocks: [{
             kind: "paragraph",
             text: [
-              { text: "输入", bold: true },
-              { text: "　" },
+              { text: "Input", bold: true },
+              { text: " " },
               { text: "5,709 tokens", code: true },
-              { text: " 缓存输入", bold: true },
-              { text: "　" },
+              { text: "  Cached", bold: true },
+              { text: " " },
               { text: "3,712 tokens", code: true },
-              { text: " 输出", bold: true },
-              { text: "　" },
+              { text: "  Output", bold: true },
+              { text: " " },
               { text: "68 tokens", code: true },
             ],
           }],
@@ -381,7 +381,7 @@ const messages: Message[] = [
     content: {
       kind: "unsupported",
       type: "messageFutureType",
-      text: "收到新类型消息（messageFutureType）",
+      text: "Received unknown message type (messageFutureType)",
     },
   },
   {
@@ -391,7 +391,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-08-01T09:18:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "早上好，左侧会话列表的密度已经调整好了。" },
+    content: { kind: "text", text: "Good morning! The session list density and typography have been tuned." },
   },
   {
     id: "p-2",
@@ -400,7 +400,7 @@ const messages: Message[] = [
     outgoing: true,
     sentAt: "2026-08-01T09:24:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "看到了。消息区再留一点呼吸感，信息密度就比较平衡。" },
+    content: { kind: "text", text: "Looks great. Giving the chat bubbles a bit more breathing room balances the density perfectly." },
   },
   {
     id: "p-3",
@@ -448,7 +448,7 @@ const messages: Message[] = [
     sentAt: "2026-08-01T09:48:00+08:00",
     delivery: "read",
     isPinned: true,
-    content: { kind: "text", text: "我把交互稿更新到最新版本了，下午可以直接走查。" },
+    content: { kind: "text", text: "I updated the interactive spec to the latest version. We can review this afternoon." },
   },
   {
     id: "p-channel-reply",
@@ -471,7 +471,7 @@ const messages: Message[] = [
       kind: "message",
       chatId: "chat-product",
       messageId: "p-old-8",
-      content: { kind: "text", text: "产品讨论历史消息 8" },
+      content: { kind: "text", text: "Product discussion note #8" },
     },
     content: { kind: "text", text: "Release Notes channel posted this reply" },
   },
@@ -484,7 +484,7 @@ const messages: Message[] = [
     delivery: "read",
     content: {
       kind: "text",
-      text: "**Markdown 粗体**、*斜体*、~~删除线~~\n\n- 支持列表\n- 支持 `code` 与 [链接](https://t.me/mia_design)",
+      text: "**Markdown Bold**, *Italic*, ~~Strikethrough~~\n\n- Unordered list item\n- Inline `code` and [Website](https://t.me/mia_design)",
     },
   },
   {
@@ -513,7 +513,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-08-01T09:48:50+08:00",
     delivery: "read",
-    content: { kind: "text", text: "请选择内容分类或翻页" },
+    content: { kind: "text", text: "Please select a category or browse next page" },
     replyMarkup: {
       kind: "inlineKeyboard",
       rows: [
@@ -524,9 +524,9 @@ const messages: Message[] = [
           data: `Y2F0ZWdvcnk9${index}`,
         })),
         [
-          { kind: "callback", style: "default", text: "🆕最新", data: "bGF0ZXN0" },
-          { kind: "callback", style: "default", text: "🔞过滤", data: "ZmlsdGVy" },
-          { kind: "callback", style: "primary", text: "下一页", data: "cGFnZT0y" },
+          { kind: "callback", style: "default", text: "🆕 Latest", data: "bGF0ZXN0" },
+          { kind: "callback", style: "default", text: "⚡ Filter", data: "ZmlsdGVy" },
+          { kind: "callback", style: "primary", text: "Next Page ➡", data: "cGFnZT0y" },
         ],
       ],
     },
@@ -542,14 +542,14 @@ const messages: Message[] = [
     content: {
       kind: "media",
       mediaType: "photo",
-      fileName: "纵向图片.jpg",
+      fileName: "portrait_spec.jpg",
       sizeLabel: "220 KB",
       dataCenterId: 4,
       remoteId: "AwADBAADewAPKgQ",
       previewDataUrl: tallMediaPreviewUrl,
       width: 512,
       height: 512,
-      caption: "纵向图片应该按实际比例收窄，外壳不能留下额外空白。",
+      caption: "Portrait media automatically adapts with proper aspect ratio without awkward letterboxing.",
       isDownloaded: false,
       isDownloading: false,
     },
@@ -565,14 +565,14 @@ const messages: Message[] = [
     content: {
       kind: "media",
       mediaType: "photo",
-      fileName: "界面预览.jpg",
+      fileName: "ui_redesign_preview.jpg",
       sizeLabel: "186 KB",
       dataCenterId: 2,
       remoteId: "AwADAgADewAPKgQ",
       previewDataUrl: mediaPreviewUrl,
       width: 512,
       height: 512,
-      caption: "新的媒体预览样式",
+      caption: "New media preview card layout with frosted blur overlay.",
       isDownloaded: false,
       isDownloading: true,
       progress: 0.62,
@@ -588,7 +588,7 @@ const messages: Message[] = [
     content: {
       kind: "media",
       mediaType: "video",
-      fileName: "交互预览.mp4",
+      fileName: "interaction_demo.mp4",
       sizeLabel: "278 KB",
       fileId: 93,
       size: 283_989,
@@ -596,7 +596,7 @@ const messages: Message[] = [
       previewDataUrl: "/mock-video-poster.jpg",
       width: 640,
       height: 360,
-      caption: "这是昨晚导出的交互录屏，麻烦确认最后一段。",
+      caption: "Screen recording of the new animated navigation flow. Take a look at the transition.",
       captionEntities: [{ offset: 2, length: 2, kind: "bold" }],
       canDownload: true,
       isDownloaded: false,
@@ -613,7 +613,7 @@ const messages: Message[] = [
     content: {
       kind: "media",
       mediaType: "voice",
-      fileName: "产品语音.m4a",
+      fileName: "voice_memo_01.m4a",
       sizeLabel: "278 KB",
       fileId: 94,
       size: 283_989,
@@ -634,7 +634,7 @@ const messages: Message[] = [
     content: {
       kind: "media",
       mediaType: "audio",
-      fileName: "评审跟进.m4a",
+      fileName: "design_review_audio.m4a",
       sizeLabel: "196 KB",
       fileId: 95,
       size: 200_704,
@@ -656,12 +656,12 @@ const messages: Message[] = [
     content: {
       kind: "poll",
       pollId: "mock-poll-product",
-      question: "下一轮优先验证哪一项？",
+      question: "Which feature should we prioritize for the next release?",
       options: [
         {
           id: "native-media",
           position: 0,
-          text: "原生媒体发送",
+          text: "Native media compression & streaming",
           voterCount: 6,
           votePercentage: 60,
           chosen: false,
@@ -671,7 +671,7 @@ const messages: Message[] = [
         {
           id: "offline-outbox",
           position: 1,
-          text: "附件离线发件箱",
+          text: "Offline outbox with background retry",
           voterCount: 4,
           votePercentage: 40,
           chosen: false,
@@ -695,7 +695,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-08-01T09:10:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "登录流程先覆盖手机号、验证码和二步验证，对吗？" },
+    content: { kind: "text", text: "Are we starting the authentication flow with phone, SMS code, and 2FA password?" },
   },
   {
     id: "m-2",
@@ -704,7 +704,7 @@ const messages: Message[] = [
     outgoing: true,
     sentAt: "2026-08-01T09:20:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "对，QR 登录放在下一轮，不影响主链路。" },
+    content: { kind: "text", text: "Yes, exactly. QR code login will follow in the next iteration." },
   },
   {
     id: "m-tall-caption",
@@ -716,12 +716,12 @@ const messages: Message[] = [
     content: {
       kind: "media",
       mediaType: "photo",
-      fileName: "频道长图.jpg",
+      fileName: "mobile_mockup.jpg",
       sizeLabel: "420 KB",
       previewDataUrl: tallMediaPreviewUrl,
       width: 900,
       height: 1800,
-      caption: "看到公众号发了一个有趣的小活动，我们也来玩玩吧。",
+      caption: "Check out this concept draft from the design exploration.",
       isDownloaded: false,
       isDownloading: false,
     },
@@ -736,12 +736,12 @@ const messages: Message[] = [
     content: {
       kind: "media",
       mediaType: "photo",
-      fileName: "横向预览.jpg",
+      fileName: "banner_overview.jpg",
       sizeLabel: "310 KB",
       previewDataUrl: wideMediaPreviewUrl,
       width: 1800,
       height: 600,
-      caption: "短说明",
+      caption: "Desktop showcase banner.",
       isDownloaded: false,
       isDownloading: false,
     },
@@ -753,7 +753,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-08-01T09:32:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "那我们下午三点对一下细节。" },
+    content: { kind: "text", text: "Sounds great. Let's do a quick sync at 3:00 PM." },
   },
   {
     id: "saved-long-quote",
@@ -777,7 +777,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-08-01T08:16:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "收藏夹方向测试" },
+    content: { kind: "text", text: "Personal bookmarks & architectural checklist" },
   },
   {
     id: "s-1",
@@ -796,7 +796,7 @@ const messages: Message[] = [
     id: "archive-bot-quote",
     chatId: "chat-archive",
     senderId: "u-mia",
-    senderTag: "热点机器人",
+    senderTag: "News Bot",
     outgoing: false,
     sentAt: "2026-07-23T14:20:00+08:00",
     delivery: "read",
@@ -822,7 +822,7 @@ const messages: Message[] = [
     outgoing: true,
     sentAt: "2026-07-31T22:35:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "原生桥接接口我先按事件流来设计。" },
+    content: { kind: "text", text: "I've structured the native bridge IPC around event streams." },
   },
   {
     id: "c-2",
@@ -831,7 +831,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-07-31T22:40:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "收到，我今晚看一下。" },
+    content: { kind: "text", text: "Received, reviewing the PR tonight." },
   },
   {
     id: "product-thread-1",
@@ -841,7 +841,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-08-01T09:47:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "群组线程消息也应显示在主会话中。" },
+    content: { kind: "text", text: "Thread replies also render seamlessly in the unified chat stream." },
   },
   {
     id: "release-post-1",
@@ -868,7 +868,7 @@ const messages: Message[] = [
       messageId: "release-post-1",
       content: { kind: "text", text: "Release Notes channel posted this reply" },
     },
-    content: { kind: "text", text: "这个版本的桌面端体验顺滑了很多。" },
+    content: { kind: "text", text: "The desktop client feels remarkably fast and responsive now." },
   },
   {
     id: "release-comment-2",
@@ -883,7 +883,7 @@ const messages: Message[] = [
       messageId: "release-post-1",
       content: { kind: "text", text: "Release Notes channel posted this reply" },
     },
-    content: { kind: "text", text: "谢谢反馈，我们会继续收集问题。" },
+    content: { kind: "text", text: "Thanks for the feedback! We are monitoring performance metrics." },
   },
   {
     id: "forum-general-1",
@@ -893,7 +893,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-08-01T09:12:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "欢迎来到 Fardgram 论坛，公告和常见问题放在这里。" },
+    content: { kind: "text", text: "Welcome to the Fardgram Community Forum! Guidelines, announcements, and FAQs are pinned here." },
   },
   {
     id: "forum-release-1",
@@ -903,7 +903,7 @@ const messages: Message[] = [
     outgoing: false,
     sentAt: "2026-08-01T09:46:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "Windows 安装包已验证，欢迎反馈升级问题。" },
+    content: { kind: "text", text: "Windows native installer build 0.8.4 verified. Feel free to report any feedback." },
   },
   {
     id: "forum-design-1",
@@ -913,7 +913,7 @@ const messages: Message[] = [
     outgoing: true,
     sentAt: "2026-07-31T16:20:00+08:00",
     delivery: "read",
-    content: { kind: "text", text: "我整理了话题导航的交互草案。" },
+    content: { kind: "text", text: "I drafted the topic navigation interaction specs for the team." },
   },
 ];
 

@@ -122,14 +122,14 @@ const mockProfilePhotos = (user: User): ProfilePhoto[] => [
     content: {
       kind: "media",
       mediaType: "photo",
-      fileName: `${user.displayName} 的当前头像.png`,
+      fileName: `${user.displayName} Current Avatar.png`,
       sizeLabel: "128 KB",
       localPath: mockProfilePhotoUrl,
       canDownload: false,
       isDownloaded: true,
       width: 512,
       height: 512,
-      caption: "当前头像",
+      caption: "Current avatar",
     },
   },
   {
@@ -138,14 +138,14 @@ const mockProfilePhotos = (user: User): ProfilePhoto[] => [
     content: {
       kind: "media",
       mediaType: "photo",
-      fileName: `${user.displayName} 的历史头像 1.jpg`,
+      fileName: `${user.displayName} Archived Photo 1.jpg`,
       sizeLabel: "220 KB",
       localPath: tallMediaPreviewUrl,
       canDownload: false,
       isDownloaded: true,
       width: 900,
       height: 1800,
-      caption: "历史头像",
+      caption: "Archived photo",
     },
   },
   {
@@ -154,21 +154,21 @@ const mockProfilePhotos = (user: User): ProfilePhoto[] => [
     content: {
       kind: "media",
       mediaType: "photo",
-      fileName: `${user.displayName} 的历史头像 2.jpg`,
+      fileName: `${user.displayName} Archived Photo 2.jpg`,
       sizeLabel: "310 KB",
       localPath: wideMediaPreviewUrl,
       canDownload: false,
       isDownloaded: true,
       width: 1800,
       height: 600,
-      caption: "历史头像",
+      caption: "Archived photo",
     },
   },
 ];
 
 const mockProfileBio = (user: User): { bio?: string; bioEntities?: MessageTextEntity[] } => {
   if (user.id !== "u-mia") return {};
-  const bio = "产品设计师，关注桌面端体验。作品集 https://example.com @mia_design";
+  const bio = "Product designer focused on delightful desktop experiences. Portfolio https://example.com @mia_design";
   const portfolio = "https://example.com";
   const mention = "@mia_design";
   return {
@@ -183,12 +183,12 @@ const mockProfileBio = (user: User): { bio?: string; bioEntities?: MessageTextEn
 const mockProfileAudios = (user: User): ProfileAudio[] => user.id === "u-mia" ? [
   {
     id: `${user.id}:audio:1`,
-    title: "夜航界面",
+    title: "Night Flight Interface",
     performer: "Mia Chen",
     content: {
       kind: "media",
       mediaType: "audio",
-      fileName: "夜航界面.m4a",
+      fileName: "night_flight.m4a",
       sizeLabel: "278 KB",
       fileId: 94,
       size: 283_989,
@@ -202,12 +202,12 @@ const mockProfileAudios = (user: User): ProfileAudio[] => user.id === "u-mia" ? 
   },
   {
     id: `${user.id}:audio:2`,
-    title: "评审之后",
+    title: "Post-Review Reflection",
     performer: "Mia Chen",
     content: {
       kind: "media",
       mediaType: "audio",
-      fileName: "评审之后.m4a",
+      fileName: "post_review.m4a",
       sizeLabel: "196 KB",
       fileId: 95,
       size: 200_704,
@@ -260,7 +260,7 @@ const mockChatSearchFilterMatches = (message: Message, filter: ChatMessageSearch
     content.entities?.some((entity) => entity.kind === "url" || entity.kind === "textUrl") ||
     /https?:\/\//i.test(content.text)
   );
-  if (filter === "chatPhoto") return content.kind === "service" && /头像|照片|photo/i.test(content.text);
+  if (filter === "chatPhoto") return content.kind === "service" && /avatar|photo|profile/i.test(content.text);
   if (filter === "videoNote") return content.kind === "media" && content.mediaType === "videoNote";
   if (filter === "voiceAndVideoNote") return content.kind === "media" && ["voice", "videoNote"].includes(content.mediaType);
   if (filter === "mention" || filter === "unreadMention") return Boolean(message.containsUnreadMention);
@@ -343,7 +343,7 @@ const mockAnimation = (
 const mockStickerSets: StickerSet[] = [
   {
     id: "mock-pack-work",
-    title: "工作日常",
+    title: "Work & Daily",
     name: "fardgram_work",
     size: denseWorkStickers.length,
     covers: [denseWorkStickers[0]],
@@ -351,7 +351,7 @@ const mockStickerSets: StickerSet[] = [
   },
   {
     id: "mock-pack-cats",
-    title: "办公室猫猫",
+    title: "Office Cats",
     name: "fardgram_cats",
     size: 6,
     covers: [mockSticker(7201, "😺", "#ffe8d4", "mock-pack-cats")],
@@ -375,7 +375,7 @@ const mockSavedAnimations = [
 
 export class MockTelegramTransport implements TelegramTransport {
   readonly kind = "mock" as const;
-  readonly label = "演示数据";
+  readonly label = "Demo Showcase Mode";
 
   private listener?: TelegramEventListener;
   private installedStickerSets = new Map<string, Set<string>>();
@@ -549,7 +549,7 @@ export class MockTelegramTransport implements TelegramTransport {
       const sender: BlockedSender = {
         id: `blocked-${index}`,
         kind: "user",
-        title: `屏蔽用户 ${index + 1}`,
+        title: `Blocked User ${index + 1}`,
         avatar: { label: `${index + 1}`, color: "#73808c" },
         blockedAt: new Date(Date.now() - index * 60_000).toISOString(),
       };
@@ -664,8 +664,8 @@ export class MockTelegramTransport implements TelegramTransport {
   async authenticate(action: AuthorizationAction) {
     if (!this.authFlow) return;
     if (action.kind === "registration") {
-      identityTextField(action.firstName, 64, "名字", true);
-      identityTextField(action.lastName, 64, "姓氏");
+      identityTextField(action.firstName, 64, "First Name", true);
+      identityTextField(action.lastName, 64, "Last Name");
     }
     const next =
       action.kind === "qr"
@@ -709,7 +709,7 @@ export class MockTelegramTransport implements TelegramTransport {
   async setChatPinned(chatListId: string, chatId: string, pinned: boolean) {
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
     if (!chat || !chat.folderIds.includes(chatListId)) {
-      throw new Error("找不到当前列表中的会话");
+      throw new Error("Chat not found in current folder");
     }
     const pinnedFolderIds = new Set(chat.pinnedFolderIds ?? []);
     const listOrderByFolder = { ...chat.listOrderByFolder };
@@ -734,14 +734,14 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async setChatMuted(chatId: string, muted: boolean) {
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
-    if (!chat) throw new Error("找不到会话");
+    if (!chat) throw new Error("Chat not found");
     chat.muted = muted;
     this.listener?.({ type: "chat.upsert", chat: clone(chat) });
   }
 
   async setChatArchived(chatId: string, archived: boolean) {
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
-    if (!chat) throw new Error("找不到会话");
+    if (!chat) throw new Error("Chat not found");
     const target = archived ? "archive" : "main";
     chat.folderIds = [
       ...chat.folderIds.filter((folderId) => folderId !== "main" && folderId !== "archive"),
@@ -760,7 +760,7 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async leaveChat(chatId: string) {
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
-    if (!chat || (chat.kind !== "group" && chat.kind !== "channel")) throw new Error("只能退出群组或频道");
+    if (!chat || (chat.kind !== "group" && chat.kind !== "channel")) throw new Error("Can only leave groups or channels");
     chat.isMember = false;
     if (chat.management) chat.management = deriveChatManagementCapabilities(chat.management.chatType, "left");
     chat.folderIds = [];
@@ -773,11 +773,11 @@ export class MockTelegramTransport implements TelegramTransport {
   async deletePrivateChat(chatId: string, forEveryone = false) {
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
     if (chat?.kind !== "direct" || (forEveryone ? chat.canDeleteForAllUsers : chat.canDeleteForSelf) !== true) {
-      throw new Error(forEveryone ? "此会话不支持为双方删除" : "此会话不支持仅为自己删除");
+      throw new Error(forEveryone ? "This chat does not support deleting for everyone" : "This chat does not support deleting for self");
     }
     this.snapshot.messages = this.snapshot.messages.filter(message => message.chatId !== chatId);
     Object.assign(chat, { folderIds: [], pinnedFolderIds: [], listOrderByFolder: {}, pinned: false,
-      preview: "暂无消息", unreadCount: 0, unreadMentionCount: 0, unreadReactionCount: 0 });
+      preview: "No messages yet", unreadCount: 0, unreadMentionCount: 0, unreadReactionCount: 0 });
     this.listener?.({ type: "chat.historyDeleted", chatId });
     this.listener?.({ type: "chat.upsert", chat: clone(chat) });
   }
@@ -828,7 +828,7 @@ export class MockTelegramTransport implements TelegramTransport {
       uniqueIds.length !== reorderable.length ||
       uniqueIds.some((folderId) => !reorderable.some((folder) => folder.id === folderId))
     ) {
-      throw new Error("文件夹顺序不完整");
+      throw new Error("Folder ordering is incomplete");
     }
     const byId = new Map(reorderable.map((folder) => [folder.id, folder]));
     const fixed = this.snapshot.folders.filter((folder) => folder.id === "archive");
@@ -842,7 +842,7 @@ export class MockTelegramTransport implements TelegramTransport {
   async setChatFolderMembership(folderId: string, chatId: string, included: boolean) {
     this.requireCustomFolder(folderId);
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
-    if (!chat) throw new Error("找不到会话");
+    if (!chat) throw new Error("Chat not found");
     const folders = new Set(chat.folderIds);
     if (included) folders.add(folderId);
     else folders.delete(folderId);
@@ -857,7 +857,7 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async getCurrentUserProfile(): Promise<ChatProfile> {
     const user = this.snapshot.users.find((item) => item.id === this.snapshot.currentUserId);
-    if (!user) throw new Error("找不到当前账号资料");
+    if (!user) throw new Error("Current account profile not found");
     return {
       id: `user:${user.id}`,
       kind: "self",
@@ -865,7 +865,7 @@ export class MockTelegramTransport implements TelegramTransport {
       isBot: user.isBot,
       title: user.displayName,
       avatar: clone(user.avatar),
-      statusLabel: user.isBot ? "机器人" : "在线",
+      statusLabel: user.isBot ? "Bot" : "Online",
       bio: this.mockCurrentUserBio,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -885,7 +885,7 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async getUserProfile(userId: string): Promise<ChatProfile> {
     const user = this.snapshot.users.find((item) => item.id === userId);
-    if (!user) throw new Error("找不到用户资料");
+    if (!user) throw new Error("User profile not found");
     return {
       id: `user:${user.id}`,
       kind: user.id === this.snapshot.currentUserId ? "self" : "user",
@@ -894,8 +894,8 @@ export class MockTelegramTransport implements TelegramTransport {
       title: user.displayName,
       avatar: clone(user.avatar),
       statusLabel: user.isBot
-        ? "机器人"
-        : user.presence === "online" ? "在线" : user.lastSeenLabel ?? "离线",
+        ? "Bot"
+        : user.presence === "online" ? "Online" : user.lastSeenLabel ?? "Offline",
       ...mockProfileBio(user),
       firstName: user.firstName,
       lastName: user.lastName,
@@ -917,14 +917,14 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async updateCurrentUserProfile(input: UpdateCurrentUserProfileInput): Promise<ChatProfile> {
     const user = this.snapshot.users.find((item) => item.id === this.snapshot.currentUserId);
-    if (!user) throw new Error("找不到当前账号资料");
-    const firstName = identityTextField(input.firstName, 64, "名字", true);
-    const lastName = identityTextField(input.lastName, 64, "姓氏");
+    if (!user) throw new Error("Current account profile not found");
+    const firstName = identityTextField(input.firstName, 64, "First Name", true);
+    const lastName = identityTextField(input.lastName, 64, "Last Name");
     const username = input.username.trim();
     const bio = input.bio.trim();
-    if (!firstName) throw new Error("名字不能为空");
+    if (!firstName) throw new Error("First name cannot be empty");
     if (username && (!/^[A-Za-z0-9_]{5,32}$/.test(username))) {
-      throw new Error("用户名需包含 5 至 32 个英文字母、数字或下划线");
+      throw new Error("Username must contain 5 to 32 alphanumeric characters or underscores");
     }
     user.firstName = firstName;
     user.lastName = lastName;
@@ -937,11 +937,11 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async setCurrentUserAvatar(file?: File): Promise<ChatProfile | undefined> {
     if (!file) return undefined;
-    if (!/^image\/(?:jpeg|png)$/i.test(file.type)) throw new Error("请选择 JPEG 或 PNG 图片");
+    if (!/^image\/(?:jpeg|png)$/i.test(file.type)) throw new Error("Please select a JPEG or PNG image");
     const imagePath = await previewDataUrl(file);
-    if (!imagePath) throw new Error("演示模式头像需小于 256 KB");
+    if (!imagePath) throw new Error("Demo avatar must be smaller than 256 KB");
     const user = this.snapshot.users.find((item) => item.id === this.snapshot.currentUserId);
-    if (!user) throw new Error("找不到当前账号资料");
+    if (!user) throw new Error("Current account profile not found");
     user.avatar = { ...user.avatar, imagePath };
     this.listener?.({ type: "user.upsert", user: clone(user) });
     return this.getCurrentUserProfile();
@@ -949,11 +949,11 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async getChatProfile(chatId: string): Promise<ChatProfile> {
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
-    if (!chat) throw new Error("找不到聊天资料");
+    if (!chat) throw new Error("Chat profile not found");
     if (chat.kind === "direct" || chat.kind === "saved") {
       const userId = chat.kind === "saved" ? this.snapshot.currentUserId : chat.peerId;
       const user = this.snapshot.users.find((item) => item.id === userId);
-      if (!user) throw new Error("找不到用户资料");
+      if (!user) throw new Error("User profile not found");
       return {
         id: `user:${user.id}`,
         kind: chat.kind === "saved" ? "self" : "user",
@@ -963,8 +963,8 @@ export class MockTelegramTransport implements TelegramTransport {
         title: user.displayName,
         avatar: clone(user.avatar),
         statusLabel: user.isBot
-          ? "机器人"
-          : user.presence === "online" ? "在线" : user.lastSeenLabel ?? "离线",
+          ? "Bot"
+          : user.presence === "online" ? "Online" : user.lastSeenLabel ?? "Offline",
         ...mockProfileBio(user),
         firstName: user.firstName,
         lastName: user.lastName,
@@ -1005,9 +1005,9 @@ export class MockTelegramTransport implements TelegramTransport {
       title: chat.title,
       avatar: clone(chat.avatar),
       statusLabel: settings
-        ? `${members.length} 位${chat.kind === "channel" ? "订阅者" : "成员"}`
-        : chat.kind === "channel" ? "1,248 位订阅者" : `${members.length} 位成员`,
-      bio: settings?.description || (chat.kind === "channel" ? "桌面版本更新与发布说明。" : "产品、设计与开发协作群。"),
+        ? `${members.length} ${chat.kind === "channel" ? "subscribers" : "members"}`
+        : chat.kind === "channel" ? "1,248 subscribers" : `${members.length} members`,
+      bio: settings?.description || (chat.kind === "channel" ? "Official desktop version updates and release announcements." : "Product, design, and engineering team space."),
       username: settings?.isPublic ? settings.username : undefined,
       memberCount: settings ? members.length : chat.kind === "channel" ? 1_248 : members.length,
       members,
@@ -1044,7 +1044,7 @@ export class MockTelegramTransport implements TelegramTransport {
     const existing = this.snapshot.chats.find((chat) => chat.peerId === userId);
     if (existing) return clone(existing);
     const user = this.snapshot.users.find((item) => item.id === userId);
-    if (!user) throw new Error("找不到联系人");
+    if (!user) throw new Error("Contact not found");
     const chat: Chat = {
       id: `chat-contact-${user.id}`,
       kind: "direct",
@@ -1055,7 +1055,7 @@ export class MockTelegramTransport implements TelegramTransport {
       title: user.displayName,
       avatar: clone(user.avatar),
       peerId: user.id,
-      preview: "暂无消息",
+      preview: "No messages yet",
       updatedAt: new Date(0).toISOString(),
       unreadCount: 0,
       unreadMentionCount: 0,
@@ -1068,17 +1068,17 @@ export class MockTelegramTransport implements TelegramTransport {
   }
 
   async createChat(input: CreateChatInput): Promise<Chat> {
-    const title = identityTextField(input.title, 128, "名称", true);
+    const title = identityTextField(input.title, 128, "Title", true);
     const description = input.description?.trim() ?? "";
     const username = input.username?.trim() ?? "";
-    if ([...description].length > 255) throw new Error("简介最多 255 个字符");
+    if ([...description].length > 255) throw new Error("Description can have at most 255 characters");
     if (input.isPublic && !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username)) {
-      throw new Error("公开用户名需包含 5 至 32 个英文字母、数字或下划线，并以字母开头");
+      throw new Error("Public username must contain 5 to 32 alphanumeric characters or underscores and start with a letter");
     }
     const uniqueMemberIds = [...new Set(input.memberUserIds)];
     if (uniqueMemberIds.length > 200 || uniqueMemberIds.some((id) =>
       !this.snapshot.users.some((user) => user.id === id) || id === this.snapshot.currentUserId)) {
-      throw new Error("初始成员列表无效");
+      throw new Error("Initial member list is invalid");
     }
     const id = `chat-created-${crypto.randomUUID()}`;
     const chat: Chat = {
@@ -1089,10 +1089,10 @@ export class MockTelegramTransport implements TelegramTransport {
       folderIds: ["main"],
       title,
       avatar: {
-        label: [...title][0] ?? "群",
+        label: [...title][0] ?? "G",
         color: input.kind === "channel" ? "#397a78" : "#75579a",
       },
-      preview: input.kind === "channel" ? "频道已创建" : "群组已创建",
+      preview: input.kind === "channel" ? "Channel created" : "Group created",
       updatedAt: new Date().toISOString(),
       unreadCount: 0,
       unreadMentionCount: 0,
@@ -1132,7 +1132,7 @@ export class MockTelegramTransport implements TelegramTransport {
       ownershipTransfer: { available: true },
       memberHasMore: false,
     });
-    this.appendChatAudit(id, input.kind === "channel" ? "频道已创建" : "群组已创建");
+    this.appendChatAudit(id, input.kind === "channel" ? "Channel created" : "Group created");
     this.listener?.({ type: "chat.upsert", chat: clone(chat) });
     return clone(chat);
   }
@@ -1154,7 +1154,7 @@ export class MockTelegramTransport implements TelegramTransport {
     const existing = this.chatManagement.get(chatId);
     if (existing) return existing;
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
-    if (!chat || (chat.kind !== "group" && chat.kind !== "channel")) throw new Error("只有群组和频道支持成员管理");
+    if (!chat || (chat.kind !== "group" && chat.kind !== "channel")) throw new Error("Only groups and channels support member management");
     const profile = await this.getChatProfile(chatId);
     const settings = this.createdChatSettings.get(chatId);
     const permissions = settings?.permissionTemplate === "restricted"
@@ -1176,7 +1176,7 @@ export class MockTelegramTransport implements TelegramTransport {
       chat.kind === "channel" ? "channel" : chat.isForum ? "supergroup" : "basicGroup",
       "owner",
     );
-    if (!capabilities.canOpenManagement) throw new Error("当前账号没有群组管理权限");
+    if (!capabilities.canOpenManagement) throw new Error("Current account lacks group management permissions");
     const currentMember = members.find((member) => member.user.id === this.snapshot.currentUserId);
     if (currentMember) {
       currentMember.status = capabilities.status;
@@ -1209,7 +1209,7 @@ export class MockTelegramTransport implements TelegramTransport {
       ...value,
       administratorLabels: Object.fromEntries(value.members.flatMap((member) => {
         const label = member.customTitle ||
-          (member.status === "owner" ? "群主" : member.status === "administrator" ? "管理员" : "");
+          (member.status === "owner" ? "Owner" : member.status === "administrator" ? "Admin" : "");
         return label ? [[member.user.id, label]] : [];
       })),
       members: value.members.slice(offset, offset + limit),
@@ -1220,95 +1220,95 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async addChatMembers(chatId: string, userIds: string[]): Promise<void> {
     const value = await this.ensureChatManagement(chatId);
-    if (!value.capabilities.canAddMembers) throw new Error("当前账号没有邀请成员权限");
+    if (!value.capabilities.canAddMembers) throw new Error("Current account lacks invite permissions");
     const ids = [...new Set(userIds)].filter((id) => id !== this.snapshot.currentUserId);
     for (const id of ids) {
       const user = this.snapshot.users.find((item) => item.id === id);
-      if (!user) throw new Error("找不到要添加的联系人");
+      if (!user) throw new Error("Contact to add not found");
       if (value.members.some((member) => member.user.id === id && member.status !== "left" && member.status !== "banned")) continue;
       const member: ManagedChatMember = { user: clone(user), role: "member", status: "member" };
       const index = value.members.findIndex((item) => item.user.id === id);
       if (index >= 0) value.members[index] = member; else value.members.push(member);
-      this.appendChatAudit(chatId, `添加成员：${user.displayName}`, "memberJoin");
+      this.appendChatAudit(chatId, `Added member: ${user.displayName}`, "memberJoin");
     }
   }
 
   async setChatMemberStatus({ chatId, userId, status }: { chatId: string; userId: string; status: ChatMemberStatusInput }): Promise<void> {
     const value = await this.ensureChatManagement(chatId);
     const member = value.members.find((item) => item.user.id === userId);
-    if (!member) throw new Error("找不到群成员");
-    if (member.status === "owner") throw new Error("所有者需要使用所有权转移");
+    if (!member) throw new Error("Group member not found");
+    if (member.status === "owner") throw new Error("Owner must transfer ownership instead");
     if (status.kind === "administrator" || member.status === "administrator") {
-      if (!value.capabilities.canPromoteMembers || member.canBeEdited === false) throw new Error("当前账号没有管理员任免权限");
+      if (!value.capabilities.canPromoteMembers || member.canBeEdited === false) throw new Error("Current account lacks permission to manage admins");
     }
     if (status.kind === "restricted" || status.kind === "banned" || member.status === "restricted" || member.status === "banned") {
-      if (!value.capabilities.canRestrictMembers) throw new Error("当前账号没有限制成员权限");
+      if (!value.capabilities.canRestrictMembers) throw new Error("Current account lacks permission to restrict members");
     }
     const user = member.user;
     if (status.kind === "administrator") {
       member.status = "administrator"; member.role = "administrator";
       member.adminRights = cloneChatAdminRights(status.rights);
       member.canBeEdited = true;
-      this.appendChatAudit(chatId, `设置管理员：${user.displayName}`, "memberPromotion");
+      this.appendChatAudit(chatId, `Promoted to admin: ${user.displayName}`, "memberPromotion");
     } else if (status.kind === "restricted") {
       member.status = "restricted"; member.role = "member"; member.permissions = cloneChatPermissions(status.permissions);
       member.untilDate = status.untilDate; member.adminRights = undefined;
-      this.appendChatAudit(chatId, `限制成员：${user.displayName}`, "memberRestriction");
+      this.appendChatAudit(chatId, `Restricted member: ${user.displayName}`, "memberRestriction");
     } else if (status.kind === "banned") {
       member.status = "banned"; member.role = "member"; member.permissions = undefined; member.adminRights = undefined;
       member.untilDate = status.untilDate;
-      this.appendChatAudit(chatId, `封禁成员：${user.displayName}`, "memberRestriction");
+      this.appendChatAudit(chatId, `Banned member: ${user.displayName}`, "memberRestriction");
     } else {
       member.status = "member"; member.role = "member"; member.permissions = undefined; member.adminRights = undefined; member.untilDate = undefined;
-      this.appendChatAudit(chatId, `恢复成员：${user.displayName}`, "memberJoin");
+      this.appendChatAudit(chatId, `Restored member: ${user.displayName}`, "memberJoin");
     }
   }
 
   async setChatMemberTag(chatId: string, userId: string, tag: string): Promise<void> {
     const value = await this.ensureChatManagement(chatId);
-    if (!value.capabilities.canManageTags) throw new Error("当前账号没有修改成员标签的权限");
+    if (!value.capabilities.canManageTags) throw new Error("Current account lacks permission to edit member tags");
     const validationError = chatMemberTagError(tag);
     if (validationError) throw new Error(validationError);
     const member = value.members.find((item) => item.user.id === userId);
-    if (!member) throw new Error("找不到群成员");
+    if (!member) throw new Error("Group member not found");
     member.customTitle = normalizeIdentityText(tag) || undefined;
-    this.appendChatAudit(chatId, `更新成员标签：${member.user.displayName}`, "memberTagChange");
+    this.appendChatAudit(chatId, `Updated member tag: ${member.user.displayName}`, "memberTagChange");
   }
 
   async setChatPermissions(chatId: string, permissions: ChatPermissions): Promise<void> {
     const value = await this.ensureChatManagement(chatId);
-    if (!value.capabilities.canManagePermissions) throw new Error("当前账号没有修改默认权限的能力");
+    if (!value.capabilities.canManagePermissions) throw new Error("Current account lacks permission to modify default permissions");
     value.permissions = cloneChatPermissions(permissions);
-    this.appendChatAudit(chatId, "更新群组默认发送权限");
+    this.appendChatAudit(chatId, "Updated default group permissions");
   }
 
   async setChatSlowModeDelay(chatId: string, delaySeconds: number): Promise<void> {
-    if (!Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 86_400) throw new Error("慢速模式间隔无效");
+    if (!Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 86_400) throw new Error("Slow mode interval is invalid");
     const value = await this.ensureChatManagement(chatId);
-    if (!value.capabilities.canManageSlowMode) throw new Error("当前账号没有修改慢速模式的能力");
+    if (!value.capabilities.canManageSlowMode) throw new Error("Current account lacks permission to modify slow mode");
     value.slowModeDelay = delaySeconds;
-    this.appendChatAudit(chatId, delaySeconds ? `设置慢速模式：${delaySeconds} 秒` : "关闭慢速模式", "setting");
+    this.appendChatAudit(chatId, delaySeconds ? `Set slow mode: ${delaySeconds}s` : "Disabled slow mode", "setting");
   }
 
   async transferChatOwnership(chatId: string, userId: string, password: string): Promise<void> {
-    if (!password.trim()) throw new Error("请输入两步验证密码");
+    if (!password.trim()) throw new Error("Please enter your 2FA password");
     const value = await this.ensureChatManagement(chatId);
-    if (!value.capabilities.canTransferOwnership) throw new Error("当前账号不能转移所有权");
+    if (!value.capabilities.canTransferOwnership) throw new Error("Current account cannot transfer ownership");
     const next = value.members.find((member) => member.user.id === userId);
     const current = value.members.find((member) => member.status === "owner");
-    if (!next || !current) throw new Error("所有者候选人无效");
+    if (!next || !current) throw new Error("Invalid ownership candidate");
     current.status = "administrator"; current.role = "administrator"; current.adminRights = cloneChatAdminRights(DEFAULT_CHAT_ADMIN_RIGHTS);
     next.status = "owner"; next.role = "owner"; next.adminRights = cloneChatAdminRights(DEFAULT_CHAT_ADMIN_RIGHTS);
     value.capabilities = deriveChatManagementCapabilities(value.capabilities.chatType, "administrator", DEFAULT_CHAT_ADMIN_RIGHTS);
     value.ownershipTransfer = undefined;
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
     if (chat) chat.management = clone(value.capabilities);
-    this.appendChatAudit(chatId, `转移所有者给：${next.user.displayName}`, "memberPromotion");
+    this.appendChatAudit(chatId, `Transferred ownership to: ${next.user.displayName}`, "memberPromotion");
   }
 
   async getChatEventLog({ chatId, query = "", fromEventId, limit = 30 }: ChatEventLogInput): Promise<ChatEventPage> {
     const management = await this.ensureChatManagement(chatId);
-    if (!management.capabilities.canViewEventLog) throw new Error("当前账号没有查看管理日志的权限");
+    if (!management.capabilities.canViewEventLog) throw new Error("Current account lacks permission to view audit log");
     const events = (this.chatAudit.get(chatId) ?? []).filter((event) => !query.trim() || event.summary.includes(query.trim()));
     const start = fromEventId ? Math.max(0, events.findIndex((event) => event.id === fromEventId) + 1) : 0;
     const page = events.slice(start, start + Math.min(100, Math.max(1, limit)));
@@ -1320,7 +1320,7 @@ export class MockTelegramTransport implements TelegramTransport {
     if (!links) {
       links = [{
         inviteLink: `https://t.me/+fardgram_${chatId.replace(/[^a-z0-9]/gi, "")}`,
-        name: "主邀请链接",
+        name: "Primary Invite Link",
         creatorUserId: this.snapshot.currentUserId,
         createdAt: new Date(Date.now() - 86_400_000).toISOString(),
         memberLimit: 0,
@@ -1335,14 +1335,14 @@ export class MockTelegramTransport implements TelegramTransport {
     }
     if (!this.chatJoinRequests.has(chatId)) {
       const candidates = ["u-chen", "u-jules"].map((id) => this.snapshot.users.find((user) => user.id === id)).filter((user): user is User => Boolean(user));
-      this.chatJoinRequests.set(chatId, candidates.map((user, index) => ({ user: clone(user), date: new Date(Date.now() - (index + 1) * 3_600_000).toISOString(), bio: index === 0 ? "希望加入桌面端协作" : undefined, inviteLink: links?.[0]?.inviteLink })));
+      this.chatJoinRequests.set(chatId, candidates.map((user, index) => ({ user: clone(user), date: new Date(Date.now() - (index + 1) * 3_600_000).toISOString(), bio: index === 0 ? "Looking forward to contributing to desktop collaboration" : undefined, inviteLink: links?.[0]?.inviteLink })));
     }
     return links;
   }
 
   async getChatInviteLinks({ chatId, revoked = false, offsetLink = "", limit = 30 }: GetChatInviteLinksInput): Promise<ChatInviteLinkPage> {
     const management = await this.ensureChatManagement(chatId);
-    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有管理邀请链接的权限");
+    if (!management.capabilities.canManageInvites) throw new Error("Current account lacks permission to manage invite links");
     const all = this.ensureInviteLinks(chatId).filter((link) => link.isRevoked === revoked);
     const start = offsetLink ? Math.max(0, all.findIndex((link) => link.inviteLink === offsetLink) + 1) : 0;
     const links = all.slice(start, start + Math.min(100, Math.max(1, limit)));
@@ -1351,13 +1351,13 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async createChatInviteLink(input: CreateChatInviteLinkInput): Promise<ChatInviteLink> {
     const management = await this.ensureChatManagement(input.chatId);
-    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有管理邀请链接的权限");
+    if (!management.capabilities.canManageInvites) throw new Error("Current account lacks permission to manage invite links");
     this.ensureInviteLinks(input.chatId);
     const name = input.name.trim();
-    if ([...name].length > 32) throw new Error("邀请链接名称最多 32 个字符");
+    if ([...name].length > 32) throw new Error("Invite link name can have at most 32 characters");
     const link: ChatInviteLink = {
       inviteLink: `https://t.me/+${crypto.randomUUID().replace(/-/g, "").slice(0, 22)}`,
-      name: name || (input.subscriptionStars ? "订阅链接" : "邀请链接"),
+      name: name || (input.subscriptionStars ? "Subscription Link" : "Invite Link"),
       creatorUserId: this.snapshot.currentUserId,
       createdAt: new Date().toISOString(),
       expiresAt: input.expirationDate ? new Date(input.expirationDate * 1000).toISOString() : undefined,
@@ -1372,37 +1372,37 @@ export class MockTelegramTransport implements TelegramTransport {
       subscriptionPeriod: input.subscriptionStars ? 2_592_000 : undefined,
     };
     this.chatInviteLinks.get(input.chatId)!.unshift(link);
-    this.appendChatAudit(input.chatId, `创建邀请链接：${link.name}`, "inviteLink");
+    this.appendChatAudit(input.chatId, `Created invite link: ${link.name}`, "inviteLink");
     return clone(link);
   }
 
   async editChatInviteLink(input: CreateChatInviteLinkInput & { inviteLink: string }): Promise<ChatInviteLink> {
     const management = await this.ensureChatManagement(input.chatId);
-    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有管理邀请链接的权限");
+    if (!management.capabilities.canManageInvites) throw new Error("Current account lacks permission to manage invite links");
     const link = this.ensureInviteLinks(input.chatId).find((item) => item.inviteLink === input.inviteLink);
-    if (!link || link.isRevoked) throw new Error("邀请链接不存在或已撤销");
+    if (!link || link.isRevoked) throw new Error("Invite link not found or revoked");
     link.name = input.name.trim() || link.name;
     link.expiresAt = input.expirationDate ? new Date(input.expirationDate * 1000).toISOString() : undefined;
     link.memberLimit = input.memberLimit ?? 0;
     link.createsJoinRequest = input.createsJoinRequest === true;
     link.editedAt = new Date().toISOString();
-    this.appendChatAudit(input.chatId, `编辑邀请链接：${link.name}`, "inviteLink");
+    this.appendChatAudit(input.chatId, `Edited invite link: ${link.name}`, "inviteLink");
     return clone(link);
   }
 
   async revokeChatInviteLink(chatId: string, inviteLink: string): Promise<ChatInviteLink> {
     const management = await this.ensureChatManagement(chatId);
-    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有管理邀请链接的权限");
+    if (!management.capabilities.canManageInvites) throw new Error("Current account lacks permission to manage invite links");
     const link = this.ensureInviteLinks(chatId).find((item) => item.inviteLink === inviteLink);
-    if (!link) throw new Error("找不到邀请链接");
+    if (!link) throw new Error("Invite link not found");
     link.isRevoked = true;
-    this.appendChatAudit(chatId, `撤销邀请链接：${link.name}`, "inviteLink");
+    this.appendChatAudit(chatId, `Revoked invite link: ${link.name}`, "inviteLink");
     return clone(link);
   }
 
   async getChatJoinRequests({ chatId, inviteLink, query = "", offsetUserId, limit = 30 }: GetChatJoinRequestsInput): Promise<ChatJoinRequestPage> {
     const management = await this.ensureChatManagement(chatId);
-    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有处理入群申请的权限");
+    if (!management.capabilities.canManageInvites) throw new Error("Current account lacks permission to process join requests");
     this.ensureInviteLinks(chatId);
     const normalized = query.trim().toLocaleLowerCase();
     const all = (this.chatJoinRequests.get(chatId) ?? []).filter((request) => (!inviteLink || request.inviteLink === inviteLink) && (!normalized || `${request.user.displayName} ${request.bio ?? ""}`.toLocaleLowerCase().includes(normalized)));
@@ -1414,25 +1414,25 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async processChatJoinRequest(chatId: string, userId: string, approve: boolean): Promise<void> {
     const management = await this.ensureChatManagement(chatId);
-    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有处理入群申请的权限");
+    if (!management.capabilities.canManageInvites) throw new Error("Current account lacks permission to process join requests");
     this.ensureInviteLinks(chatId);
     const requests = this.chatJoinRequests.get(chatId) ?? [];
     const request = requests.find((item) => item.user.id === userId);
-    if (!request) throw new Error("入群申请不存在");
+    if (!request) throw new Error("Join request not found");
     this.chatJoinRequests.set(chatId, requests.filter((item) => item.user.id !== userId));
     if (approve) await this.addChatMembers(chatId, [userId]);
-    this.appendChatAudit(chatId, `${approve ? "批准" : "拒绝"}入群申请：${request.user.displayName}`, "inviteLink");
+    this.appendChatAudit(chatId, `${approve ? "Approved" : "Declined"} join request: ${request.user.displayName}`, "inviteLink");
   }
 
   async processChatJoinRequests(chatId: string, inviteLink: string | undefined, approve: boolean): Promise<void> {
     const management = await this.ensureChatManagement(chatId);
-    if (!management.capabilities.canManageInvites) throw new Error("当前账号没有处理入群申请的权限");
+    if (!management.capabilities.canManageInvites) throw new Error("Current account lacks permission to process join requests");
     this.ensureInviteLinks(chatId);
     const requests = this.chatJoinRequests.get(chatId) ?? [];
     const selected = requests.filter((request) => !inviteLink || request.inviteLink === inviteLink);
     this.chatJoinRequests.set(chatId, requests.filter((request) => inviteLink && request.inviteLink !== inviteLink));
     if (approve) await this.addChatMembers(chatId, selected.map((request) => request.user.id));
-    this.appendChatAudit(chatId, `${approve ? "批量批准" : "批量拒绝"} ${selected.length} 个入群申请`, "inviteLink");
+    this.appendChatAudit(chatId, `${approve ? "Bulk approved" : "Bulk declined"} ${selected.length} join requests`, "inviteLink");
   }
 
   async getBotCommandSuggestions(
@@ -1442,14 +1442,14 @@ export class MockTelegramTransport implements TelegramTransport {
   ): Promise<BotCommandSuggestion[]> {
     const username = botUsername?.replace(/^@/, "").trim() || "fardgram_bot";
     const primaryCommands: BotCommandSuggestion[] = [
-      { botUserId: "bot:fardgram_bot", botUsername: "fardgram_bot", command: "start", description: "启动机器人或打开参数" },
-      { botUserId: "bot:fardgram_bot", botUsername: "fardgram_bot", command: "help", description: "查看帮助" },
-      { botUserId: "bot:fardgram_bot", botUsername: "fardgram_bot", command: "settings", description: "打开设置" },
+      { botUserId: "bot:fardgram_bot", botUsername: "fardgram_bot", command: "start", description: "Start bot or open deep-link parameters" },
+      { botUserId: "bot:fardgram_bot", botUsername: "fardgram_bot", command: "help", description: "View help and documentation" },
+      { botUserId: "bot:fardgram_bot", botUsername: "fardgram_bot", command: "settings", description: "Open bot settings" },
     ];
     const groupCommands: BotCommandSuggestion[] = chatId === "chat-product" && !botUsername
       ? [
         ...primaryCommands.slice(0, 2),
-        { botUserId: "bot:qa_helper_bot", botUsername: "qa_helper_bot", command: "poll", description: "创建一个快速投票" },
+        { botUserId: "bot:qa_helper_bot", botUsername: "qa_helper_bot", command: "poll", description: "Create a quick interactive poll" },
       ]
       : primaryCommands;
     const commands = botUsername
@@ -1466,17 +1466,17 @@ export class MockTelegramTransport implements TelegramTransport {
   ): Promise<CallbackQueryAnswer> {
     void chatId;
     void messageId;
-    return { text: data ? "机器人已处理操作" : undefined, showAlert: false };
+    return { text: data ? "Bot processed action successfully" : undefined, showAlert: false };
   }
 
   async getInlineQueryResults(chatId: string, botUsername: string, query: string, offset = ""): Promise<InlineQueryResultPage> {
     void chatId;
     const username = botUsername.replace(/^@/, "").trim() || "fardgram_bot";
     const all = [
-      { title: "快速摘要", description: `由 @${username} 生成的摘要`, messageText: `@${username}: ${query.trim() || "空查询"}` },
-      { title: "项目卡片", description: "包含媒体预览的结果", messageText: `项目卡片：${query.trim() || "Fardgram"}`, thumbnailUrl: "/icon.png" },
-      { title: "引用模板", description: "可继续编辑后发送", messageText: `> ${query.trim() || "输入内容"}` },
-      { title: "文件结果", description: "结果中的文件摘要", messageText: `文件：${query.trim() || "说明文档"}`, kind: "file" as const, fileName: "result.txt" },
+      { title: "Quick Summary", description: `Summary generated by @${username}`, messageText: `@${username}: ${query.trim() || "Empty query"}` },
+      { title: "Project Card", description: "Result with media preview", messageText: `Project Card: ${query.trim() || "Fardgram"}`, thumbnailUrl: "/icon.png" },
+      { title: "Quoted Template", description: "Editable quote template", messageText: `> ${query.trim() || "Quote snippet"}` },
+      { title: "File Result", description: "Document result summary", messageText: `File: ${query.trim() || "Documentation"}`, kind: "file" as const, fileName: "result.txt" },
     ].map((item, index) => ({ ...item, id: `${username}-${index}`, kind: item.kind ?? (index === 1 ? "photo" as const : "article" as const) }));
     const start = offset ? Number.parseInt(offset, 10) || 0 : 0;
     const page = all.slice(start, start + 2);
@@ -1487,7 +1487,7 @@ export class MockTelegramTransport implements TelegramTransport {
   async sendInlineQueryResultMessage(chatId: string, botUserId: string, queryId: string, resultId: string, replyToMessageId?: string, topicId?: string): Promise<void> {
     void queryId;
     const result = this.inlineResults.get(resultId);
-    if (!result || result.botUserId !== botUserId) throw new Error("Inline 结果已过期");
+    if (!result || result.botUserId !== botUserId) throw new Error("Inline query result expired");
     await this.sendMessage({ chatId, topicId, text: result.text, replyToMessageId });
   }
 
@@ -1505,11 +1505,11 @@ export class MockTelegramTransport implements TelegramTransport {
     const user = kind === "user" ? this.snapshot.users.find((item) => item.id === senderId) : undefined;
     const targetChat = kind === "chat" ? this.snapshot.chats.find((item) => item.id === senderId) : undefined;
     if (blocked) {
-      if (!user && !targetChat) throw new Error("找不到要屏蔽的对象");
+      if (!user && !targetChat) throw new Error("Target to block not found");
       this.blockedSenders.set(key, {
         id: senderId,
         kind,
-        title: user?.displayName ?? targetChat?.title ?? "已屏蔽对象",
+        title: user?.displayName ?? targetChat?.title ?? "Blocked entity",
         avatar: clone(user?.avatar ?? targetChat?.avatar ?? { label: "?", color: "#73808c" }),
         blockedAt: new Date().toISOString(),
       });
@@ -1533,12 +1533,12 @@ export class MockTelegramTransport implements TelegramTransport {
   async getActiveSessions(): Promise<DeviceSession[]> { return clone(this.sessions); }
   async terminateSession(sessionId: string): Promise<void> {
     const session = this.sessions.find((item) => item.id === sessionId);
-    if (!session || session.isCurrent) throw new Error("不能终止当前设备");
+    if (!session || session.isCurrent) throw new Error("Cannot terminate current session");
     this.sessions = this.sessions.filter((item) => item.id !== sessionId);
   }
   async terminateAllOtherSessions(): Promise<void> { this.sessions = this.sessions.filter((item) => item.isCurrent); }
   async getPrivacySettingRules(setting: PrivacySettingKey): Promise<PrivacyRule[]> { return clone(this.privacyRules[setting]); }
-  async setPrivacySettingRules(setting: PrivacySettingKey, rules: PrivacyRule[]): Promise<void> { if (rules.length === 0 || rules.length > 10) throw new Error("隐私规则无效"); this.privacyRules[setting] = clone(rules); }
+  async setPrivacySettingRules(setting: PrivacySettingKey, rules: PrivacyRule[]): Promise<void> { if (rules.length === 0 || rules.length > 10) throw new Error("Invalid privacy rules"); this.privacyRules[setting] = clone(rules); }
 
   async resolveTelegramLink(url: string) {
     const parsed = parseTelegramUrl(url);
@@ -1557,7 +1557,7 @@ export class MockTelegramTransport implements TelegramTransport {
     const stickerName = telegramStickerSetName(url);
     if (stickerName) {
       const stickerSet = mockStickerSets.find((set) => set.name.toLowerCase() === stickerName.toLowerCase());
-      if (!stickerSet) throw new Error("找不到贴纸包");
+      if (!stickerSet) throw new Error("Sticker pack not found");
       return { kind: "stickerSet" as const, stickerSet: await this.getStickerSet(stickerSet.id) };
     }
     const knownUnsupported = knownUnsupportedTelegramLink(parsed.href);
@@ -1568,7 +1568,7 @@ export class MockTelegramTransport implements TelegramTransport {
       const user = this.snapshot.users.find((candidate) => candidate.id === userId);
       return user
         ? { kind: "user" as const, userId: user.id }
-        : unsupportedTelegramLink(undefined, "找不到链接中的 Telegram 用户");
+        : unsupportedTelegramLink(undefined, "Telegram user not found in link");
     }
     const username = parsed.protocol === "tg:" ? parsed.searchParams.get("domain") : parts[0];
     if (!username) return unsupportedTelegramLink("internalLinkTypeUnknownDeepLink");
@@ -1587,7 +1587,7 @@ export class MockTelegramTransport implements TelegramTransport {
           title: user.displayName,
           avatar: clone(user.avatar),
           peerId: user.id,
-          preview: "暂无消息",
+          preview: "No messages yet",
           updatedAt: new Date().toISOString(),
           unreadCount: 0,
           unreadMentionCount: 0,
@@ -1612,7 +1612,7 @@ export class MockTelegramTransport implements TelegramTransport {
     const chat = this.snapshot.chats.find((candidate) => candidate.title.toLowerCase() === username.toLowerCase());
     return chat
       ? { chatId: chat.id, messageId: parts[1] && /^\d+$/.test(parts[1]) ? parts[1] : parsed.searchParams.get("post") || undefined }
-      : unsupportedTelegramLink(undefined, "找不到链接中的 Telegram 会话或用户");
+      : unsupportedTelegramLink(undefined, "Telegram chat or user not found in link");
   }
 
   async refreshChatMembership(chatId: string): Promise<Chat> {
@@ -1858,9 +1858,9 @@ export class MockTelegramTransport implements TelegramTransport {
       };
     };
     const topics = [
-      makeTopic("1", "常规", 0x6fb9f0, true),
-      makeTopic("12", "构建与发布", 0xffd67e, false, 3),
-      makeTopic("18", "设计反馈", 0xcb86db, false, 1),
+      makeTopic("1", "General", 0x6fb9f0, true),
+      makeTopic("12", "Build & Release", 0xffd67e, false, 3),
+      makeTopic("18", "Design Feedback", 0xcb86db, false, 1),
     ];
     this.forumTopics.set(chatId, topics);
     return topics;
@@ -1939,7 +1939,7 @@ export class MockTelegramTransport implements TelegramTransport {
     const topic: ForumTopic = {
       id,
       chatId: input.chatId,
-      name: identityTextField(input.name, 128, "话题名称", true),
+      name: identityTextField(input.name, 128, "Topic Name", true),
       iconColor: input.iconColor ?? 0x6fb9f0,
       createdAt: new Date().toISOString(),
       isGeneral: false,
@@ -1960,21 +1960,21 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async editForumTopic(chatId: string, topicId: string, name: string) {
     const topic = this.ensureForumTopics(chatId).find((candidate) => candidate.id === topicId);
-    if (!topic) throw new Error("找不到话题");
-    topic.name = identityTextField(name, 128, "话题名称", true);
+    if (!topic) throw new Error("Topic not found");
+    topic.name = identityTextField(name, 128, "Topic Name", true);
     this.listener?.({ type: "forumTopics.changed", chatId });
   }
 
   async setForumTopicClosed(chatId: string, topicId: string, closed: boolean) {
     const topic = this.ensureForumTopics(chatId).find((candidate) => candidate.id === topicId);
-    if (!topic) throw new Error("找不到话题");
+    if (!topic) throw new Error("Topic not found");
     topic.isClosed = closed;
     this.listener?.({ type: "forumTopics.changed", chatId });
   }
 
   async setForumTopicPinned(chatId: string, topicId: string, pinned: boolean) {
     const topic = this.ensureForumTopics(chatId).find((candidate) => candidate.id === topicId);
-    if (!topic) throw new Error("找不到话题");
+    if (!topic) throw new Error("Topic not found");
     topic.isPinned = pinned;
     this.listener?.({ type: "forumTopics.changed", chatId });
   }
@@ -2018,7 +2018,7 @@ export class MockTelegramTransport implements TelegramTransport {
     const message = this.snapshot.messages.find(
       (item) => item.chatId === chatId && item.id === messageId,
     );
-    if (!message) throw new Error("找不到消息");
+    if (!message) throw new Error("Message not found");
     if (message.permissions) return clone({ canReport: !message.outgoing && !message.isLocallyDeleted, ...message.permissions });
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
     const management = this.chatManagement.get(chatId);
@@ -2045,7 +2045,7 @@ export class MockTelegramTransport implements TelegramTransport {
     const message = this.snapshot.messages.find(
       (item) => item.chatId === input.chatId && item.id === input.messageId,
     );
-    if (!message) throw new Error("消息不存在");
+    if (!message) throw new Error("Message does not exist");
     const interaction = message.interaction ?? {
       viewCount: 0,
       forwardCount: 0,
@@ -2085,9 +2085,9 @@ export class MockTelegramTransport implements TelegramTransport {
     const message = this.snapshot.messages.find(
       (item) => item.chatId === input.chatId && item.id === input.messageId,
     );
-    if (!message) throw new Error("消息不存在");
+    if (!message) throw new Error("Message does not exist");
     if (message.interaction?.canGetAddedReactions === false) {
-      throw new Error("Telegram 未提供完整回应名单");
+      throw new Error("Telegram did not provide full reactor list");
     }
     const reaction = message.interaction?.reactions.find((candidate) => {
       if (candidate.type.kind !== input.type.kind) return false;
@@ -2122,8 +2122,8 @@ export class MockTelegramTransport implements TelegramTransport {
     const profile = await this.getChatProfile(chatId);
     return Object.fromEntries(profile.members.flatMap((member) => {
       const label = member.role === "owner"
-        ? "群主"
-        : member.role === "administrator" ? "管理员" : "";
+        ? "Owner"
+        : member.role === "administrator" ? "Admin" : "";
       return label ? [[member.user.id, label]] : [];
     }));
   }
@@ -2132,12 +2132,12 @@ export class MockTelegramTransport implements TelegramTransport {
     const message = this.snapshot.messages.find(
       (item) => item.chatId === input.chatId && item.id === input.messageId,
     );
-    if (!message || message.content.kind !== "poll") throw new Error("投票不存在");
+    if (!message || message.content.kind !== "poll") throw new Error("Poll does not exist");
     const poll = message.content;
-    if (poll.isClosed || poll.restrictionReason) throw new Error(poll.restrictionReason ?? "投票已结束");
+    if (poll.isClosed || poll.restrictionReason) throw new Error(poll.restrictionReason ?? "Poll is closed");
     const positions = [...new Set(input.optionPositions)].sort((left, right) => left - right);
     if ((!poll.allowsMultipleAnswers && positions.length > 1) ||
-      positions.some((position) => !poll.options[position])) throw new Error("投票选项无效");
+      positions.some((position) => !poll.options[position])) throw new Error("Invalid poll options");
     const previouslyVoted = poll.options.some((option) => option.chosen);
     const nowVoted = positions.length > 0;
     const nextTotal = Math.max(0, poll.totalVoterCount + (nowVoted ? 1 : 0) - (previouslyVoted ? 1 : 0));
@@ -2167,9 +2167,9 @@ export class MockTelegramTransport implements TelegramTransport {
     const message = this.snapshot.messages.find(
       (item) => item.chatId === input.chatId && item.id === input.messageId,
     );
-    if (!message) throw new Error("找不到需要置顶的消息");
+    if (!message) throw new Error("Message to pin not found");
     if (!(await this.getMessageProperties(input.chatId, input.messageId)).canPin) {
-      throw new Error("当前账号没有置顶消息的权限");
+      throw new Error("Current account lacks permission to pin messages");
     }
     message.isPinned = true;
     delete message.permissions;
@@ -2180,9 +2180,9 @@ export class MockTelegramTransport implements TelegramTransport {
     const message = this.snapshot.messages.find(
       (item) => item.chatId === chatId && item.id === messageId,
     );
-    if (!message) throw new Error("找不到需要取消置顶的消息");
+    if (!message) throw new Error("Message to unpin not found");
     if (!(await this.getMessageProperties(chatId, messageId)).canPin) {
-      throw new Error("当前账号没有置顶消息的权限");
+      throw new Error("Current account lacks permission to pin messages");
     }
     message.isPinned = false;
     delete message.permissions;
@@ -2193,10 +2193,10 @@ export class MockTelegramTransport implements TelegramTransport {
     if (!Number.isSafeInteger(input.messageAutoDeleteTime) ||
       input.messageAutoDeleteTime < 0 || input.messageAutoDeleteTime > 31_536_000 ||
       (input.messageAutoDeleteTime !== 0 && input.messageAutoDeleteTime % 86_400 !== 0)) {
-      throw new Error("自动删除时间无效");
+      throw new Error("Invalid auto-delete duration");
     }
     const chat = this.snapshot.chats.find((item) => item.id === input.chatId);
-    if (!chat) throw new Error("找不到会话");
+    if (!chat) throw new Error("Chat not found");
     chat.messageAutoDeleteTime = input.messageAutoDeleteTime;
     this.listener?.({ type: "chat.upsert", chat: clone(chat) });
   }
@@ -2212,7 +2212,7 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async getStickerSet(stickerSetId: string) {
     const stickerSet = mockStickerSets.find((candidate) => candidate.id === stickerSetId);
-    if (!stickerSet) throw new Error("找不到贴纸包");
+    if (!stickerSet) throw new Error("Sticker pack not found");
     return clone({ ...stickerSet, isInstalled: this.installedStickerIds().has(stickerSetId), isArchived: false });
   }
 
@@ -2392,7 +2392,7 @@ export class MockTelegramTransport implements TelegramTransport {
           (message) => message.chatId === chatId && message.topicId === topicId && message.id === replyToMessageId,
         )
       : undefined;
-    if (replyToMessageId && !replyTarget) throw new Error("找不到需要回复的消息");
+    if (replyToMessageId && !replyTarget) throw new Error("Reply target message not found");
     const replySourceText = replyTarget?.content.kind === "text"
       ? replyTarget.content.text
       : replyTarget?.content.kind === "media" || replyTarget?.content.kind === "file"
@@ -2404,7 +2404,7 @@ export class MockTelegramTransport implements TelegramTransport {
         replyQuote.position,
         replyQuote.position + replyQuote.text.length,
       ) !== replyQuote.text)
-    ) throw new Error("引用内容与原消息不匹配");
+    ) throw new Error("Quote text does not match original message");
     this.appendMessage({
       id: crypto.randomUUID(),
       chatId,
@@ -2431,8 +2431,8 @@ export class MockTelegramTransport implements TelegramTransport {
     const message = this.snapshot.messages.find(
       (item) => item.chatId === chatId && item.id === messageId,
     );
-    if (!message) throw new Error("找不到需要编辑的消息");
-    if (!isEditableMessageContent(message.content)) throw new Error("不能编辑此消息");
+    if (!message) throw new Error("Message to edit not found");
+    if (!isEditableMessageContent(message.content)) throw new Error("Cannot edit this message");
     message.content = isCaptionContent(message.content)
       ? { ...message.content, caption: text || undefined, captionEntities: entities?.length ? entities : undefined,
           showCaptionAboveMedia: showCaptionAboveMedia ?? message.content.showCaptionAboveMedia }
@@ -2447,7 +2447,7 @@ export class MockTelegramTransport implements TelegramTransport {
     const index = this.snapshot.messages.findIndex(
       (item) => item.chatId === chatId && item.id === messageId,
     );
-    if (index < 0) throw new Error("找不到需要删除的消息");
+    if (index < 0) throw new Error("Message to delete not found");
     this.snapshot.messages.splice(index, 1);
     this.listener?.({ type: "message.remove", chatId, messageId });
     this.refreshChatPreview(chatId);
@@ -2460,11 +2460,11 @@ export class MockTelegramTransport implements TelegramTransport {
         (message) => message.chatId === fromChatId && message.id === messageId,
       ))
       .filter((message): message is Message => Boolean(message));
-    if (selected.length === 0) throw new Error("请选择要转发的消息");
-    if (selected.length > 100) throw new Error("单次最多转发 100 条消息");
-    if (selected.length !== uniqueMessageIds.length) throw new Error("部分待转发消息已不存在");
+    if (selected.length === 0) throw new Error("Please select messages to forward");
+    if (selected.length > 100) throw new Error("Cannot forward more than 100 messages at once");
+    if (selected.length !== uniqueMessageIds.length) throw new Error("Some selected messages no longer exist");
     if (!this.snapshot.chats.some((chat) => chat.id === toChatId)) {
-      throw new Error("找不到转发目标会话");
+      throw new Error("Forward destination chat not found");
     }
 
     const now = Date.now();
@@ -2508,7 +2508,7 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async setChatDraft({ chatId, topicId, text, entities, replyToMessageId, replyQuote }: SetChatDraftInput) {
     if (!this.snapshot.chats.some((chat) => chat.id === chatId)) {
-      throw new Error("找不到需要保存草稿的会话");
+      throw new Error("Chat for saving draft not found");
     }
     const draft = hasChatDraftContent({ text, replyToMessageId })
       ? {
@@ -2592,7 +2592,7 @@ export class MockTelegramTransport implements TelegramTransport {
     const message = this.snapshot.messages.find(
       (item) => item.chatId === chatId && item.id === messageId,
     );
-    if (!message) throw new Error("找不到需要重试的消息");
+    if (!message) throw new Error("Message to retry not found");
     message.delivery = "sent";
     message.canRetry = false;
     this.listener?.({ type: "message.upsert", message: clone(message) });
@@ -2796,7 +2796,7 @@ export class MockTelegramTransport implements TelegramTransport {
         fileId: input.asset.fileId,
         stickerSetId: mediaType === "sticker" ? input.asset.stickerSetId : undefined,
         fileName: input.asset.fileName,
-        sizeLabel: mediaType === "sticker" ? "贴纸" : "GIF",
+        sizeLabel: mediaType === "sticker" ? "Sticker" : "GIF",
         mimeType: input.asset.mimeType,
         previewDataUrl: input.asset.previewDataUrl,
         localPath: input.asset.localPath,

@@ -29,7 +29,7 @@ export function mockChatReport(input: ReportChatInput): ChatReportResult {
     return { kind: "options", title: "Report reason", options: root.map(([key, title]) => ({ id: idFor(key), title })) };
   }
   const selected = all.find(([key]) => idFor(key) === input.optionId || idFor(`comment:${key}`) === input.optionId);
-  if (!selected) throw new Error(translate("举报原因无效"));
+  if (!selected) throw new Error(translate("Invalid report reason"));
   const [key, title] = selected;
   const children = branches[key];
   if (children) return { kind: "options", title, options: children.map(([key, title]) => ({ id: idFor(key), title })) };

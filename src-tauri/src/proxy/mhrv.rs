@@ -241,10 +241,15 @@ fn find_mhrv_binary(app: &AppHandle) -> Result<PathBuf, String> {
     }
 
     // 4. Check development source path
-    let dev_path = PathBuf::from(r"D:\Telegeram\src-tauri\resources\mhrv").join(&binary_name);
+    let dev_path = PathBuf::from(r"D:\My Fucking Projects\Telegeram\src-tauri\resources\mhrv").join(&binary_name);
     if dev_path.is_file() {
         ensure_executable_permissions(&dev_path);
         return Ok(dev_path);
+    }
+    let legacy_dev_path = PathBuf::from(r"D:\Telegeram\src-tauri\resources\mhrv").join(&binary_name);
+    if legacy_dev_path.is_file() {
+        ensure_executable_permissions(&legacy_dev_path);
+        return Ok(legacy_dev_path);
     }
 
     // 5. Check external release directory

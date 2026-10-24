@@ -40,11 +40,23 @@ const mockReactionPreview = () =>
   new URLSearchParams(window.location.search).has("reactionPreview");
 
 export const createTelegramTransport = (): TelegramTransport => {
-  if (isTauri() || import.meta.env.VITE_TELEGRAM_TRANSPORT === "tauri") {
+  const isDemo =
+    (typeof window !== "undefined" && (
+      window.localStorage?.getItem("fardgram_demo_mode") === "true" ||
+      new URLSearchParams(window.location.search).get("demo") === "true"
+    )) ||
+    (typeof window === "undefined" && import.meta.env.VITE_TELEGRAM_TRANSPORT === "mock");
+
+  if (!isDemo && (isTauri() || import.meta.env.VITE_TELEGRAM_TRANSPORT === "tauri")) {
     return new TauriTelegramTransport();
   }
+
+  const isExplicitDemo =
+    typeof window !== "undefined" &&
+    window.localStorage?.getItem("fardgram_demo_mode") === "true";
+
   return new MockTelegramTransport({
-    authFlow: true,
+    authFlow: isExplicitDemo ? false : undefined,
     connectionStatus: mockConnectionStatus(),
     initialTyping: mockInitialTyping(),
     blockedSenderCount: mockBlockedSenderCount(),
