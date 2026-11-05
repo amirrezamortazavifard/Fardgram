@@ -1442,15 +1442,15 @@ describe("telegram store", () => {
     await store.getState().initialize();
 
     const replied = await store.getState().sendMessage(
-      "收到，我会跟进",
+      "Got it, I'll follow up",
       "p-4",
-      { text: "交互稿", position: 2 },
+      { text: "interactive spec", position: 14 },
     );
     const reply = store.getState().messages.get("chat-product")?.at(-1);
     expect(replied).toBe(true);
     expect(reply).toMatchObject({
-      content: { kind: "text", text: "收到，我会跟进" },
-      replyTo: { kind: "message", messageId: "p-4", quote: "交互稿" },
+      content: { kind: "text", text: "Got it, I'll follow up" },
+      replyTo: { kind: "message", messageId: "p-4", quote: "interactive spec" },
     });
 
     const edited = await store.getState().editMessage("p-2", "调整后的消息内容");
@@ -1473,7 +1473,7 @@ describe("telegram store", () => {
     const deletedReply = await store.getState().deleteMessage(reply!.id, true);
     expect(deletedReply).toBe(true);
     expect(store.getState().chats.get("chat-product")?.preview)
-      .toBe("这是昨晚导出的交互录屏，麻烦确认最后一段。");
+      .toBe("Screen recording of the new animated navigation flow. Take a look at the transition.");
   });
 
   it("forwards multiple messages to another chat with original source metadata", async () => {
@@ -2824,7 +2824,7 @@ describe("telegram store", () => {
     expect(store.getState().activeChatId).toBe("chat-forum");
     expect(store.getState().activeTopicId).toBe("12");
     expect(store.getState().forumTopics.get("chat-forum")?.find((topic) => topic.id === "12")?.name)
-      .toBe("构建与发布");
+      .toBe("Build & Release");
     expect(store.getState().cacheHealth).toBe("healthy");
 
     transport.release();
@@ -3976,9 +3976,9 @@ describe("chat filtering", () => {
     expect(transport.calls).toBe(1);
     expect(first).toBe(second);
     release();
-    await expect(first).resolves.toEqual({ self: "群主", "u-mia": "管理员" });
+    await expect(first).resolves.toEqual({ self: "Owner", "u-mia": "Admin" });
     await expect(store.getState().loadChatAdministratorLabels("chat-product"))
-      .resolves.toEqual({ self: "群主", "u-mia": "管理员" });
+      .resolves.toEqual({ self: "Owner", "u-mia": "Admin" });
     expect(transport.calls).toBe(1);
   });
 

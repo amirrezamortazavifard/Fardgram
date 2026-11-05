@@ -51,8 +51,8 @@ describe("profile transport", () => {
       "member",
       "member",
     ]);
-    expect(bot).toMatchObject({ isBot: true, statusLabel: "机器人" });
-    expect(administratorLabels).toEqual({ self: "群主", "u-mia": "管理员" });
+    expect(bot).toMatchObject({ isBot: true, statusLabel: "Bot" });
+    expect(administratorLabels).toEqual({ self: "Owner", "u-mia": "Admin" });
     expect(contacts.map(({ id }) => id)).toContain("u-jules");
     expect(privateChat).toMatchObject({ kind: "direct", peerId: "u-jules" });
   });

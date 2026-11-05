@@ -109,8 +109,8 @@ describe("chat management", () => {
     management = await transport.getChatManagement(chat.id);
     expect(management.members.find((member) => member.user.id === "u-mia")?.status).toBe("owner");
     const log = await transport.getChatEventLog({ chatId: chat.id });
-    expect(log.events.map((event) => event.summary)).toContain("设置慢速模式：30 秒");
-    expect(log.events.some((event) => event.summary.startsWith("转移所有者给"))).toBe(true);
+    expect(log.events.map((event) => event.summary)).toContain("Set slow mode: 30s");
+    expect(log.events.some((event) => event.summary.startsWith("Transferred ownership to:"))).toBe(true);
   });
 
   it("adds, bans, and restores members", async () => {
