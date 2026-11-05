@@ -1,4 +1,5 @@
 import type {
+  MessageSchedulingState,
   MessageFileState,
   DeleteMessageInput,
   EditMessageInput,
@@ -231,6 +232,9 @@ export interface TelegramTransport {
   sendMessage(input: SendMessageInput): Promise<void>;
   editMessage(input: EditMessageInput): Promise<void>;
   deleteMessage(input: DeleteMessageInput): Promise<void>;
+  getChatScheduledMessages(chatId: string): Promise<Message[]>;
+  sendScheduledMessages(chatId: string, messageIds: string[]): Promise<void>;
+  editMessageSchedulingState(chatId: string, messageId: string, schedulingState: MessageSchedulingState): Promise<void>;
   forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult>;
   sendMediaCopy(input: SendMediaCopyInput): Promise<void>;
   setChatDraft(input: SetChatDraftInput): Promise<void>;

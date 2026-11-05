@@ -5,11 +5,13 @@ export interface ConversationSendContext {
   topicId?: string;
   discussionThreadId?: string;
   clearDraft?: boolean;
+  schedulingState?: import("../telegram/types").MessageSchedulingState;
 }
 
 export interface DiscussionSendOptions {
   threadId?: string;
   disableNotification?: boolean;
+  schedulingState?: import("../telegram/types").MessageSchedulingState;
 }
 import type { CacheHealth } from "./telegramStore.cache";
 import type { GlobalSearchState } from "./globalSearchState";
@@ -156,6 +158,7 @@ export interface TelegramState {
   chatListReady: boolean;
   chatLists: Map<string, ChatListState>;
   messages: Map<string, Message[]>;
+  scheduledMessages: Map<string, Message[]>;
   sponsoredMessages: Map<string, ChatSponsoredMessages>;
   subscribeMessageChanges: (listener: MessageChangeListener) => () => void;
   removingMessages: Map<string, Message[]>;
@@ -459,6 +462,10 @@ export interface TelegramState {
   cancelFileUpload: (messageId: string, chatId?: string) => Promise<void>;
   openMiniApp: (input: { url: string; title?: string; botUsername?: string; botUserId?: string; chatId?: string }) => Promise<void>;
   closeMiniApp: () => Promise<void>;
+  loadScheduledMessages: (chatId: string) => Promise<void>;
+  sendScheduledMessagesImmediately: (chatId: string, messageIds: string[]) => Promise<boolean>;
+  rescheduleMessage: (chatId: string, messageId: string, schedulingState: import("../telegram/types").MessageSchedulingState) => Promise<boolean>;
+  deleteScheduledMessage: (chatId: string, messageId: string) => Promise<boolean>;
   clearError: () => void;
   clearOperationError: () => void;
 }

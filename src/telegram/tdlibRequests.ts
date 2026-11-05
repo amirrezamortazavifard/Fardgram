@@ -3,6 +3,7 @@ import { inputTextEntityType } from "./tdlibTextEntities";
 import { asTdObject, tdChatListId, tdNumber, type TdObject } from "./tdlibMapper";
 import type {
   AuthorizationState,
+  MessageSchedulingState,
   MessageTextEntity,
   ProxyEndpoint,
   ProxyProfile,
@@ -49,15 +50,38 @@ export const inputMessageText = (text: string | TdObject, clearDraft: boolean): 
   clear_draft: clearDraft,
 });
 
-export const messageSendOptions = (disableNotification = false): TdObject | null => disableNotification ? ({
-  "@type": "messageSendOptions",
-  disable_notification: disableNotification,
-  from_background: false,
-  protect_content: false,
-  update_order_of_installed_sticker_sets: false,
-  scheduling_state: null,
-  paid_message_star_count: 0,
-}) : null;
+export const messageSchedulingStateObject = (state?: MessageSchedulingState): TdObject | null => {
+  if (!state) return null;
+  if (state.kind === "atDate") {
+    return {
+      "@type": "messageSchedulingStateSendAtDate",
+      send_date: Math.floor(state.sendDate),
+    };
+  }
+  if (state.kind === "whenOnline") {
+    return {
+      "@type": "messageSchedulingStateSendWhenOnline",
+    };
+  }
+  return null;
+};
+
+export const messageSendOptions = (
+  disableNotification = false,
+  schedulingState?: MessageSchedulingState
+): TdObject | null => {
+  const schedulingObj = messageSchedulingStateObject(schedulingState);
+  if (!disableNotification && !schedulingObj) return null;
+  return {
+    "@type": "messageSendOptions",
+    disable_notification: disableNotification,
+    from_background: false,
+    protect_content: false,
+    update_order_of_installed_sticker_sets: false,
+    scheduling_state: schedulingObj,
+    paid_message_star_count: 0,
+  };
+};
 
 export const listObject = (type: "chatListMain" | "chatListArchive") => ({
   "@type": type,

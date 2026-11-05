@@ -1632,6 +1632,14 @@ export const mapTdMessage = (raw: TdObject, options: { isChannel?: boolean } = {
     containsUnreadMention: raw.contains_unread_mention === true,
     containsUnreadReaction: Array.isArray(raw.unread_reactions) && raw.unread_reactions.length > 0,
     ...(unreadReactions.length > 0 ? { unreadReactions } : {}),
+    ...(raw.is_scheduled === true ? { isScheduled: true } : {}),
+    ...(asTdObject(raw.scheduling_state)
+      ? asTdObject(raw.scheduling_state)?.["@type"] === "messageSchedulingStateSendAtDate"
+        ? { schedulingState: { kind: "atDate" as const, sendDate: tdNumber(asTdObject(raw.scheduling_state)?.send_date) ?? 0 } }
+        : asTdObject(raw.scheduling_state)?.["@type"] === "messageSchedulingStateSendWhenOnline"
+          ? { schedulingState: { kind: "whenOnline" as const } }
+          : {}
+      : {}),
     content,
   };
 };

@@ -1131,6 +1131,7 @@ export const createTelegramStore = (
         chatListReady: false,
         chatLists: new Map(),
         messages: new Map(),
+        scheduledMessages: new Map(),
         sponsoredMessages: new Map(),
         removingMessages: new Map(),
         unreadAttentionMessageIds: new Map(),
@@ -2239,6 +2240,30 @@ export const createTelegramStore = (
         return;
       }
 
+      if (event.type === "scheduledMessage.upsert") {
+        const next = new Map(get().scheduledMessages);
+        const list = [...(next.get(event.message.chatId) ?? [])];
+        const existingIdx = list.findIndex(m => m.id === event.message.id);
+        if (existingIdx >= 0) {
+          list[existingIdx] = event.message;
+        } else {
+          list.push(event.message);
+        }
+        next.set(event.message.chatId, list);
+        set({ scheduledMessages: next });
+        return;
+      }
+
+      if (event.type === "scheduledMessage.remove") {
+        const next = new Map(get().scheduledMessages);
+        const list = next.get(event.chatId);
+        if (list) {
+          next.set(event.chatId, list.filter(m => m.id !== event.messageId));
+          set({ scheduledMessages: next });
+        }
+        return;
+      }
+
       if (event.type === "messages.upserted") {
         if (event.messages.length === 0) return;
         const mergeStartedAt = isPerformanceMonitoringEnabled() ? performance.now() : undefined;
@@ -2647,6 +2672,7 @@ export const createTelegramStore = (
       chatListReady: false,
       chatLists: new Map(),
       messages: new Map(),
+      scheduledMessages: new Map(),
       sponsoredMessages: new Map(),
       subscribeMessageChanges: (listener) => {
         messageChangeListeners.add(listener);
@@ -5087,6 +5113,9 @@ export const createTelegramStore = (
             return false;
           }
         };
+        if (context?.schedulingState && !connectionPresentation(get().connectionStatus).operational) {
+          throw new Error(translate("网络不可用，无法设置定时发送"));
+        }
         if (!connectionPresentation(get().connectionStatus).operational) return queueMessage();
         if (clearDraft) await draftSync.flush(draftKey);
         if (sendGeneration !== accountGeneration) return false;
@@ -5101,6 +5130,7 @@ export const createTelegramStore = (
             replyQuote: replyToMessageId ? replyQuote : undefined,
             disableNotification,
             clearDraft,
+            schedulingState: context?.schedulingState,
           });
           if (sendGeneration !== accountGeneration) return false;
           if (clearGeneration !== undefined) draftSync.markAwaitingAck(draftKey, clearGeneration);
@@ -5521,6 +5551,9 @@ export const createTelegramStore = (
             return false;
           }
         };
+        if (context?.schedulingState && !connectionPresentation(get().connectionStatus).operational) {
+          throw new Error(translate("网络不可用，无法设置定时发送"));
+        }
         if (!connectionPresentation(get().connectionStatus).operational) return queueFiles(attachments);
         const accepted = new Set<(typeof attachments)[number]>();
         try {
@@ -5533,6 +5566,7 @@ export const createTelegramStore = (
             replyToMessageId,
             replyQuote: replyToMessageId ? replyQuote : undefined,
             disableNotification,
+            schedulingState: context?.schedulingState,
             onGroupAccepted: async group => { group.forEach(attachment => accepted.add(attachment)); },
           });
           if (sendGeneration !== accountGeneration) return false;
@@ -5626,6 +5660,66 @@ export const createTelegramStore = (
           }
         }
         set({ activeMiniApp: undefined });
+      },
+
+      loadScheduledMessages: async (chatId: string) => {
+        try {
+          const list = await transport.getChatScheduledMessages(chatId);
+          const next = new Map(get().scheduledMessages);
+          next.set(chatId, list);
+          set({ scheduledMessages: next, operationError: undefined });
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法加载定时消息")) });
+        }
+      },
+
+      sendScheduledMessagesImmediately: async (chatId: string, messageIds: string[]) => {
+        try {
+          await transport.sendScheduledMessages(chatId, messageIds);
+          const next = new Map(get().scheduledMessages);
+          const list = next.get(chatId);
+          if (list) {
+            next.set(chatId, list.filter(m => !messageIds.includes(m.id)));
+            set({ scheduledMessages: next, operationError: undefined });
+          }
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法立即发送定时消息")) });
+          return false;
+        }
+      },
+
+      rescheduleMessage: async (chatId: string, messageId: string, schedulingState: import("../telegram/types").MessageSchedulingState) => {
+        try {
+          await transport.editMessageSchedulingState(chatId, messageId, schedulingState);
+          const next = new Map(get().scheduledMessages);
+          const list = next.get(chatId);
+          if (list) {
+            const updated = list.map(m => m.id === messageId ? { ...m, schedulingState } : m);
+            next.set(chatId, updated);
+            set({ scheduledMessages: next, operationError: undefined });
+          }
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法修改定时发送时间")) });
+          return false;
+        }
+      },
+
+      deleteScheduledMessage: async (chatId: string, messageId: string) => {
+        try {
+          await transport.deleteMessage({ chatId, messageId, revoke: true });
+          const next = new Map(get().scheduledMessages);
+          const list = next.get(chatId);
+          if (list) {
+            next.set(chatId, list.filter(m => m.id !== messageId));
+            set({ scheduledMessages: next, operationError: undefined });
+          }
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法取消定时消息")) });
+          return false;
+        }
       },
 
       clearError: () => set({ error: undefined }),

@@ -6,6 +6,7 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Scheduled Messages, Posts & Send When Online (FG-005)**: Full TDLib scheduling integration (`getChatScheduledMessages`, `sendScheduledMessages`, `editMessageSchedulingState`, `messageSendOptions` with `messageSchedulingStateSendAtDate` and `messageSchedulingStateSendWhenOnline`), native Rust security request whitelist validation, schedule trigger on message send button context menu, scheduled counter badge, and dedicated `ScheduleMessageDialog` and `ScheduledMessagesDialog` with dual-theme design.
 - **Telegram Mini Apps (FG-004)**: Secure desktop in-app WebView runtime (`fardgram_open_mini_app`, `fardgram_close_mini_app`) isolated from Tauri IPC capabilities, with Telegram WebApp proxy initialization script, bot launch authorization via TDLib `openWebApp`, mock fallback modal, and inline keyboard button integration.
 
 ## [0.6.0] - 2026-10-12

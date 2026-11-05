@@ -18,6 +18,7 @@ export interface TdUpdateHandlers {
   updateChatList: (update: TdObject, added: boolean) => void;
   updateForumTopic: (update: TdObject) => void;
   emitMessage: (message?: TdObject, animateEntrance?: boolean) => void;
+  emitScheduledMessage?: (message?: TdObject) => void;
   replaceSentMessage: (update: TdObject) => void;
   updateMessageContent: (update: TdObject) => void;
   updatePendingMessage: (update: TdObject) => void;
@@ -145,6 +146,9 @@ export const routeTdUpdate = (update: TdObject, handlers: TdUpdateHandlers) => {
       return;
     case "updateNewMessage":
       handlers.emitMessage(asTdObject(update.message), true);
+      return;
+    case "updateNewScheduledMessage":
+      handlers.emitScheduledMessage?.(asTdObject(update.message));
       return;
     case "updateMessageSendSucceeded":
     case "updateMessageSendFailed":

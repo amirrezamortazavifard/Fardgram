@@ -138,7 +138,7 @@ The order below is the recommended delivery sequence. It can be changed only whe
 - [ ] **FG-002 — Group calls, voice chats and screen sharing** `[BLOCKED_BY_TDLIB: Depends on FG-001 tgcalls integration]`
 - [ ] **FG-003 — Stories: viewing, publishing and management** `[BLOCKED_BY_TDLIB: Pinned TDLib 022d6020 lacks stories API (requires TDLib 1.8.16+)]`
 - [x] **FG-004 — Telegram Mini Apps: secure in-app WebView runtime**
-- [ ] **FG-005 — Scheduled messages, scheduled posts and Send When Online**
+- [x] **FG-005 — Scheduled messages, scheduled posts and Send When Online**
 - [ ] **FG-006 — View Once / self-destructing media parity**
 - [ ] **FG-007 — Photo, video and GIF editor before sending**
 

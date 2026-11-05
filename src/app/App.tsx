@@ -2190,7 +2190,9 @@ export function App() {
           chatManagementPending={activeChatId
             ? chatManagementPending.has(activeChatId)
             : false}
-          onSendMessage={sendMessage}
+          onSendMessage={(text, replyToMessageId, replyQuote, entities, disableNotification, schedulingState) =>
+            sendMessage(text, replyToMessageId, replyQuote, entities, disableNotification, { chatId: activeChatId ?? "", schedulingState })
+          }
           onEditMessage={editMessage}
           onDeleteMessage={deleteMessage}
           onDraftChange={updateChatDraft}
@@ -2217,7 +2219,9 @@ export function App() {
           onStreamFile={streamFile}
           onSuspendFileStream={suspendFileStream}
           onRetryMessage={retryMessage}
-          onSendFiles={sendFiles}
+          onSendFiles={(attachments, caption, captionEntities, replyToMessageId, replyQuote, disableNotification, schedulingState) =>
+            sendFiles(attachments, caption, captionEntities, replyToMessageId, replyQuote, disableNotification, { chatId: activeChatId ?? "", schedulingState })
+          }
           onCancelFileUpload={cancelFileUpload}
           onLoadOlder={() => activeChatId ? loadMoreHistory(activeChatId) : Promise.resolve()}
           onOpenProfile={() => { if (activeChatId) void loadChatProfile(activeChatId); }}

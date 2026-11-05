@@ -51,6 +51,7 @@ import type {
   CreateChatInput,
   DeleteMessageInput,
   EditMessageInput,
+  MessageSchedulingState,
   EmojiPickerAsset,
   EmojiPickerCatalog,
   ForwardMessagesInput,
@@ -455,6 +456,8 @@ export class MockTelegramTransport implements TelegramTransport {
       httpOnly: false,
     },
   };
+
+  private mockScheduledMessages = new Map<string, Message[]>();
 
   private folderTitle(title: string) {
     try {
@@ -2398,7 +2401,7 @@ export class MockTelegramTransport implements TelegramTransport {
     };
   }
 
-  async sendMessage({ chatId, topicId, text, entities, replyToMessageId, replyQuote, clearDraft = true }: SendMessageInput) {
+  async sendMessage({ chatId, topicId, text, entities, replyToMessageId, replyQuote, clearDraft = true, schedulingState }: SendMessageInput) {
     const replyTarget = replyToMessageId
       ? this.snapshot.messages.find(
           (message) => message.chatId === chatId && message.topicId === topicId && message.id === replyToMessageId,
@@ -2417,6 +2420,37 @@ export class MockTelegramTransport implements TelegramTransport {
         replyQuote.position + replyQuote.text.length,
       ) !== replyQuote.text)
     ) throw new Error("Quote text does not match original message");
+
+    if (schedulingState) {
+      const scheduledMessage: Message = {
+        id: crypto.randomUUID(),
+        chatId,
+        topicId,
+        senderId: this.snapshot.currentUserId,
+        outgoing: true,
+        sentAt: new Date().toISOString(),
+        delivery: "sent",
+        isScheduled: true,
+        schedulingState,
+        replyTo: replyTarget
+          ? {
+              kind: "message",
+              chatId,
+              messageId: replyTarget.id,
+              quote: replyQuote?.text,
+              content: clone(replyTarget.content),
+            }
+          : undefined,
+        content: { kind: "text", text, ...(entities?.length ? { entities } : {}) },
+      };
+      const current = this.mockScheduledMessages.get(chatId) ?? [];
+      current.push(scheduledMessage);
+      this.mockScheduledMessages.set(chatId, current);
+      this.listener?.({ type: "scheduledMessage.upsert", message: clone(scheduledMessage) });
+      if (clearDraft) await this.setChatDraft({ chatId, topicId, text: "" });
+      return;
+    }
+
     this.appendMessage({
       id: crypto.randomUUID(),
       chatId,
@@ -2456,6 +2490,16 @@ export class MockTelegramTransport implements TelegramTransport {
   }
 
   async deleteMessage({ chatId, messageId }: DeleteMessageInput) {
+    const scheduledList = this.mockScheduledMessages.get(chatId);
+    if (scheduledList) {
+      const scheduledIdx = scheduledList.findIndex((item) => item.id === messageId);
+      if (scheduledIdx >= 0) {
+        scheduledList.splice(scheduledIdx, 1);
+        this.listener?.({ type: "scheduledMessage.remove", chatId, messageId });
+        return;
+      }
+    }
+
     const index = this.snapshot.messages.findIndex(
       (item) => item.chatId === chatId && item.id === messageId,
     );
@@ -2463,6 +2507,42 @@ export class MockTelegramTransport implements TelegramTransport {
     this.snapshot.messages.splice(index, 1);
     this.listener?.({ type: "message.remove", chatId, messageId });
     this.refreshChatPreview(chatId);
+  }
+
+  async getChatScheduledMessages(chatId: string): Promise<Message[]> {
+    return clone(this.mockScheduledMessages.get(chatId) ?? []);
+  }
+
+  async sendScheduledMessages(chatId: string, messageIds: string[]): Promise<void> {
+    const list = this.mockScheduledMessages.get(chatId) ?? [];
+    const toSend: Message[] = [];
+    const remaining: Message[] = [];
+    for (const msg of list) {
+      if (messageIds.includes(msg.id)) {
+        toSend.push(msg);
+      } else {
+        remaining.push(msg);
+      }
+    }
+    this.mockScheduledMessages.set(chatId, remaining);
+    for (const msg of toSend) {
+      this.listener?.({ type: "scheduledMessage.remove", chatId, messageId: msg.id });
+      const delivered: Message = {
+        ...msg,
+        isScheduled: false,
+        schedulingState: undefined,
+        sentAt: new Date().toISOString(),
+      };
+      this.appendMessage(delivered);
+    }
+  }
+
+  async editMessageSchedulingState(chatId: string, messageId: string, schedulingState: MessageSchedulingState): Promise<void> {
+    const list = this.mockScheduledMessages.get(chatId) ?? [];
+    const msg = list.find((m) => m.id === messageId);
+    if (!msg) throw new Error("Scheduled message not found");
+    msg.schedulingState = schedulingState;
+    this.listener?.({ type: "scheduledMessage.upsert", message: clone(msg) });
   }
 
   async forwardMessages({ fromChatId, toChatId, toTopicId, messageIds }: ForwardMessagesInput): Promise<ForwardMessagesResult> {
@@ -2631,6 +2711,7 @@ export class MockTelegramTransport implements TelegramTransport {
     replyToMessageId,
     replyQuote,
     onGroupAccepted,
+    schedulingState,
   }: SendFilesInput) {
     if (attachments.length === 0) return false;
     for (const [groupIndex, group] of groupOutgoingAttachments(attachments).entries()) {
@@ -2640,7 +2721,7 @@ export class MockTelegramTransport implements TelegramTransport {
         const { file, kind } = attachment;
         const isMedia = kind !== "document";
         const preview = kind === "photo" ? await previewDataUrl(file) : undefined;
-        this.appendMessage({
+        const msg: Message = {
           id: crypto.randomUUID(),
           chatId,
           topicId,
@@ -2649,6 +2730,7 @@ export class MockTelegramTransport implements TelegramTransport {
           outgoing: true,
           sentAt: new Date().toISOString(),
           delivery: "sent",
+          ...(schedulingState ? { isScheduled: true, schedulingState } : {}),
           replyTo: replyToMessageId
             ? {
                 kind: "message",
@@ -2681,7 +2763,15 @@ export class MockTelegramTransport implements TelegramTransport {
                 caption: groupIndex === 0 && index === captionIndex ? caption : undefined,
                 captionEntities: groupIndex === 0 && index === captionIndex ? captionEntities : undefined,
               },
-        });
+        };
+        if (schedulingState) {
+          const list = this.mockScheduledMessages.get(chatId) ?? [];
+          list.push(msg);
+          this.mockScheduledMessages.set(chatId, list);
+          this.listener?.({ type: "scheduledMessage.upsert", message: clone(msg) });
+        } else {
+          this.appendMessage(msg);
+        }
       }
       await onGroupAccepted?.(group);
     }

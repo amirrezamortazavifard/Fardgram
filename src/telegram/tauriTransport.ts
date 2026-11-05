@@ -50,6 +50,7 @@ import {
   listObject,
   mapAuthorizationState,
   forumTopicObject,
+  messageSchedulingStateObject,
   numericId,
   proxyValue,
 } from "./tdlibRequests";
@@ -128,6 +129,7 @@ import type {
   CreateForumTopicInput,
   Message,
   MessagePermissions,
+  MessageSchedulingState,
   PinMessageInput,
   ConnectionStatus,
   CreateChatInput,
@@ -502,6 +504,7 @@ export class TauriTelegramTransport implements TelegramTransport {
     updateChatList: (update, added) => this.updateChatList(update, added),
     updateForumTopic: (update) => this.updateForumTopic(update),
     emitMessage: (message, animateEntrance) => this.emitMessage(message, animateEntrance),
+    emitScheduledMessage: (message) => this.emitScheduledMessage(message),
     replaceSentMessage: (update) => this.replaceSentMessage(update),
     updateMessageContent: (update) => this.updateMessageContent(update),
     updatePendingMessage: (update) => this.updatePendingMessage(update),
@@ -2331,6 +2334,36 @@ export class TauriTelegramTransport implements TelegramTransport {
     }
   }
 
+  async getChatScheduledMessages(chatId: string): Promise<Message[]> {
+    const response = await this.request({
+      "@type": "getChatScheduledMessages",
+      chat_id: numericId(chatId),
+    });
+    if (response["@type"] === "messages" && Array.isArray(response.messages)) {
+      return response.messages
+        .map((msg: TdObject) => this.mapMessage({ ...msg, is_scheduled: true }))
+        .filter((msg): msg is Message => Boolean(msg));
+    }
+    return [];
+  }
+
+  async sendScheduledMessages(chatId: string, messageIds: string[]): Promise<void> {
+    await this.request({
+      "@type": "sendScheduledMessages",
+      chat_id: numericId(chatId),
+      message_ids: messageIds.map(numericId),
+    });
+  }
+
+  async editMessageSchedulingState(chatId: string, messageId: string, schedulingState: MessageSchedulingState): Promise<void> {
+    await this.request({
+      "@type": "editMessageSchedulingState",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
+      scheduling_state: messageSchedulingStateObject(schedulingState),
+    });
+  }
+
   async forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult> {
     return this.messageMediaService.forwardMessages(input);
   }
@@ -3418,8 +3451,22 @@ export class TauriTelegramTransport implements TelegramTransport {
     }
   }
 
+  private emitScheduledMessage(raw?: TdObject) {
+    if (!raw) return;
+    const message = this.mapMessage({ ...raw, is_scheduled: true });
+    if (!message) return;
+    this.listener?.({
+      type: "scheduledMessage.upsert",
+      message,
+    });
+  }
+
   private emitMessage(raw?: TdObject, animateEntrance = false, cacheRelevant = true) {
     if (!raw) return;
+    if (raw.is_scheduled === true) {
+      this.emitScheduledMessage(raw);
+      return;
+    }
     raw = this.preserveNewerMessageContent(this.canonicalizeRawMessage(raw));
     const messagePatchKey = `${tdId(raw.chat_id)}:${tdId(raw.id)}`;
     const pendingPatch = this.pendingMessagePatches.get(messagePatchKey);
@@ -4008,6 +4055,16 @@ export class TauriTelegramTransport implements TelegramTransport {
   private deleteMessages(update: TdObject) {
     const chatId = this.canonicalChatId(tdId(update.chat_id));
     const ids = Array.isArray(update.message_ids) ? update.message_ids.map(tdId) : [];
+    if (update.is_scheduled === true) {
+      for (const messageId of ids) {
+        this.listener?.({
+          type: "scheduledMessage.remove",
+          chatId,
+          messageId,
+        });
+      }
+      return;
+    }
     if (update.from_cache === true && update.is_permanent !== true) return;
     for (const messageId of ids) {
       const key = `${chatId}:${messageId}`;

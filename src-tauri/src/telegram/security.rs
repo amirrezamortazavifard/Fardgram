@@ -41,12 +41,14 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "editForumTopic",
     "editMessageText",
     "editMessageCaption",
+    "editMessageSchedulingState",
     "editChatInviteLink",
     "editChatSubscriptionInviteLink",
     "forwardMessages",
     "getChat",
     "getChatFolder",
     "getChatHistory",
+    "getChatScheduledMessages",
     "getChatSponsoredMessages",
     "getMessageThread",
     "getMessageThreadHistory",
@@ -117,6 +119,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "searchPublicChats",
     "sendChatAction",
     "sendMessage",
+    "sendScheduledMessages",
     "sendInlineQueryResultMessage",
     "sendBotStartMessage",
     "setBio",
@@ -988,6 +991,21 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                 return Err("Unsupported chat search filter".to_string());
             }
         }
+        "getChatScheduledMessages" => {
+            validate_nonzero_identifier(request, "chat_id")?;
+        }
+        "sendScheduledMessages" => {
+            validate_nonzero_identifier(request, "chat_id")?;
+            validate_message_ids(request, "message_ids", 100)?;
+        }
+        "editMessageSchedulingState" => {
+            validate_nonzero_identifier(request, "chat_id")?;
+            validate_nonzero_identifier(request, "message_id")?;
+            let scheduling_state = request
+                .get("scheduling_state")
+                .ok_or_else(|| "Scheduling state is missing".to_string())?;
+            validate_scheduling_state(scheduling_state)?;
+        }
         _ => {}
     }
     if request_type == "createPrivateChat"
@@ -1054,6 +1072,27 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                 return Err("Media must reference a valid Telegram file identifier".to_string());
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_scheduling_state(scheduling_state: &Value) -> Result<(), String> {
+    let state_type = scheduling_state
+        .get("@type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "Scheduling state @type is missing".to_string())?;
+    match state_type {
+        "messageSchedulingStateSendAtDate" => {
+            let send_date = scheduling_state
+                .get("send_date")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| "send_date is missing".to_string())?;
+            if send_date <= 0 {
+                return Err("send_date must be a positive integer".to_string());
+            }
+        }
+        "messageSchedulingStateSendWhenOnline" => {}
+        _ => return Err(format!("Unsupported scheduling state type: {state_type}")),
     }
     Ok(())
 }
@@ -2860,6 +2899,64 @@ mod tests {
         });
         assert!(validate_webview_tdlib_request(&invalid_open_web_app).is_err());
 
+        let valid_scheduled_messages = json!({
+            "@type": "getChatScheduledMessages",
+            "chat_id": 72,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_scheduled_messages).is_ok());
+
+        let valid_send_scheduled = json!({
+            "@type": "sendScheduledMessages",
+            "chat_id": 72,
+            "message_ids": [101, 102],
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_send_scheduled).is_ok());
+
+        let invalid_send_scheduled = json!({
+            "@type": "sendScheduledMessages",
+            "chat_id": 72,
+            "message_ids": [-1],
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_send_scheduled).is_err());
+
+        let valid_edit_scheduling_date = json!({
+            "@type": "editMessageSchedulingState",
+            "chat_id": 72,
+            "message_id": 101,
+            "scheduling_state": {
+                "@type": "messageSchedulingStateSendAtDate",
+                "send_date": 1800000000
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_edit_scheduling_date).is_ok());
+
+        let valid_edit_scheduling_online = json!({
+            "@type": "editMessageSchedulingState",
+            "chat_id": 72,
+            "message_id": 101,
+            "scheduling_state": {
+                "@type": "messageSchedulingStateSendWhenOnline"
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_edit_scheduling_online).is_ok());
+
+        let invalid_edit_scheduling = json!({
+            "@type": "editMessageSchedulingState",
+            "chat_id": 72,
+            "message_id": 101,
+            "scheduling_state": {
+                "@type": "messageSchedulingStateSendAtDate",
+                "send_date": -5
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_edit_scheduling).is_err());
+
         let photo = crate::storage::UploadFileInfo {
             path: "C:\\selected\\photo.jpg".to_string(),
             size: 2_000_000,
@@ -3088,6 +3185,64 @@ mod tests {
         });
         assert!(validate_webview_tdlib_request(&invalid_open_web_app).is_err());
 
+        let valid_scheduled_messages = json!({
+            "@type": "getChatScheduledMessages",
+            "chat_id": 72,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_scheduled_messages).is_ok());
+
+        let valid_send_scheduled = json!({
+            "@type": "sendScheduledMessages",
+            "chat_id": 72,
+            "message_ids": [101, 102],
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_send_scheduled).is_ok());
+
+        let invalid_send_scheduled = json!({
+            "@type": "sendScheduledMessages",
+            "chat_id": 72,
+            "message_ids": [-1],
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_send_scheduled).is_err());
+
+        let valid_edit_scheduling_date = json!({
+            "@type": "editMessageSchedulingState",
+            "chat_id": 72,
+            "message_id": 101,
+            "scheduling_state": {
+                "@type": "messageSchedulingStateSendAtDate",
+                "send_date": 1800000000
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_edit_scheduling_date).is_ok());
+
+        let valid_edit_scheduling_online = json!({
+            "@type": "editMessageSchedulingState",
+            "chat_id": 72,
+            "message_id": 101,
+            "scheduling_state": {
+                "@type": "messageSchedulingStateSendWhenOnline"
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_edit_scheduling_online).is_ok());
+
+        let invalid_edit_scheduling = json!({
+            "@type": "editMessageSchedulingState",
+            "chat_id": 72,
+            "message_id": 101,
+            "scheduling_state": {
+                "@type": "messageSchedulingStateSendAtDate",
+                "send_date": -5
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_edit_scheduling).is_err());
+
         let photo = crate::storage::UploadFileInfo {
             path: "C:\\selected\\avatar.jpg".to_string(),
             size: 2_000_000,
@@ -3283,6 +3438,64 @@ mod tests {
             "@extra": EXTRA
         });
         assert!(validate_webview_tdlib_request(&invalid_open_web_app).is_err());
+
+        let valid_scheduled_messages = json!({
+            "@type": "getChatScheduledMessages",
+            "chat_id": 72,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_scheduled_messages).is_ok());
+
+        let valid_send_scheduled = json!({
+            "@type": "sendScheduledMessages",
+            "chat_id": 72,
+            "message_ids": [101, 102],
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_send_scheduled).is_ok());
+
+        let invalid_send_scheduled = json!({
+            "@type": "sendScheduledMessages",
+            "chat_id": 72,
+            "message_ids": [-1],
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_send_scheduled).is_err());
+
+        let valid_edit_scheduling_date = json!({
+            "@type": "editMessageSchedulingState",
+            "chat_id": 72,
+            "message_id": 101,
+            "scheduling_state": {
+                "@type": "messageSchedulingStateSendAtDate",
+                "send_date": 1800000000
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_edit_scheduling_date).is_ok());
+
+        let valid_edit_scheduling_online = json!({
+            "@type": "editMessageSchedulingState",
+            "chat_id": 72,
+            "message_id": 101,
+            "scheduling_state": {
+                "@type": "messageSchedulingStateSendWhenOnline"
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_edit_scheduling_online).is_ok());
+
+        let invalid_edit_scheduling = json!({
+            "@type": "editMessageSchedulingState",
+            "chat_id": 72,
+            "message_id": 101,
+            "scheduling_state": {
+                "@type": "messageSchedulingStateSendAtDate",
+                "send_date": -5
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_edit_scheduling).is_err());
 
         let photo = crate::storage::UploadFileInfo {
             path: "C:\\selected\\group.jpg".to_string(),

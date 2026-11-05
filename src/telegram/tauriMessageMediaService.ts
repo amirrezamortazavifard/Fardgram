@@ -552,7 +552,7 @@ export class TauriMessageMediaService {
       chat_id: numericId(input.chatId),
       topic_id: forumTopicObject(input.topicId),
       reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
-      options: messageSendOptions(input.disableNotification),
+      options: messageSendOptions(input.disableNotification, input.schedulingState),
       reply_markup: null,
       input_message_content: {
         "@type": "inputMessageSticker",
@@ -575,7 +575,7 @@ export class TauriMessageMediaService {
       chat_id: numericId(input.chatId),
       topic_id: forumTopicObject(input.topicId),
       reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
-      options: messageSendOptions(input.disableNotification),
+      options: messageSendOptions(input.disableNotification, input.schedulingState),
       reply_markup: null,
       input_message_content: {
         "@type": "inputMessageAnimation",
@@ -608,7 +608,7 @@ export class TauriMessageMediaService {
       chat_id: numericId(input.chatId),
       topic_id: forumTopicObject(input.topicId),
       reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
-      options: messageSendOptions(input.disableNotification),
+      options: messageSendOptions(input.disableNotification, input.schedulingState),
       reply_markup: null,
       input_message_content: inputMessageText(text, input.clearDraft !== false),
     }).catch(error => { throw classifySendError(error); });

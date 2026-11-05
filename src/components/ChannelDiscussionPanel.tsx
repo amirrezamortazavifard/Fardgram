@@ -98,6 +98,7 @@ interface ChannelDiscussionPanelProps {
     replyQuote?: MessageReplyQuote,
     entities?: MessageTextEntity[],
     _disableNotification?: boolean,
+    schedulingState?: import("../telegram/types").MessageSchedulingState,
   ) => Promise<boolean>;
   onSendFiles: (
     attachments: OutgoingAttachment[],
@@ -106,6 +107,7 @@ interface ChannelDiscussionPanelProps {
     replyToMessageId?: string,
     replyQuote?: MessageReplyQuote,
     _disableNotification?: boolean,
+    schedulingState?: import("../telegram/types").MessageSchedulingState,
   ) => Promise<boolean>;
   onEditMessage: (
     messageId: string,

@@ -960,10 +960,16 @@ export interface MessageEditRevision {
   editedAt: string;
 }
 
+export type MessageSchedulingState =
+  | { kind: "atDate"; sendDate: number }
+  | { kind: "whenOnline" };
+
 export interface Message {
   canSave?: boolean;
   selfDestruct?: boolean;
   expiresAt?: string;
+  isScheduled?: boolean;
+  schedulingState?: MessageSchedulingState;
   id: string;
   renderKey?: string;
   chatId: string;
@@ -1160,6 +1166,8 @@ export type TelegramEvent =
       >;
     }
   | { type: "user.upsert"; user: User; cacheRelevant?: boolean }
+  | { type: "scheduledMessage.upsert"; message: Message }
+  | { type: "scheduledMessage.remove"; chatId: string; messageId: string }
   | { type: "sync.error"; message: string; fatal?: boolean };
 
 export interface SendMessageInput {
@@ -1171,6 +1179,7 @@ export interface SendMessageInput {
   replyQuote?: MessageReplyQuote;
   clearDraft?: boolean;
   disableNotification?: boolean;
+  schedulingState?: MessageSchedulingState;
 }
 
 export interface SendEmojiAssetInput {
@@ -1180,6 +1189,7 @@ export interface SendEmojiAssetInput {
   replyToMessageId?: string;
   replyQuote?: MessageReplyQuote;
   disableNotification?: boolean;
+  schedulingState?: MessageSchedulingState;
 }
 
 export interface EditMessageInput {
@@ -1282,6 +1292,7 @@ export interface SendFilesInput {
   replyToMessageId?: string;
   replyQuote?: MessageReplyQuote;
   disableNotification?: boolean;
+  schedulingState?: MessageSchedulingState;
 }
 
 export const TELEGRAM_ALBUM_MAX_ITEMS = 10;

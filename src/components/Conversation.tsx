@@ -136,6 +136,7 @@ import {
   type SelectionPointerPosition,
 } from "../utils/messageTextSelection";
 import { telegramStore, useTelegramStore } from "../store/telegramStore";
+import { ScheduledMessagesDialog } from "./ScheduledMessagesDialog";
 import { useLocalUserBlocks, useLocalHiddenUserIds } from "../store/localUserBlocks";
 import {
   isConversationSwitchActive,
@@ -312,6 +313,7 @@ interface ConversationProps {
     replyQuote?: MessageReplyQuote,
     entities?: MessageTextEntity[],
     disableNotification?: boolean,
+    schedulingState?: import("../telegram/types").MessageSchedulingState,
   ) => Promise<boolean>;
   onEditMessage: (
     messageId: string,
@@ -378,6 +380,7 @@ interface ConversationProps {
     replyToMessageId?: string,
     replyQuote?: MessageReplyQuote,
     disableNotification?: boolean,
+    schedulingState?: import("../telegram/types").MessageSchedulingState,
   ) => Promise<boolean>;
   onCancelFileUpload: (messageId: string, chatId?: string) => Promise<void>;
   onLoadOlder: () => Promise<void>;
@@ -599,6 +602,13 @@ export function Conversation({
   const refreshUnreadMentions = useTelegramStore(state => state.refreshUnreadMentions);
   const viewChannelMessages = useTelegramStore(state => state.viewChannelMessages);
   const authorizationReady = useTelegramStore(state => state.authorization.kind === "ready");
+  const scheduledMessages = useTelegramStore(state => state.scheduledMessages);
+  const loadScheduledMessages = useTelegramStore(state => state.loadScheduledMessages);
+  const sendScheduledMessagesImmediately = useTelegramStore(state => state.sendScheduledMessagesImmediately);
+  const rescheduleMessage = useTelegramStore(state => state.rescheduleMessage);
+  const deleteScheduledMessage = useTelegramStore(state => state.deleteScheduledMessage);
+  const [showScheduledModal, setShowScheduledModal] = useState(false);
+  const allowSendWhenOnline = Boolean(chat && chat.kind === "direct" && chat.peerId && !users.get(chat.peerId)?.isBot && chat.peerId !== currentUserId);
   const attentionNavigationRef = useRef(0);
   const [actionMenu, setActionMenu] = useState<{
     messageId: string;
@@ -664,6 +674,12 @@ export function Conversation({
       chatId: chat?.id,
     });
   }, [openMiniApp, chat?.title, chat?.username, chat?.id]);
+
+  useEffect(() => {
+    if (chat?.id && authorizationReady) {
+      void loadScheduledMessages(chat.id);
+    }
+  }, [chat?.id, authorizationReady, loadScheduledMessages]);
   const autoplayAnimations = usePreferencesStore((state) => autoplayAllowed(
     state.autoplayAnimations,
     state,
@@ -1621,6 +1637,7 @@ export function Conversation({
     selectedReplyQuote?: MessageReplyQuote,
     entities?: MessageTextEntity[],
     disableNotification?: boolean,
+    schedulingState?: import("../telegram/types").MessageSchedulingState,
   ) => {
     jumpToLatest("auto");
     const localReply = replyToMessageId
@@ -1640,6 +1657,7 @@ export function Conversation({
       localOnlyReply ? undefined : selectedReplyQuote,
       localOnlyReply ? [...(localQuote?.entities ?? []), ...(entities ?? []).map((entity) => ({ ...entity, offset: entity.offset + localReplyPrefix.length }))] : entities,
       disableNotification,
+      schedulingState,
     );
   }, [chat, forwardTargetsById, jumpToLatest, onSendMessage, users]);
 
@@ -1650,6 +1668,7 @@ export function Conversation({
     replyToMessageId?: string,
     selectedReplyQuote?: MessageReplyQuote,
     disableNotification?: boolean,
+    schedulingState?: import("../telegram/types").MessageSchedulingState,
   ) => {
     jumpToLatest("auto");
     const localOnlyReply = replyToMessageId
@@ -1662,6 +1681,7 @@ export function Conversation({
       localOnlyReply ? undefined : replyToMessageId,
       localOnlyReply ? undefined : selectedReplyQuote,
       disableNotification,
+      schedulingState,
     );
   }, [jumpToLatest, onSendFiles]);
 
@@ -3391,8 +3411,23 @@ export function Conversation({
         onSendBotStart={onSendBotStart}
         enableSilentSending={canPostChannel}
         onOpenAgent={onOpenAgent}
+        allowSendWhenOnline={allowSendWhenOnline}
+        scheduledMessageCount={scheduledMessages.get(chat.id)?.length ?? 0}
+        onOpenScheduledMessages={() => setShowScheduledModal(true)}
       />
       ) : null}
+
+      {showScheduledModal && (
+        <ScheduledMessagesDialog
+          chatTitle={chat.title}
+          messages={scheduledMessages.get(chat.id) ?? []}
+          allowSendWhenOnline={allowSendWhenOnline}
+          onSendNow={(messageIds) => sendScheduledMessagesImmediately(chat.id, messageIds)}
+          onReschedule={(messageId, state) => rescheduleMessage(chat.id, messageId, state)}
+          onDelete={(messageId) => deleteScheduledMessage(chat.id, messageId)}
+          onClose={() => setShowScheduledModal(false)}
+        />
+      )}
 
       <MotionPresence present={Boolean(deleteTarget)}>
         {deleteTarget?.permissions ? <DeleteMessagesDialog

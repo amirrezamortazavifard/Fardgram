@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   Bell,
   BellOff,
+  Calendar,
   Check,
   Edit3,
   FileText,
@@ -20,6 +21,7 @@ import {
   Video,
   Plus,
 } from "lucide-react";
+import { ScheduleMessageDialog } from "./ScheduleMessageDialog";
 import { AttachmentPickerMenu } from "./AttachmentPickerMenu";
 import { VoiceVideoRecorder, type RecordingKind } from "./VoiceVideoRecorder";
 import { useAgentStore } from "../agent/agentStore";
@@ -58,7 +60,7 @@ import { shortcutActionForEvent } from "../shortcuts/shortcuts";
 import { equalFormattedText } from "../utils/formattedText";
 import { useTelegramStore } from "../store/telegramStore";
 import { colorThemeForThemeId } from "../theme/theme";
-import type { AttachmentSendMode, BotCommandSuggestion, ConnectionStatus, InlineQueryResultPage, Message, MessageReplyQuote, MessageTextEntity, OutgoingAttachment, User } from "../telegram/types";
+import type { AttachmentSendMode, BotCommandSuggestion, ConnectionStatus, InlineQueryResultPage, Message, MessageReplyQuote, MessageSchedulingState, MessageTextEntity, OutgoingAttachment, User } from "../telegram/types";
 import { TELEGRAM_ALBUM_MAX_ITEMS } from "../telegram/types";
 import type { PhotoMessage } from "../utils/mediaViewerModel";
 import { motionLifecycleTiming } from "../utils/motionTokens";
@@ -112,7 +114,14 @@ interface ConversationComposerProps {
   failedQueuedMessageCount: number;
   queuedAttachmentCount: number;
   failedAttachmentCount: number;
-  onSendMessage: (text: string, replyToMessageId?: string, replyQuote?: MessageReplyQuote, entities?: MessageTextEntity[], disableNotification?: boolean) => Promise<boolean>;
+  onSendMessage: (
+    text: string,
+    replyToMessageId?: string,
+    replyQuote?: MessageReplyQuote,
+    entities?: MessageTextEntity[],
+    disableNotification?: boolean,
+    schedulingState?: MessageSchedulingState,
+  ) => Promise<boolean>;
   onEditMessage: (messageId: string, text: string, entities?: MessageTextEntity[]) => Promise<boolean>;
   onDraftChange: (chatId: string, text: string, replyToMessageId?: string, replyQuote?: MessageReplyQuote, entities?: MessageTextEntity[]) => void;
   onTypingChange: (chatId: string, typing: boolean) => Promise<void>;
@@ -123,6 +132,7 @@ interface ConversationComposerProps {
     replyToMessageId?: string,
     replyQuote?: MessageReplyQuote,
     disableNotification?: boolean,
+    schedulingState?: MessageSchedulingState,
   ) => Promise<boolean>;
   onCancelEditing: () => void;
   onCancelReply: () => void;
@@ -132,6 +142,9 @@ interface ConversationComposerProps {
   onSendBotStart: (botUserId: string, parameter?: string) => Promise<boolean>;
   enableSilentSending?: boolean;
   onOpenAgent?: () => void;
+  allowSendWhenOnline?: boolean;
+  scheduledMessageCount?: number;
+  onOpenScheduledMessages?: () => void;
 }
 
 const LOCAL_DRAFT_DELAY_MS = 750;
@@ -214,7 +227,12 @@ export const ConversationComposer = memo(function ConversationComposer({
   onSendBotStart,
   enableSilentSending = false,
   onOpenAgent,
+  allowSendWhenOnline = false,
+  scheduledMessageCount = 0,
+  onOpenScheduledMessages,
 }: ConversationComposerProps) {
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [showSendMenu, setShowSendMenu] = useState(false);
   const focusComposer = focus.request;
   useTranslation();
   const chatDraft = useTelegramStore((state) => state.drafts.get(draftKey));
@@ -1026,7 +1044,7 @@ export const ConversationComposer = memo(function ConversationComposer({
     focusComposer();
   }, [closeAttachmentPreviewSession, focusComposer, persistPendingAttachments, updateAttachmentOptions]);
 
-  const sendPendingAttachments = async () => {
+  const sendPendingAttachments = async (schedulingState?: MessageSchedulingState, forceDisableNotification?: boolean) => {
     if (editingMessage || sending || attachmentPending || pendingAttachments.length === 0) return;
     const restoreFocus = focus.capture();
     const caption = trimComposerFormattedText(draftRef.current, mentionEntitiesRef.current);
@@ -1051,7 +1069,8 @@ export const ConversationComposer = memo(function ConversationComposer({
         caption.entities,
         replyingTo?.id ?? chatDraft?.replyToMessageId,
         activeReplyQuote,
-        disableNotification,
+        forceDisableNotification ?? disableNotification,
+        schedulingState,
       );
       if (!sent) return;
       closeAttachmentPreviewSession();
@@ -1081,7 +1100,7 @@ export const ConversationComposer = memo(function ConversationComposer({
     }
   };
 
-  const submitMessage = async () => {
+  const submitMessage = async (schedulingState?: MessageSchedulingState, forceDisableNotification?: boolean) => {
     if (sending) return;
     const original = editingMessage?.content;
     const originalText = original?.kind === "text" ? original.text
@@ -1096,7 +1115,7 @@ export const ConversationComposer = memo(function ConversationComposer({
     }
     if (!editingMessage && pendingAttachments.length > 0) {
       closeEmojiPicker();
-      await sendPendingAttachments();
+      await sendPendingAttachments(schedulingState, forceDisableNotification);
       return;
     }
     const submitted = trimComposerFormattedText(draftRef.current, mentionEntitiesRef.current);
@@ -1163,7 +1182,8 @@ export const ConversationComposer = memo(function ConversationComposer({
       replyingTo?.id ?? chatDraft?.replyToMessageId,
       activeReplyQuote,
       submitted.entities,
-      disableNotification,
+      forceDisableNotification ?? disableNotification,
+      schedulingState,
     );
     setSending(false);
     if (sent) {
@@ -1883,6 +1903,39 @@ export const ConversationComposer = memo(function ConversationComposer({
           )}
         </div>
 
+        {scheduledMessageCount > 0 && (
+          <button
+            className="icon-button scheduled-messages-badge-btn"
+            type="button"
+            aria-label={`Scheduled messages (${scheduledMessageCount})`}
+            title={`Scheduled messages (${scheduledMessageCount})`}
+            onClick={onOpenScheduledMessages}
+            style={{ position: "relative" }}
+          >
+            <Calendar size={19} strokeWidth={2} />
+            <span
+              style={{
+                position: "absolute",
+                top: -2,
+                right: -2,
+                minWidth: 15,
+                height: 15,
+                padding: "0 3px",
+                borderRadius: 10,
+                fontSize: 9,
+                fontWeight: "bold",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#0284c7",
+                color: "#fff",
+              }}
+            >
+              {scheduledMessageCount}
+            </span>
+          </button>
+        )}
+
         {(!draft.trim() && !editingCaption && pendingAttachments.length === 0 && !editingMessage) ? (
           <div className="composer-record-actions">
             <button
@@ -1913,22 +1966,93 @@ export const ConversationComposer = memo(function ConversationComposer({
             </button>
           </div>
         ) : (
-          <button
-            className="send-button icon-button"
-            type="button"
-            aria-label={editingMessage ? translate("保存编辑") : translate("发送消息")}
-            title={editingMessage ? translate("保存编辑") : translate("发送消息")}
-            disabled={(!draft.trim() && !editingCaption && pendingAttachments.length === 0) || sending || attachmentPending}
-            onClick={() => void submitMessage()}
-          >
-            {showSending
-              ? <LoaderCircle className="spin" size={19} strokeWidth={1.8} />
-              : editingMessage
-                ? <Check size={19} strokeWidth={2.2} />
-                : <Send size={19} strokeWidth={2} />}
-          </button>
+          <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 4 }}>
+            {!editingMessage && (
+              <button
+                className="icon-button composer-schedule-trigger"
+                type="button"
+                aria-label="Schedule message"
+                title="Schedule message"
+                onClick={() => setShowScheduleDialog(true)}
+              >
+                <Calendar size={18} strokeWidth={2} className="text-sky-500" />
+              </button>
+            )}
+            <button
+              className="send-button icon-button"
+              type="button"
+              aria-label={editingMessage ? translate("保存编辑") : translate("发送消息")}
+              title={editingMessage ? translate("保存编辑") : translate("发送消息 (Right-click to schedule)")}
+              disabled={(!draft.trim() && !editingCaption && pendingAttachments.length === 0) || sending || attachmentPending}
+              onClick={() => void submitMessage()}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (!editingMessage && (draft.trim() || editingCaption || pendingAttachments.length > 0)) {
+                  setShowSendMenu((prev) => !prev);
+                }
+              }}
+            >
+              {showSending
+                ? <LoaderCircle className="spin" size={19} strokeWidth={1.8} />
+                : editingMessage
+                  ? <Check size={19} strokeWidth={2.2} />
+                  : <Send size={19} strokeWidth={2} />}
+            </button>
+            {showSendMenu && (
+              <div
+                className="send-menu-popup bg-white dark:bg-[#1e232e] text-slate-800 dark:text-white border border-slate-200 dark:border-white/10"
+                style={{
+                  position: "absolute",
+                  bottom: "100%",
+                  right: 0,
+                  marginBottom: 8,
+                  zIndex: 40,
+                  borderRadius: 12,
+                  padding: 4,
+                  boxShadow: "0 10px 25px -5px rgba(0,0,0,0.3)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  minWidth: 180,
+                }}
+              >
+                <button
+                  type="button"
+                  className="px-3 py-2 text-xs font-medium text-left rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 flex items-center gap-2 transition"
+                  onClick={() => {
+                    setShowSendMenu(false);
+                    setShowScheduleDialog(true);
+                  }}
+                >
+                  <Calendar size={14} className="text-sky-500" />
+                  <span>Schedule message...</span>
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-2 text-xs font-medium text-left rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 flex items-center gap-2 transition"
+                  onClick={() => {
+                    setShowSendMenu(false);
+                    void submitMessage(undefined, true);
+                  }}
+                >
+                  <BellOff size={14} className="text-amber-500" />
+                  <span>Send without sound</span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
+      {showScheduleDialog && (
+        <ScheduleMessageDialog
+          allowSendWhenOnline={allowSendWhenOnline}
+          onSchedule={(state) => {
+            setShowScheduleDialog(false);
+            void submitMessage(state);
+          }}
+          onClose={() => setShowScheduleDialog(false)}
+        />
+      )}
       {activeRecording && (
         <VoiceVideoRecorder
           activeKind={activeRecording}
