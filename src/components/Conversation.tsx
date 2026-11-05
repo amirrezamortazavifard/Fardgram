@@ -654,6 +654,16 @@ export function Conversation({
     chat ? state.drafts.get(topic ? `${chat.id}:topic:${topic.id}` : chat.id)?.replyQuote : undefined,
   );
   const cacheFile = useTelegramStore((state) => state.cacheFile);
+  const openMiniApp = useTelegramStore((state) => state.openMiniApp);
+
+  const handleOpenWebApp = useCallback((url: string, title?: string) => {
+    void openMiniApp({
+      url,
+      title: title || chat?.title,
+      botUsername: chat?.username,
+      chatId: chat?.id,
+    });
+  }, [openMiniApp, chat?.title, chat?.username, chat?.id]);
   const autoplayAnimations = usePreferencesStore((state) => autoplayAllowed(
     state.autoplayAnimations,
     state,
@@ -2899,6 +2909,7 @@ export function Conversation({
                         onLoadReactionSenders={onGetMessageReactionSenders}
                         onPollAnswer={onSetPollAnswer}
                         onBotCallback={onBotCallback}
+                        onOpenWebApp={handleOpenWebApp}
                         onCollapseQuote={collapseExpandedQuote}
                         onExpandQuote={expandCollapsedQuote}
                         onMount={gateEntranceAtBottom

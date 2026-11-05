@@ -1544,6 +1544,24 @@ export class TauriTelegramTransport implements TelegramTransport {
     await this.request({ "@type": "sendBotStartMessage", bot_user_id: numericId(botUserId), chat_id: numericId(chatId), parameter });
   }
 
+  async openWebApp(chatId: string, botUserId: string, url: string): Promise<import("./types").WebAppInfo> {
+    try {
+      const result = await this.request({
+        "@type": "openWebApp",
+        chat_id: numericId(chatId),
+        bot_user_id: numericId(botUserId),
+        url,
+        application_name: "fardgram",
+      });
+      return {
+        launchId: String(result.launch_id ?? ""),
+        url: typeof result.url === "string" ? result.url : url,
+      };
+    } catch {
+      return { launchId: "", url };
+    }
+  }
+
   async getBlockedSenders(): Promise<BlockedSender[]> {
     const result = await this.request({ "@type": "getBlockedMessageSenders", block_list: { "@type": "blockListMain" }, offset: 0, limit: 100 });
     const senders = await Promise.all(asTdObjects(result.senders).map(async (raw) => {

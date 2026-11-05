@@ -20,6 +20,7 @@ interface InlineKeyboardProps {
   markup: MessageInlineKeyboard;
   onCallback: (messageId: string, data: string, chatId?: string) => Promise<CallbackQueryAnswer | undefined>;
   onOpenUser: (userId: string) => void;
+  onOpenWebApp?: (url: string, title?: string) => void | Promise<void>;
 }
 
 export function InlineKeyboard({
@@ -28,6 +29,7 @@ export function InlineKeyboard({
   markup,
   onCallback,
   onOpenUser,
+  onOpenWebApp,
 }: InlineKeyboardProps) {
   const [pendingKey, setPendingKey] = useState<string>();
   const [copiedKey, setCopiedKey] = useState<string>();
@@ -82,8 +84,14 @@ export function InlineKeyboard({
         return;
       }
       case "url":
-      case "webApp":
         await openExternalLink(button.url);
+        return;
+      case "webApp":
+        if (onOpenWebApp) {
+          await onOpenWebApp(button.url, button.text);
+        } else {
+          await openExternalLink(button.url);
+        }
         return;
       case "user":
         onOpenUser(button.userId);

@@ -392,6 +392,11 @@ export type TelegramLinkTarget =
     }
   | { kind: "unsupported"; reason: string; linkType?: string };
 
+export interface WebAppInfo {
+  launchId: string;
+  url: string;
+}
+
 export interface ProfileMember {
   user: User;
   role: ProfileMemberRole;

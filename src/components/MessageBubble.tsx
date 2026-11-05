@@ -142,6 +142,7 @@ export interface MessageBubbleProps {
   ) => Promise<MessageReactionSenderPage>;
   onPollAnswer: (messageId: string, optionPositions: number[], chatId?: string) => Promise<boolean>;
   onBotCallback: (messageId: string, data: string, chatId?: string) => Promise<CallbackQueryAnswer | undefined>;
+  onOpenWebApp?: (url: string, title?: string) => void | Promise<void>;
   onCollapseQuote: (
     messageId: string,
     collapse: () => void,
@@ -215,6 +216,7 @@ function MessageBubbleComponent({
   onLoadReactionSenders,
   onPollAnswer,
   onBotCallback,
+  onOpenWebApp,
   onCollapseQuote,
   onExpandQuote,
   onMount,
@@ -1218,6 +1220,7 @@ function MessageBubbleComponent({
             markup={message.replyMarkup}
             onCallback={onBotCallback}
             onOpenUser={onOpenSenderProfile}
+            onOpenWebApp={onOpenWebApp}
           />
         )}
         {cornerAction}
@@ -1299,6 +1302,7 @@ export interface MessageBubblePreviewProps {
   onLoadReactionSenders?: MessageBubbleProps["onLoadReactionSenders"];
   onPollAnswer?: MessageBubbleProps["onPollAnswer"];
   onBotCallback?: MessageBubbleProps["onBotCallback"];
+  onOpenWebApp?: MessageBubbleProps["onOpenWebApp"];
   onOpenMedia?: MessageBubbleProps["onOpenMedia"];
   onOpenStickerSet?: MessageBubbleProps["onOpenStickerSet"];
   blockedReactionSenderIds?: ReadonlySet<string>;
@@ -1355,6 +1359,7 @@ export function MessageBubblePreview({
   onLoadReactionSenders = previewReactionSenders,
   onPollAnswer = previewFalse,
   onBotCallback = previewCallback,
+  onOpenWebApp,
   onOpenMedia,
   onOpenStickerSet,
   blockedReactionSenderIds,
@@ -1404,6 +1409,7 @@ export function MessageBubblePreview({
       onLoadReactionSenders={onLoadReactionSenders}
       onPollAnswer={onPollAnswer}
       onBotCallback={onBotCallback}
+      onOpenWebApp={onOpenWebApp}
       onCollapseQuote={previewCollapseQuote}
       onOpenReply={onOpenReply}
       onOpenSenderProfile={onOpenSenderProfile}

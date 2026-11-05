@@ -5,6 +5,9 @@ with prerelease identifiers used for release candidates.
 
 ## [Unreleased]
 
+### Added
+- **Telegram Mini Apps (FG-004)**: Secure desktop in-app WebView runtime (`fardgram_open_mini_app`, `fardgram_close_mini_app`) isolated from Tauri IPC capabilities, with Telegram WebApp proxy initialization script, bot launch authorization via TDLib `openWebApp`, mock fallback modal, and inline keyboard button integration.
+
 ## [0.6.0] - 2026-10-12
 
 Official Fardgram multi-platform stable release with TDLib runtime, auto-updater manifests, and English language standardization.

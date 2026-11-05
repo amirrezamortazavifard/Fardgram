@@ -99,6 +99,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "loadChats",
     "logOut",
     "openChat",
+    "openWebApp",
     "parseMarkdown",
     "pinChatMessage",
     "pingProxy",
@@ -206,6 +207,20 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
         return Err("Local files cannot be sent through the generic TDLib bridge".to_string());
     }
     match request_type {
+        "openWebApp" => {
+            validate_nonzero_identifier(request, "chat_id")?;
+            validate_nonzero_identifier(request, "bot_user_id")?;
+            let url = request
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "openWebApp request is missing url".to_string())?;
+            if !url.starts_with("https://")
+                && !url.starts_with("http://127.0.0.1")
+                && !url.starts_with("http://localhost")
+            {
+                return Err("Mini App URL must use https scheme".to_string());
+            }
+        }
         "joinChat" | "openChat" | "closeChat" => {
             validate_nonzero_identifier(request, "chat_id")?;
         }
@@ -2827,6 +2842,24 @@ mod tests {
 
     #[test]
     fn backend_upload_builder_keeps_local_paths_out_of_the_generic_bridge() {
+        let valid_open_web_app = json!({
+            "@type": "openWebApp",
+            "chat_id": 72,
+            "bot_user_id": 901,
+            "url": "https://example.com/app",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_open_web_app).is_ok());
+
+        let invalid_open_web_app = json!({
+            "@type": "openWebApp",
+            "chat_id": 72,
+            "bot_user_id": 901,
+            "url": "javascript:alert(1)",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_open_web_app).is_err());
+
         let photo = crate::storage::UploadFileInfo {
             path: "C:\\selected\\photo.jpg".to_string(),
             size: 2_000_000,
@@ -3037,6 +3070,24 @@ mod tests {
             .is_err()
         );
 
+        let valid_open_web_app = json!({
+            "@type": "openWebApp",
+            "chat_id": 72,
+            "bot_user_id": 901,
+            "url": "https://example.com/app",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_open_web_app).is_ok());
+
+        let invalid_open_web_app = json!({
+            "@type": "openWebApp",
+            "chat_id": 72,
+            "bot_user_id": 901,
+            "url": "javascript:alert(1)",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_open_web_app).is_err());
+
         let photo = crate::storage::UploadFileInfo {
             path: "C:\\selected\\avatar.jpg".to_string(),
             size: 2_000_000,
@@ -3214,6 +3265,24 @@ mod tests {
             "@extra": EXTRA
         });
         assert!(validate_webview_tdlib_request(&external_link).is_err());
+
+        let valid_open_web_app = json!({
+            "@type": "openWebApp",
+            "chat_id": 72,
+            "bot_user_id": 901,
+            "url": "https://example.com/app",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_open_web_app).is_ok());
+
+        let invalid_open_web_app = json!({
+            "@type": "openWebApp",
+            "chat_id": 72,
+            "bot_user_id": 901,
+            "url": "javascript:alert(1)",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_open_web_app).is_err());
 
         let photo = crate::storage::UploadFileInfo {
             path: "C:\\selected\\group.jpg".to_string(),

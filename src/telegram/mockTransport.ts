@@ -1496,6 +1496,18 @@ export class MockTelegramTransport implements TelegramTransport {
     void botUserId;
   }
 
+  async openWebApp(chatId: string, botUserId: string, url: string): Promise<import("./types").WebAppInfo> {
+    void chatId;
+    void botUserId;
+    const launchId = `mock-launch-${Date.now()}`;
+    const hash = `tgWebAppData=mock_auth_hash&tgWebAppVersion=7.0&tgWebAppPlatform=tdesktop`;
+    const resolvedUrl = url.includes("#") ? `${url}&${hash}` : `${url}#${hash}`;
+    return {
+      launchId,
+      url: resolvedUrl,
+    };
+  }
+
   async getBlockedSenders(): Promise<BlockedSender[]> {
     return clone([...this.blockedSenders.values()]);
   }

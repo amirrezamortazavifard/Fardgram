@@ -157,6 +157,7 @@ export interface TelegramTransport {
   getInlineQueryResults(chatId: string, botUsername: string, query: string, offset?: string): Promise<InlineQueryResultPage>;
   sendInlineQueryResultMessage(chatId: string, botUserId: string, queryId: string, resultId: string, replyToMessageId?: string, topicId?: string): Promise<void>;
   sendBotStartMessage(chatId: string, botUserId: string, parameter?: string): Promise<void>;
+  openWebApp?(chatId: string, botUserId: string, url: string): Promise<import("./types").WebAppInfo>;
   getBlockedSenders(): Promise<BlockedSender[]>;
   setMessageSenderBlocked(senderId: string, kind: "user" | "chat", blocked: boolean): Promise<void>;
   getChatReportOptions(chatId: string, messageIds: string[]): Promise<ChatReportResult>;

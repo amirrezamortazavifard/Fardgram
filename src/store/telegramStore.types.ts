@@ -100,6 +100,14 @@ export type MessageChangeEvent =
 
 export type MessageChangeListener = (event: MessageChangeEvent) => void;
 
+export interface ActiveMiniApp {
+  id: string;
+  url: string;
+  title: string;
+  botUsername?: string;
+  chatId?: string;
+}
+
 export interface TelegramState {
   phase: RuntimePhase;
   error?: string;
@@ -163,6 +171,7 @@ export interface TelegramState {
   lastForumTopicIds: Map<string, string>;
   activeChatId?: string;
   activeTopicId?: string;
+  activeMiniApp?: ActiveMiniApp;
   searchQuery: string;
   chatFilter: ChatFilter;
   globalSearch: GlobalSearchState;
@@ -448,6 +457,8 @@ export interface TelegramState {
     context?: ConversationSendContext,
   ) => Promise<boolean>;
   cancelFileUpload: (messageId: string, chatId?: string) => Promise<void>;
+  openMiniApp: (input: { url: string; title?: string; botUsername?: string; botUserId?: string; chatId?: string }) => Promise<void>;
+  closeMiniApp: () => Promise<void>;
   clearError: () => void;
   clearOperationError: () => void;
 }

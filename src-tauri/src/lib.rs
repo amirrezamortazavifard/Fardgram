@@ -8,6 +8,7 @@ mod display_metrics;
 mod distribution;
 mod external_links;
 mod media_viewer_window;
+mod mini_app_window;
 mod proxy;
 mod settings_window;
 mod shortcuts;
@@ -126,6 +127,8 @@ pub fn run() {
             media_viewer_window::fardgram_show_media_viewer_window,
             video_window::fardgram_close_video_window,
             video_window::fardgram_open_video_window,
+            mini_app_window::fardgram_open_mini_app,
+            mini_app_window::fardgram_close_mini_app,
             telegram::telegram_runtime_status,
             proxy::telegram_proxy_settings,
             proxy::telegram_save_proxy_settings,

@@ -20,6 +20,7 @@ import { createStore } from "zustand/vanilla";
 import { isTauri } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { createTelegramTransport } from "../telegram/createTransport";
+import { openNativeMiniApp, closeNativeMiniApp } from "../windows/miniAppBridge";
 import type { TelegramTransport } from "../telegram/transport";
 import type {
   CachedTelegramSnapshot,
@@ -64,6 +65,7 @@ import {
 } from "./telegramStore.selectors";
 import { FOLDER_DIRECT_CHAT_LIMIT, isFolderChatEligible } from "../utils/folderChatSelection";
 import type {
+  ActiveMiniApp,
   MessageChangeEvent,
   MessageChangeListener,
   TelegramState,
@@ -1143,6 +1145,7 @@ export const createTelegramStore = (
         lastForumTopicIds: new Map(),
         activeChatId: undefined,
         activeTopicId: undefined,
+        activeMiniApp: undefined,
         globalSearch: emptyGlobalSearch(),
         chatMessageSearch: emptyChatMessageSearch(),
         accountProfile: emptyProfileState(),
@@ -5572,6 +5575,57 @@ export const createTelegramStore = (
         } catch (error) {
           set({ operationError: error instanceof Error ? error.message : translate("取消上传失败") });
         }
+      },
+
+      openMiniApp: async ({ url, title, botUsername, botUserId, chatId }) => {
+        if (!url || (!url.startsWith("https://") && !url.startsWith("http://localhost") && !url.startsWith("http://127.0.0.1"))) {
+          set({ operationError: translate("Mini App URL must use https scheme") });
+          return;
+        }
+        let resolvedUrl = url;
+        const targetChatId = chatId ?? get().activeChatId;
+        if (targetChatId && botUserId && transport.openWebApp) {
+          try {
+            const webAppInfo = await transport.openWebApp(targetChatId, botUserId, url);
+            if (webAppInfo?.url) {
+              resolvedUrl = webAppInfo.url;
+            }
+          } catch {
+            // Keep original URL on resolution failure
+          }
+        }
+        const appTitle = title?.trim() || translate("Telegram Mini App");
+        const id = globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 32);
+        const miniApp: ActiveMiniApp = {
+          id,
+          url: resolvedUrl,
+          title: appTitle,
+          botUsername,
+          chatId: targetChatId,
+        };
+        try {
+          await openNativeMiniApp({
+            id,
+            url: resolvedUrl,
+            title: appTitle,
+            botUsername,
+          });
+        } catch (error) {
+          console.warn("[MiniApp] Native window launch failed:", error);
+        }
+        set({ activeMiniApp: miniApp, operationError: undefined });
+      },
+
+      closeMiniApp: async () => {
+        const current = get().activeMiniApp;
+        if (current) {
+          try {
+            await closeNativeMiniApp(current.id);
+          } catch (error) {
+            console.warn("[MiniApp] Native window close failed:", error);
+          }
+        }
+        set({ activeMiniApp: undefined });
       },
 
       clearError: () => set({ error: undefined }),
