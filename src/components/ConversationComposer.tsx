@@ -20,8 +20,10 @@ import {
   Mic,
   Video,
   Plus,
+  Pencil,
 } from "lucide-react";
 import { ScheduleMessageDialog } from "./ScheduleMessageDialog";
+import { MediaEditorModal, type MediaEditorResult } from "./MediaEditorModal";
 import { AttachmentPickerMenu } from "./AttachmentPickerMenu";
 import { VoiceVideoRecorder, type RecordingKind } from "./VoiceVideoRecorder";
 import { useAgentStore } from "../agent/agentStore";
@@ -268,6 +270,7 @@ export const ConversationComposer = memo(function ConversationComposer({
   const [attachmentSpoiler, setAttachmentSpoiler] = useState(localAttachmentDraft?.hasSpoiler ?? false);
   const [muteVideos, setMuteVideos] = useState(localAttachmentDraft?.muteVideos ?? false);
   const [attachmentSelfDestruct, setAttachmentSelfDestruct] = useState<import("../telegram/types").MessageSelfDestructType | null>(null);
+  const [editingAttachment, setEditingAttachment] = useState<PendingAttachment | null>(null);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [disableNotification, setDisableNotification] = useState(false);
@@ -1045,6 +1048,36 @@ export const ConversationComposer = memo(function ConversationComposer({
     focusComposer();
   }, [closeAttachmentPreviewSession, focusComposer, persistPendingAttachments, updateAttachmentOptions]);
 
+  const updateEditedPendingAttachment = useCallback((id: string, result: MediaEditorResult) => {
+    closeAttachmentPreviewSession();
+    const current = pendingAttachmentsRef.current;
+    const target = current.find((item) => item.id === id);
+    if (!target) return;
+    if (target.previewUrl) URL.revokeObjectURL(target.previewUrl);
+    const newPreviewUrl = URL.createObjectURL(result.file);
+    const updatedAttachment: OutgoingAttachment = {
+      ...target.attachment,
+      file: result.file,
+      kind: result.kind ?? target.attachment.kind,
+      width: result.width ?? target.attachment.width,
+      height: result.height ?? target.attachment.height,
+      duration: result.duration ?? target.attachment.duration,
+      thumbnail: result.thumbnail ?? target.attachment.thumbnail,
+      hasSpoiler: result.hasSpoiler ?? target.attachment.hasSpoiler,
+    };
+    const next = current.map((item) => item.id === id ? {
+      ...item,
+      attachment: updatedAttachment,
+      previewUrl: newPreviewUrl,
+    } : item);
+    pendingAttachmentsRef.current = next;
+    setPendingAttachments(next);
+    if (result.hasSpoiler !== undefined) {
+      setAttachmentSpoiler((prev) => prev || Boolean(result.hasSpoiler));
+    }
+    persistPendingAttachments(next);
+  }, [closeAttachmentPreviewSession, persistPendingAttachments]);
+
   const sendPendingAttachments = async (schedulingState?: MessageSchedulingState, forceDisableNotification?: boolean) => {
     if (editingMessage || sending || attachmentPending || pendingAttachments.length === 0) return;
     const restoreFocus = focus.capture();
@@ -1052,7 +1085,14 @@ export const ConversationComposer = memo(function ConversationComposer({
     setAttachmentPending(true);
     try {
       const inspectedAttachments = await Promise.all(
-        pendingAttachments.map(({ attachment }) => inspectOutgoingAttachment(attachment.file)),
+        pendingAttachments.map(async ({ attachment }) => {
+          const inspected = await inspectOutgoingAttachment(attachment.file);
+          return {
+            ...inspected,
+            ...attachment,
+            file: attachment.file,
+          };
+        }),
       );
       const sent = await onSendFiles(
         inspectedAttachments.map((attachment) => ({
@@ -1468,6 +1508,17 @@ export const ConversationComposer = memo(function ConversationComposer({
                     <strong>{attachment.file.name}</strong>
                     <small>{attachmentSizeLabel(attachment.file.size)}</small>
                   </span>
+                  {canPreviewOutgoingAttachment(attachment.kind) && pending.previewUrl && (
+                    <button
+                      className="composer-attachment-edit-btn"
+                      type="button"
+                      aria-label={translate("编辑 {{value0}}", { value0: attachment.file.name })}
+                      title="Edit photo, video or GIF"
+                      onClick={() => setEditingAttachment(pending)}
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  )}
                   <button
                     className="composer-attachment-remove"
                     type="button"
@@ -2087,6 +2138,17 @@ export const ConversationComposer = memo(function ConversationComposer({
               activeReplyQuote,
               disableNotification,
             );
+          }}
+        />
+      )}
+      {editingAttachment && editingAttachment.previewUrl && (
+        <MediaEditorModal
+          attachment={editingAttachment.attachment}
+          previewUrl={editingAttachment.previewUrl}
+          onClose={() => setEditingAttachment(null)}
+          onSave={(result) => {
+            updateEditedPendingAttachment(editingAttachment.id, result);
+            setEditingAttachment(null);
           }}
         />
       )}

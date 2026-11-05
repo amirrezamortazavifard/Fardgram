@@ -140,7 +140,7 @@ The order below is the recommended delivery sequence. It can be changed only whe
 - [x] **FG-004 — Telegram Mini Apps: secure in-app WebView runtime**
 - [x] **FG-005 — Scheduled messages, scheduled posts and Send When Online**
 - [x] **FG-006 — View Once / self-destructing media parity**
-- [ ] **FG-007 — Photo, video and GIF editor before sending**
+- [x] **FG-007 — Photo, video and GIF editor before sending**
 
 ### P1 — Advanced daily use and account parity
 

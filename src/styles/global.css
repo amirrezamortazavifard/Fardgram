@@ -3855,6 +3855,13 @@ button.message-forward-label:focus-visible { outline: 2px solid var(--color-bord
 }
 .composer-attachment-remove:hover { background: color-mix(in srgb, var(--color-overlay) 72%, var(--color-status-danger)); }
 .composer-attachment-remove:focus-visible { outline: 2px solid var(--color-on-media); outline-offset: 1px; }
+.composer-attachment-edit-btn {
+  position: absolute; z-index: 4; top: 5px; right: 33px; width: 24px; height: 24px; padding: 0; display: grid; place-items: center;
+  color: var(--color-on-media); background: var(--color-overlay); border: 0; border-radius: 50%; cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.composer-attachment-edit-btn:hover { background: color-mix(in srgb, var(--color-overlay) 72%, var(--accent)); transform: scale(1.08); }
+.composer-attachment-edit-btn:focus-visible { outline: 2px solid var(--color-on-media); outline-offset: 1px; }
 .composer-attachment-options { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 7px 14px; color: var(--ink); font-size: 11px; }
 .composer-attachment-options > label { min-height: 28px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .composer-attachment-options input { accent-color: var(--accent); }
