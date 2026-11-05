@@ -101,6 +101,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "loadChats",
     "logOut",
     "openChat",
+    "openMessageContent",
     "openWebApp",
     "parseMarkdown",
     "pinChatMessage",
@@ -223,6 +224,10 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
             {
                 return Err("Mini App URL must use https scheme".to_string());
             }
+        }
+        "openMessageContent" => {
+            validate_nonzero_identifier(request, "chat_id")?;
+            validate_nonzero_identifier(request, "message_id")?;
         }
         "joinChat" | "openChat" | "closeChat" => {
             validate_nonzero_identifier(request, "chat_id")?;
@@ -1492,6 +1497,7 @@ pub(super) struct PreparedUpload {
     pub thumbnail: Option<crate::storage::UploadFileInfo>,
     pub has_spoiler: bool,
     pub show_caption_above_media: bool,
+    pub self_destruct_type: Option<Value>,
 }
 
 impl PreparedUpload {
@@ -1513,6 +1519,40 @@ impl PreparedUpload {
             thumbnail: None,
             has_spoiler: false,
             show_caption_above_media: false,
+            self_destruct_type: None,
+        }
+    }
+}
+
+pub(super) fn validate_self_destruct_type(value: &Option<Value>) -> Result<Option<Value>, String> {
+    match value {
+        None => Ok(None),
+        Some(Value::Null) => Ok(None),
+        Some(val) => {
+            let obj = val
+                .as_object()
+                .ok_or_else(|| "Self-destruct type must be an object".to_string())?;
+            match obj.get("@type").and_then(Value::as_str) {
+                Some("messageSelfDestructTypeImmediately") => {
+                    Ok(Some(json!({ "@type": "messageSelfDestructTypeImmediately" })))
+                }
+                Some("messageSelfDestructTypeTimer") => {
+                    let seconds = obj
+                        .get("self_destruct_time")
+                        .and_then(Value::as_i64)
+                        .ok_or_else(|| "self_destruct_time is required for timer".to_string())?;
+                    if !(1..=86400).contains(&seconds) {
+                        return Err(
+                            "self_destruct_time must be between 1 and 86400 seconds".to_string(),
+                        );
+                    }
+                    Ok(Some(json!({
+                        "@type": "messageSelfDestructTypeTimer",
+                        "self_destruct_time": seconds
+                    })))
+                }
+                _ => Err("Invalid self-destruct type".to_string()),
+            }
         }
     }
 }
@@ -1665,7 +1705,7 @@ fn input_message_upload(
                 "height": height,
                 "caption": caption,
                 "show_caption_above_media": upload.show_caption_above_media,
-                "self_destruct_type": null,
+                "self_destruct_type": upload.self_destruct_type.clone().unwrap_or(Value::Null),
                 "has_spoiler": upload.has_spoiler
             })
         }
@@ -1684,7 +1724,7 @@ fn input_message_upload(
             "supports_streaming": true,
             "caption": caption,
             "show_caption_above_media": upload.show_caption_above_media,
-            "self_destruct_type": null,
+            "self_destruct_type": upload.self_destruct_type.clone().unwrap_or(Value::Null),
             "has_spoiler": upload.has_spoiler
         }),
         "animation" => json!({
@@ -1714,7 +1754,7 @@ fn input_message_upload(
             "duration": duration,
             "waveform": "",
             "caption": caption,
-            "self_destruct_type": null
+            "self_destruct_type": upload.self_destruct_type.clone().unwrap_or(Value::Null)
         }),
         "videoNote" => json!({
             "@type": "inputMessageVideoNote",
@@ -1722,7 +1762,7 @@ fn input_message_upload(
             "thumbnail": thumbnail,
             "duration": duration,
             "length": if width > 0 { width } else if height > 0 { height } else { 480 },
-            "self_destruct_type": null
+            "self_destruct_type": upload.self_destruct_type.clone().unwrap_or(Value::Null)
         }),
         "document" => json!({
             "@type": "inputMessageDocument",
@@ -2957,6 +2997,46 @@ mod tests {
         });
         assert!(validate_webview_tdlib_request(&invalid_edit_scheduling).is_err());
 
+        let valid_open_message_content = json!({
+            "@type": "openMessageContent",
+            "chat_id": 72,
+            "message_id": 101,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_open_message_content).is_ok());
+
+        let invalid_open_message_content_chat = json!({
+            "@type": "openMessageContent",
+            "chat_id": 0,
+            "message_id": 101,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_open_message_content_chat).is_err());
+
+        let invalid_open_message_content_msg = json!({
+            "@type": "openMessageContent",
+            "chat_id": 72,
+            "message_id": 0,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_open_message_content_msg).is_err());
+
+        assert!(validate_self_destruct_type(&None).unwrap().is_none());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "messageSelfDestructTypeImmediately"
+        }))).unwrap().is_some());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "messageSelfDestructTypeTimer",
+            "self_destruct_time": 30
+        }))).unwrap().is_some());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "messageSelfDestructTypeTimer",
+            "self_destruct_time": 0
+        }))).is_err());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "unknownType"
+        }))).is_err());
+
         let photo = crate::storage::UploadFileInfo {
             path: "C:\\selected\\photo.jpg".to_string(),
             size: 2_000_000,
@@ -3061,6 +3141,7 @@ mod tests {
             thumbnail: Some(cover.clone()),
             has_spoiler: true,
             show_caption_above_media: true,
+            self_destruct_type: None,
         };
         let video_request =
             prepared_upload_request_with_caption(7, EXTRA, &video, "视频说明").unwrap();
@@ -3125,6 +3206,7 @@ mod tests {
             thumbnail: None,
             has_spoiler: false,
             show_caption_above_media: false,
+            self_destruct_type: None,
         };
         let audio_request = prepared_upload_request_with_caption(7, EXTRA, &audio, "").unwrap();
         assert_eq!(
@@ -3242,6 +3324,46 @@ mod tests {
             "@extra": EXTRA
         });
         assert!(validate_webview_tdlib_request(&invalid_edit_scheduling).is_err());
+
+        let valid_open_message_content = json!({
+            "@type": "openMessageContent",
+            "chat_id": 72,
+            "message_id": 101,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_open_message_content).is_ok());
+
+        let invalid_open_message_content_chat = json!({
+            "@type": "openMessageContent",
+            "chat_id": 0,
+            "message_id": 101,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_open_message_content_chat).is_err());
+
+        let invalid_open_message_content_msg = json!({
+            "@type": "openMessageContent",
+            "chat_id": 72,
+            "message_id": 0,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_open_message_content_msg).is_err());
+
+        assert!(validate_self_destruct_type(&None).unwrap().is_none());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "messageSelfDestructTypeImmediately"
+        }))).unwrap().is_some());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "messageSelfDestructTypeTimer",
+            "self_destruct_time": 30
+        }))).unwrap().is_some());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "messageSelfDestructTypeTimer",
+            "self_destruct_time": 0
+        }))).is_err());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "unknownType"
+        }))).is_err());
 
         let photo = crate::storage::UploadFileInfo {
             path: "C:\\selected\\avatar.jpg".to_string(),
@@ -3496,6 +3618,46 @@ mod tests {
             "@extra": EXTRA
         });
         assert!(validate_webview_tdlib_request(&invalid_edit_scheduling).is_err());
+
+        let valid_open_message_content = json!({
+            "@type": "openMessageContent",
+            "chat_id": 72,
+            "message_id": 101,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_open_message_content).is_ok());
+
+        let invalid_open_message_content_chat = json!({
+            "@type": "openMessageContent",
+            "chat_id": 0,
+            "message_id": 101,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_open_message_content_chat).is_err());
+
+        let invalid_open_message_content_msg = json!({
+            "@type": "openMessageContent",
+            "chat_id": 72,
+            "message_id": 0,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_open_message_content_msg).is_err());
+
+        assert!(validate_self_destruct_type(&None).unwrap().is_none());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "messageSelfDestructTypeImmediately"
+        }))).unwrap().is_some());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "messageSelfDestructTypeTimer",
+            "self_destruct_time": 30
+        }))).unwrap().is_some());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "messageSelfDestructTypeTimer",
+            "self_destruct_time": 0
+        }))).is_err());
+        assert!(validate_self_destruct_type(&Some(json!({
+            "@type": "unknownType"
+        }))).is_err());
 
         let photo = crate::storage::UploadFileInfo {
             path: "C:\\selected\\group.jpg".to_string(),

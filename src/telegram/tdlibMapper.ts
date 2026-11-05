@@ -1597,7 +1597,25 @@ export const mapTdMessage = (raw: TdObject, options: { isChannel?: boolean } = {
     topicId: topicId || undefined,
     ...(messageThreadId ? { messageThreadId } : {}),
     ...(typeof raw.can_be_saved === "boolean" ? { canSave: raw.can_be_saved } : {}),
-    ...(asTdObject(raw.self_destruct_type) ? { selfDestruct: true } : {}),
+    ...(asTdObject(raw.self_destruct_type)
+      ? {
+          selfDestruct: true,
+          selfDestructType:
+            asTdObject(raw.self_destruct_type)?.["@type"] === "messageSelfDestructTypeImmediately"
+              ? ({ kind: "immediately" } as const)
+              : ({
+                  kind: "timer",
+                  seconds: tdNumber(asTdObject(raw.self_destruct_type)?.self_destruct_time) ?? 0,
+                } as const),
+          isViewOnce:
+            asTdObject(raw.self_destruct_type)?.["@type"] === "messageSelfDestructTypeImmediately",
+        }
+      : {}),
+    ...(typeof raw.self_destruct_in === "number" ? { selfDestructIn: raw.self_destruct_in } : {}),
+    ...(asTdObject(raw.content)?.is_opened === true ||
+    (typeof raw.self_destruct_in === "number" && raw.self_destruct_in > 0)
+      ? { opened: true }
+      : {}),
     ...(typeof raw._fardgramExpiresAt === "string" ? { expiresAt: raw._fardgramExpiresAt } : {}),
     mediaAlbumId: mediaAlbumId && mediaAlbumId !== "0" ? mediaAlbumId : undefined,
     senderId,

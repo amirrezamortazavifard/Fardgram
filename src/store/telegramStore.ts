@@ -2264,6 +2264,27 @@ export const createTelegramStore = (
         return;
       }
 
+      if (event.type === "message.contentOpened") {
+        const { chatId, messageId } = event;
+        const currentMessages = get().messages.get(chatId);
+        if (currentMessages) {
+          let modified = false;
+          const updated = currentMessages.map((m) => {
+            if (m.id === messageId) {
+              modified = true;
+              return { ...m, opened: true };
+            }
+            return m;
+          });
+          if (modified) {
+            const next = new Map(get().messages);
+            next.set(chatId, updated);
+            set({ messages: next });
+          }
+        }
+        return;
+      }
+
       if (event.type === "messages.upserted") {
         if (event.messages.length === 0) return;
         const mergeStartedAt = isPerformanceMonitoringEnabled() ? performance.now() : undefined;
@@ -5718,6 +5739,58 @@ export const createTelegramStore = (
           return true;
         } catch (error) {
           set({ operationError: errorMessage(error, translate("无法取消定时消息")) });
+          return false;
+        }
+      },
+
+      openMessageContent: async (chatId: string, messageId: string) => {
+        try {
+          const success = await transport.openMessageContent(chatId, messageId);
+          if (success) {
+            const currentMessages = get().messages.get(chatId);
+            if (currentMessages) {
+              const updated = currentMessages.map((m) =>
+                m.id === messageId ? { ...m, opened: true } : m,
+              );
+              const next = new Map(get().messages);
+              next.set(chatId, updated);
+              set({ messages: next });
+            }
+          }
+          return success;
+        } catch {
+          return false;
+        }
+      },
+
+      saveTimedMedia: async (message: Message, target = "downloads") => {
+        const content = message.content;
+        if (content.kind !== "media" && content.kind !== "file") {
+          return false;
+        }
+        try {
+          if (content.localPath) {
+            if (target === "fileAs") {
+              await transport.saveFileAs(content.localPath, content.fileName);
+            } else {
+              await transport.saveFileToDownloads(content.localPath, content.fileName);
+            }
+            return true;
+          }
+          if (content.fileId !== undefined) {
+            const downloaded = await transport.downloadFile(content.fileId, content.fileName);
+            if (typeof downloaded === "string" && downloaded) {
+              if (target === "fileAs") {
+                await transport.saveFileAs(downloaded, content.fileName);
+              } else {
+                await transport.saveFileToDownloads(downloaded, content.fileName);
+              }
+              return true;
+            }
+          }
+          return false;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("无法保存文件")) });
           return false;
         }
       },

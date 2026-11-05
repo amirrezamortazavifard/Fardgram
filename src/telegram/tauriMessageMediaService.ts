@@ -29,6 +29,7 @@ import {
   inputMessageText,
   messageSendOptions,
   numericId,
+  selfDestructTypeObject,
 } from "./tdlibRequests";
 import { hasChatDraftContent } from "./chatDraft";
 import { classifySendError } from "./sendErrors";
@@ -1013,6 +1014,7 @@ export class TauriMessageMediaService {
         : await this.preparePastedFile(attachment.file),
       hasSpoiler: attachment.hasSpoiler,
       showCaptionAboveMedia: attachment.showCaptionAboveMedia,
+      selfDestructType: selfDestructTypeObject(attachment.selfDestructType),
     };
   };
 }

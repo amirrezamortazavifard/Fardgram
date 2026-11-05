@@ -607,6 +607,7 @@ export function Conversation({
   const sendScheduledMessagesImmediately = useTelegramStore(state => state.sendScheduledMessagesImmediately);
   const rescheduleMessage = useTelegramStore(state => state.rescheduleMessage);
   const deleteScheduledMessage = useTelegramStore(state => state.deleteScheduledMessage);
+  const openMessageContent = useTelegramStore(state => state.openMessageContent);
   const [showScheduledModal, setShowScheduledModal] = useState(false);
   const allowSendWhenOnline = Boolean(chat && chat.kind === "direct" && chat.peerId && !users.get(chat.peerId)?.isBot && chat.peerId !== currentUserId);
   const attentionNavigationRef = useRef(0);
@@ -916,6 +917,10 @@ export function Conversation({
       message.id === messageId && (!chatId || message.chatId === chatId),
     );
     if (activeIndex < 0) return;
+    const targetMsg = viewerPhotos[activeIndex];
+    if (targetMsg?.selfDestruct || targetMsg?.isViewOnce) {
+      void openMessageContent(targetMsg.chatId, targetMsg.id);
+    }
     const activeContent = viewerPhotos[activeIndex].content;
     const restoreFocus = captureActiveComposerFocus(true);
     void openMediaViewerWindow({
@@ -928,7 +933,7 @@ export function Conversation({
         !activeContent.isDownloading && !activeContent.isDownloaded) {
       void onDownloadFile(activeContent.fileId, activeContent.fileName).catch(() => undefined);
     }
-  }, [cacheFile, colorTheme, onDownloadFile, onSaveFileToDownloads, onStreamFile, onSuspendFileStream, onRecoverFile, viewerPhotos]);
+  }, [cacheFile, colorTheme, onDownloadFile, onSaveFileToDownloads, onStreamFile, onSuspendFileStream, onRecoverFile, openMessageContent, viewerPhotos]);
 
   useEffect(() => {
     syncMediaViewerWindow(viewerPhotos, colorTheme);

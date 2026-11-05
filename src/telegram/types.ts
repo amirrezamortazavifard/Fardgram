@@ -964,9 +964,17 @@ export type MessageSchedulingState =
   | { kind: "atDate"; sendDate: number }
   | { kind: "whenOnline" };
 
+export type MessageSelfDestructType =
+  | { kind: "immediately" }
+  | { kind: "timer"; seconds: number };
+
 export interface Message {
   canSave?: boolean;
   selfDestruct?: boolean;
+  selfDestructType?: MessageSelfDestructType;
+  isViewOnce?: boolean;
+  opened?: boolean;
+  selfDestructIn?: number;
   expiresAt?: string;
   isScheduled?: boolean;
   schedulingState?: MessageSchedulingState;
@@ -1168,6 +1176,7 @@ export type TelegramEvent =
   | { type: "user.upsert"; user: User; cacheRelevant?: boolean }
   | { type: "scheduledMessage.upsert"; message: Message }
   | { type: "scheduledMessage.remove"; chatId: string; messageId: string }
+  | { type: "message.contentOpened"; chatId: string; messageId: string }
   | { type: "sync.error"; message: string; fatal?: boolean };
 
 export interface SendMessageInput {
@@ -1280,6 +1289,7 @@ export interface OutgoingAttachment {
   thumbnail?: File;
   hasSpoiler?: boolean;
   showCaptionAboveMedia?: boolean;
+  selfDestructType?: MessageSelfDestructType;
 }
 
 export interface SendFilesInput {
@@ -1293,6 +1303,7 @@ export interface SendFilesInput {
   replyQuote?: MessageReplyQuote;
   disableNotification?: boolean;
   schedulingState?: MessageSchedulingState;
+  selfDestructType?: MessageSelfDestructType;
 }
 
 export const TELEGRAM_ALBUM_MAX_ITEMS = 10;

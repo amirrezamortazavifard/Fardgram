@@ -505,6 +505,9 @@ export class TauriTelegramTransport implements TelegramTransport {
     updateForumTopic: (update) => this.updateForumTopic(update),
     emitMessage: (message, animateEntrance) => this.emitMessage(message, animateEntrance),
     emitScheduledMessage: (message) => this.emitScheduledMessage(message),
+    emitMessageContentOpened: (chatId, messageId) => {
+      this.listener?.({ type: "message.contentOpened", chatId, messageId });
+    },
     replaceSentMessage: (update) => this.replaceSentMessage(update),
     updateMessageContent: (update) => this.updateMessageContent(update),
     updatePendingMessage: (update) => this.updatePendingMessage(update),
@@ -2331,6 +2334,19 @@ export class TauriTelegramTransport implements TelegramTransport {
     } catch (error) {
       this.localDeleteIntents.delete(key);
       throw error;
+    }
+  }
+
+  async openMessageContent(chatId: string, messageId: string): Promise<boolean> {
+    try {
+      await this.request({
+        "@type": "openMessageContent",
+        chat_id: numericId(chatId),
+        message_id: numericId(messageId),
+      });
+      return true;
+    } catch {
+      return false;
     }
   }
 

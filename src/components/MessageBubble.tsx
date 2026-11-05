@@ -5,9 +5,11 @@ import { translate } from "../i18n";
 import { useTranslation } from "react-i18next";
 import {
   Check,
+  Clock,
   Download,
   ExternalLink,
   FileText,
+  Flame,
   FolderOpen,
   Forward,
   Image as ImageIcon,
@@ -15,6 +17,7 @@ import {
   Save,
   X,
 } from "lucide-react";
+import { messageExpired } from "../telegram/messageLifecycle";
 import {
   memo,
   useEffect,
@@ -877,6 +880,37 @@ function MessageBubbleComponent({
             }))} targetSummary={serviceTargetSummary}
               searchQuery={searchQuery} onOpenPerson={onOpenSenderProfile} onOpenMessage={onOpenReply} />
           ) : isVisual && content.kind === "media" ? (
+            messageExpired(message) ? (
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 select-none">
+                <Clock className="w-5 h-5 text-slate-400" />
+                <span className="text-sm font-medium">{content.mediaType === "video" ? "Video has expired" : "Photo has expired"}</span>
+              </div>
+            ) : message.isViewOnce && !message.opened && !message.outgoing ? (
+              <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/20 text-sky-700 dark:text-sky-300">
+                <button
+                  type="button"
+                  className="flex items-center gap-2.5 text-sm font-semibold hover:opacity-80 transition cursor-pointer"
+                  onClick={() => onOpenMedia?.(message.id, message.chatId)}
+                >
+                  <span className="w-7 h-7 rounded-full bg-sky-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">1</span>
+                  <span>{content.mediaType === "video" ? "View Once Video" : "View Once Photo"}</span>
+                </button>
+                {onDownload && downloadFileId !== undefined && (
+                  <button
+                    type="button"
+                    className="p-1.5 rounded-lg hover:bg-sky-100 dark:hover:bg-white/10 text-sky-600 dark:text-sky-400 transition cursor-pointer"
+                    title="Save timed media to Downloads"
+                    aria-label="Save timed media to Downloads"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDownload(downloadFileId, content.fileName);
+                    }}
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ) : (
             <div className={`photo-message media-${content.mediaType}`} data-media-type={content.mediaType}>
               {content.showCaptionAboveMedia && visualCaption}
               <div
@@ -1068,6 +1102,7 @@ function MessageBubbleComponent({
               </div>
               {!content.showCaptionAboveMedia && visualCaption}
             </div>
+            )
           ) : content.kind === "poll" ? (
             <PollMessage
               poll={content}

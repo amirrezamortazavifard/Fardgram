@@ -66,6 +66,22 @@ export const messageSchedulingStateObject = (state?: MessageSchedulingState): Td
   return null;
 };
 
+export const selfDestructTypeObject = (
+  type?: import("./types").MessageSelfDestructType,
+): TdObject | null => {
+  if (!type) return null;
+  if (type.kind === "immediately") {
+    return { "@type": "messageSelfDestructTypeImmediately" };
+  }
+  if (type.kind === "timer") {
+    return {
+      "@type": "messageSelfDestructTypeTimer",
+      self_destruct_time: Math.max(1, Math.floor(type.seconds)),
+    };
+  }
+  return null;
+};
+
 export const messageSendOptions = (
   disableNotification = false,
   schedulingState?: MessageSchedulingState

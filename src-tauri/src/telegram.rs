@@ -59,6 +59,8 @@ pub struct PastedUploadFile {
     has_spoiler: bool,
     #[serde(default)]
     show_caption_above_media: bool,
+    #[serde(default)]
+    self_destruct_type: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -2036,6 +2038,7 @@ pub async fn telegram_send_pasted_files(
             thumbnail,
             has_spoiler: file.has_spoiler,
             show_caption_above_media: file.show_caption_above_media,
+            self_destruct_type: security::validate_self_destruct_type(&file.self_destruct_type)?,
         });
         fallback_files.push(fallback_file);
     }

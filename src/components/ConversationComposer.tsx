@@ -267,6 +267,7 @@ export const ConversationComposer = memo(function ConversationComposer({
   const [attachmentMode, setAttachmentMode] = useState<AttachmentSendMode>(localAttachmentDraft?.mode ?? "media");
   const [attachmentSpoiler, setAttachmentSpoiler] = useState(localAttachmentDraft?.hasSpoiler ?? false);
   const [muteVideos, setMuteVideos] = useState(localAttachmentDraft?.muteVideos ?? false);
+  const [attachmentSelfDestruct, setAttachmentSelfDestruct] = useState<import("../telegram/types").MessageSelfDestructType | null>(null);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [disableNotification, setDisableNotification] = useState(false);
@@ -1064,6 +1065,7 @@ export const ConversationComposer = memo(function ConversationComposer({
           hasSpoiler: attachmentMode === "media" &&
             canPreviewOutgoingAttachment(attachment.kind) &&
             attachmentSpoiler,
+          selfDestructType: attachmentSelfDestruct ?? undefined,
         })),
         caption.text || undefined,
         caption.entities,
@@ -1083,6 +1085,7 @@ export const ConversationComposer = memo(function ConversationComposer({
       setAttachmentMode("media");
       setAttachmentSpoiler(false);
       setMuteVideos(false);
+      setAttachmentSelfDestruct(null);
       await clearLocalAttachmentDraft(draftKey);
       if (draftTimerRef.current) globalThis.clearTimeout(draftTimerRef.current);
       draftTimerRef.current = undefined;
@@ -1533,6 +1536,17 @@ export const ConversationComposer = memo(function ConversationComposer({
                   disabled={attachmentMode === "file"}
                   onChange={(event) => updateAttachmentOptions({ muteVideos: event.target.checked })}
                 />{translate("作为静音动画")}</label>
+            )}
+            {allowSendWhenOnline && (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={attachmentSelfDestruct?.kind === "immediately"}
+                  disabled={attachmentMode === "file"}
+                  onChange={(event) => {
+                    setAttachmentSelfDestruct(event.target.checked ? { kind: "immediately" } : null);
+                  }}
+                />🔥 {translate("阅后即焚")}</label>
             )}
           </div>
           <footer>

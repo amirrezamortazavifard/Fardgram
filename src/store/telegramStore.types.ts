@@ -466,6 +466,8 @@ export interface TelegramState {
   sendScheduledMessagesImmediately: (chatId: string, messageIds: string[]) => Promise<boolean>;
   rescheduleMessage: (chatId: string, messageId: string, schedulingState: import("../telegram/types").MessageSchedulingState) => Promise<boolean>;
   deleteScheduledMessage: (chatId: string, messageId: string) => Promise<boolean>;
+  openMessageContent: (chatId: string, messageId: string) => Promise<boolean>;
+  saveTimedMedia: (message: import("../telegram/types").Message, target?: "downloads" | "fileAs") => Promise<boolean>;
   clearError: () => void;
   clearOperationError: () => void;
 }

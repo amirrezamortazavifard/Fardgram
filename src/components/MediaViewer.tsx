@@ -207,8 +207,9 @@ function Viewer({ messages, activeMessageId, active, onActiveMessageChange, onCl
     const target = adjacentPhotoId(messages, navigationId.current, delta < 0 ? -1 : 1);
     if (target) { navigationId.current = target; onActiveMessageChange(target); }
   };
-  const canDownload = messageCanBeSaved(active) && content.fileId !== undefined && content.canDownload !== false && !content.isDownloading && !content.isDownloaded;
-  const canSave = allowSave && messageCanBeSaved(active) && Boolean(content.localPath);
+  const isTimedMedia = Boolean(active.selfDestruct || active.isViewOnce || active.expiresAt);
+  const canDownload = messageCanBeSaved(active, true) && content.fileId !== undefined && content.canDownload !== false && !content.isDownloading && !content.isDownloaded;
+  const canSave = allowSave && messageCanBeSaved(active, true) && Boolean(content.localPath);
   // Re-derive from the file ID so snapshots written by older clients cannot
   // continue presenting the account's DC as this image's storage location.
   const dc = content.remoteId ? parseTdlibRemoteFileDataCenter(content.remoteId) : undefined;
@@ -231,6 +232,12 @@ function Viewer({ messages, activeMessageId, active, onActiveMessageChange, onCl
     <div ref={dialogRef} className="media-viewer" role="dialog" aria-modal="true"
       aria-label={video ? translate("媒体查看器：{{value0}}", { value0: content.fileName }) : translate("图片查看器：{{value0}}", { value0: content.fileName })} tabIndex={-1}>
       <main ref={stageRef} tabIndex={-1} className="media-viewer-stage" onWheel={handleWheel}>
+        {isTimedMedia && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/80 backdrop-blur text-white text-xs font-semibold border border-amber-500/40 shadow-lg pointer-events-none">
+            <span>🔥</span>
+            <span>{active.isViewOnce ? "View Once Media — Single View" : "Self-Destructing Media"}</span>
+          </div>
+        )}
         <div ref={viewport.fitRef} className="media-viewer-canvas" onPointerDown={event => {
           if (event.button === 0 && event.target === event.currentTarget) onClose();
         }}>
@@ -284,6 +291,18 @@ function Viewer({ messages, activeMessageId, active, onActiveMessageChange, onCl
               </nav>}
             </div>
             <div className="media-viewer-actions">
+              {isTimedMedia && (
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md transition mr-2"
+                  title="Save timed media to Downloads"
+                  onClick={() => void save()}
+                  disabled={saving}
+                >
+                  <Download size={14} />
+                  <span>Save Timed Media</span>
+                </button>
+              )}
               <span className="media-viewer-counter">{messages.findIndex(message => message.id === activeMessageId) + 1} / {messages.length}</span>
               <button className="media-viewer-download" type="button" aria-label={video ? translate("下载视频") : translate("下载图片")} aria-busy={content.isDownloading || saving || undefined}
                 title={content.isDownloading ? translate("下载中") : canSave ? translate("保存到下载目录") : video ? translate("下载视频") : translate("下载原图")}

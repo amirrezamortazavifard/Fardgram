@@ -1,4 +1,4 @@
-import { asTdObject, type TdObject } from "./tdlibMapper";
+import { asTdObject, tdId, type TdObject } from "./tdlibMapper";
 
 export interface TdUpdateHandlers {
   authorization: (update: TdObject) => void;
@@ -19,6 +19,7 @@ export interface TdUpdateHandlers {
   updateForumTopic: (update: TdObject) => void;
   emitMessage: (message?: TdObject, animateEntrance?: boolean) => void;
   emitScheduledMessage?: (message?: TdObject) => void;
+  emitMessageContentOpened?: (chatId: string, messageId: string) => void;
   replaceSentMessage: (update: TdObject) => void;
   updateMessageContent: (update: TdObject) => void;
   updatePendingMessage: (update: TdObject) => void;
@@ -149,6 +150,9 @@ export const routeTdUpdate = (update: TdObject, handlers: TdUpdateHandlers) => {
       return;
     case "updateNewScheduledMessage":
       handlers.emitScheduledMessage?.(asTdObject(update.message));
+      return;
+    case "updateMessageContentOpened":
+      handlers.emitMessageContentOpened?.(tdId(update.chat_id), tdId(update.message_id));
       return;
     case "updateMessageSendSucceeded":
     case "updateMessageSendFailed":

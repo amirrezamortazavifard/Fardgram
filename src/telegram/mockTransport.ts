@@ -2509,6 +2509,20 @@ export class MockTelegramTransport implements TelegramTransport {
     this.refreshChatPreview(chatId);
   }
 
+  async openMessageContent(chatId: string, messageId: string): Promise<boolean> {
+    const message = this.snapshot.messages.find((m) => m.chatId === chatId && m.id === messageId);
+    if (!message) return false;
+    message.opened = true;
+    if (message.selfDestructType?.kind === "timer") {
+      const seconds = message.selfDestructType.seconds || 10;
+      message.selfDestructIn = seconds;
+      message.expiresAt = new Date(Date.now() + seconds * 1000).toISOString();
+    }
+    this.listener?.({ type: "message.upsert", message: clone(message) });
+    this.listener?.({ type: "message.contentOpened", chatId, messageId });
+    return true;
+  }
+
   async getChatScheduledMessages(chatId: string): Promise<Message[]> {
     return clone(this.mockScheduledMessages.get(chatId) ?? []);
   }
@@ -2712,6 +2726,7 @@ export class MockTelegramTransport implements TelegramTransport {
     replyQuote,
     onGroupAccepted,
     schedulingState,
+    selfDestructType,
   }: SendFilesInput) {
     if (attachments.length === 0) return false;
     for (const [groupIndex, group] of groupOutgoingAttachments(attachments).entries()) {
@@ -2731,6 +2746,15 @@ export class MockTelegramTransport implements TelegramTransport {
           sentAt: new Date().toISOString(),
           delivery: "sent",
           ...(schedulingState ? { isScheduled: true, schedulingState } : {}),
+          ...(attachment.selfDestructType || selfDestructType
+            ? {
+                selfDestruct: true,
+                selfDestructType: attachment.selfDestructType ?? selfDestructType,
+                isViewOnce: (attachment.selfDestructType ?? selfDestructType)?.kind === "immediately",
+                opened: false,
+                canSave: false,
+              }
+            : {}),
           replyTo: replyToMessageId
             ? {
                 kind: "message",

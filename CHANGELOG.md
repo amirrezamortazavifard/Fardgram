@@ -6,6 +6,7 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **View Once & Self-Destructing Media Parity (FG-006)**: Complete View Once and TTL media lifecycle in 1:1 direct chats with TDLib request validation (`openMessageContent`, `messageSelfDestructTypeImmediately`, `messageSelfDestructTypeTimer`), composer View Once / TTL toggles, timeline sealed View Once badge (`1`) and expired tombstones, and user-requested timed media saving (`saveTimedMedia`, explicit "Save Timed Media" button in MediaViewer, and inline download button).
 - **Scheduled Messages, Posts & Send When Online (FG-005)**: Full TDLib scheduling integration (`getChatScheduledMessages`, `sendScheduledMessages`, `editMessageSchedulingState`, `messageSendOptions` with `messageSchedulingStateSendAtDate` and `messageSchedulingStateSendWhenOnline`), native Rust security request whitelist validation, schedule trigger on message send button context menu, scheduled counter badge, and dedicated `ScheduleMessageDialog` and `ScheduledMessagesDialog` with dual-theme design.
 - **Telegram Mini Apps (FG-004)**: Secure desktop in-app WebView runtime (`fardgram_open_mini_app`, `fardgram_close_mini_app`) isolated from Tauri IPC capabilities, with Telegram WebApp proxy initialization script, bot launch authorization via TDLib `openWebApp`, mock fallback modal, and inline keyboard button integration.
 

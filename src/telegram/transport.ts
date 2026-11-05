@@ -232,6 +232,7 @@ export interface TelegramTransport {
   sendMessage(input: SendMessageInput): Promise<void>;
   editMessage(input: EditMessageInput): Promise<void>;
   deleteMessage(input: DeleteMessageInput): Promise<void>;
+  openMessageContent(chatId: string, messageId: string): Promise<boolean>;
   getChatScheduledMessages(chatId: string): Promise<Message[]>;
   sendScheduledMessages(chatId: string, messageIds: string[]): Promise<void>;
   editMessageSchedulingState(chatId: string, messageId: string, schedulingState: MessageSchedulingState): Promise<void>;

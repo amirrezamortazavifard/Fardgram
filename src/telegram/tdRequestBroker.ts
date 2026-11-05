@@ -36,6 +36,7 @@ export interface PreparedPastedAttachment extends PreparedPastedFile {
   fallback?: PreparedPastedFile;
   hasSpoiler?: boolean;
   showCaptionAboveMedia?: boolean;
+  selfDestructType?: import("./tdlibMapper").TdObject | null;
 }
 
 export class TdRequestBroker {
