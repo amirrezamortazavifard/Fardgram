@@ -144,7 +144,7 @@ The order below is the recommended delivery sequence. It can be changed only whe
 
 ### P1 — Advanced daily use and account parity
 
-- [ ] **FG-008 — Telegram Business features**
+- [x] **FG-008 — Telegram Business features**
 - [ ] **FG-009 — Passkey login and passkey management**
 - [ ] **FG-010 — Saved Messages 2.0 and saved-message organization**
 - [ ] **FG-011 — Full chat/history export**

@@ -458,6 +458,42 @@ export class MockTelegramTransport implements TelegramTransport {
   };
 
   private mockScheduledMessages = new Map<string, Message[]>();
+  private mockBusinessLocation: import("./types").BusinessLocation | null = {
+    address: "710 Ashbury St, San Francisco, CA 94117",
+    latitude: 37.769,
+    longitude: -122.446,
+  };
+  private mockBusinessOpeningHours: import("./types").BusinessOpeningHours | null = {
+    timeZoneId: "America/Los_Angeles",
+    intervals: [
+      { startMinute: 9 * 60, endMinute: 18 * 60 },
+      { startMinute: 24 * 60 + 9 * 60, endMinute: 24 * 60 + 18 * 60 },
+      { startMinute: 48 * 60 + 9 * 60, endMinute: 48 * 60 + 18 * 60 },
+      { startMinute: 72 * 60 + 9 * 60, endMinute: 72 * 60 + 18 * 60 },
+      { startMinute: 96 * 60 + 9 * 60, endMinute: 96 * 60 + 18 * 60 },
+    ],
+  };
+  private mockBusinessGreetingSettings: import("./types").BusinessGreetingMessageSettings | null = {
+    shortcutId: 1,
+    noActivityDays: 14,
+  };
+  private mockBusinessAwaySettings: import("./types").BusinessAwayMessageSettings | null = {
+    shortcutId: 2,
+    schedule: { kind: "outsideOfOpeningHours" },
+    offlineOnly: true,
+  };
+  private mockBusinessStartPage: import("./types").BusinessStartPage | null = {
+    title: "Welcome to Fardgram Business",
+    message: "We're here to help! Ask any question or browse our catalog.",
+  };
+  private mockQuickReplyShortcuts: import("./types").QuickReplyShortcut[] = [
+    { id: 1, name: "hello", messageCount: 1 },
+    { id: 2, name: "pricing", messageCount: 2 },
+    { id: 3, name: "support", messageCount: 1 },
+  ];
+  private mockBusinessChatLinks: import("./types").BusinessChatLink[] = [
+    { link: "https://t.me/m/fardgram_orders", title: "Order Form", text: "Hi, I'd like to place an order", viewCount: 24 },
+  ];
 
   private folderTitle(title: string) {
     try {
@@ -883,6 +919,13 @@ export class MockTelegramTransport implements TelegramTransport {
       profilePhotos: mockProfilePhotos(user),
       profileAudioCount: mockProfileAudios(user).length,
       profileAudios: mockProfileAudios(user),
+      businessInfo: {
+        location: this.mockBusinessLocation ?? undefined,
+        openingHours: this.mockBusinessOpeningHours ?? undefined,
+        greetingMessageSettings: this.mockBusinessGreetingSettings ?? undefined,
+        awayMessageSettings: this.mockBusinessAwaySettings ?? undefined,
+        startPage: this.mockBusinessStartPage ?? undefined,
+      },
     };
   }
 
@@ -915,6 +958,13 @@ export class MockTelegramTransport implements TelegramTransport {
       profilePhotos: mockProfilePhotos(user),
       profileAudioCount: mockProfileAudios(user).length,
       profileAudios: mockProfileAudios(user),
+      businessInfo: {
+        location: this.mockBusinessLocation ?? undefined,
+        openingHours: this.mockBusinessOpeningHours ?? undefined,
+        greetingMessageSettings: this.mockBusinessGreetingSettings ?? undefined,
+        awayMessageSettings: this.mockBusinessAwaySettings ?? undefined,
+        startPage: this.mockBusinessStartPage ?? undefined,
+      },
     };
   }
 
@@ -2557,6 +2607,94 @@ export class MockTelegramTransport implements TelegramTransport {
     if (!msg) throw new Error("Scheduled message not found");
     msg.schedulingState = schedulingState;
     this.listener?.({ type: "scheduledMessage.upsert", message: clone(msg) });
+  }
+
+  async getBusinessFeatures(): Promise<string[]> {
+    return [
+      "businessFeatureLocation",
+      "businessFeatureOpeningHours",
+      "businessFeatureQuickReplies",
+      "businessFeatureGreetingMessage",
+      "businessFeatureAwayMessage",
+      "businessFeatureAccountLinks",
+      "businessFeatureStartPage",
+      "businessFeatureBots",
+    ];
+  }
+
+  async setBusinessLocation(location: import("./types").BusinessLocation | null): Promise<void> {
+    this.mockBusinessLocation = location ? clone(location) : null;
+  }
+
+  async setBusinessOpeningHours(openingHours: import("./types").BusinessOpeningHours | null): Promise<void> {
+    this.mockBusinessOpeningHours = openingHours ? clone(openingHours) : null;
+  }
+
+  async setBusinessGreetingSettings(settings: import("./types").BusinessGreetingMessageSettings | null): Promise<void> {
+    this.mockBusinessGreetingSettings = settings ? clone(settings) : null;
+  }
+
+  async setBusinessAwaySettings(settings: import("./types").BusinessAwayMessageSettings | null): Promise<void> {
+    this.mockBusinessAwaySettings = settings ? clone(settings) : null;
+  }
+
+  async setBusinessStartPage(startPage: import("./types").BusinessStartPage | null): Promise<void> {
+    this.mockBusinessStartPage = startPage ? clone(startPage) : null;
+  }
+
+  async getQuickReplyShortcuts(): Promise<import("./types").QuickReplyShortcut[]> {
+    return clone(this.mockQuickReplyShortcuts);
+  }
+
+  async setQuickReplyShortcutName(shortcutId: number, name: string): Promise<void> {
+    const existing = this.mockQuickReplyShortcuts.find((s) => s.id === shortcutId);
+    if (existing) {
+      existing.name = name;
+    } else {
+      this.mockQuickReplyShortcuts.push({ id: shortcutId, name, messageCount: 0 });
+    }
+  }
+
+  async deleteQuickReplyShortcut(shortcutId: number): Promise<void> {
+    this.mockQuickReplyShortcuts = this.mockQuickReplyShortcuts.filter((s) => s.id !== shortcutId);
+  }
+
+  async sendQuickReplyShortcut(chatId: string, shortcutId: number): Promise<void> {
+    const shortcut = this.mockQuickReplyShortcuts.find((s) => s.id === shortcutId);
+    if (!shortcut) throw new Error("Quick reply shortcut not found");
+    const targetChat = this.snapshot.chats.find((c) => c.id === chatId) ?? this.snapshot.chats[0];
+    const targetChatId = targetChat ? targetChat.id : chatId;
+    await this.sendMessage({
+      chatId: targetChatId,
+      text: `[Quick Reply: ${shortcut.name}] Hello, thank you for reaching out!`,
+    });
+  }
+
+  async getBusinessChatLinks(): Promise<import("./types").BusinessChatLink[]> {
+    return clone(this.mockBusinessChatLinks);
+  }
+
+  async createBusinessChatLink(title: string, text: string): Promise<import("./types").BusinessChatLink> {
+    const link: import("./types").BusinessChatLink = {
+      link: `https://t.me/m/link_${Date.now()}`,
+      title,
+      text,
+      viewCount: 0,
+    };
+    this.mockBusinessChatLinks.push(link);
+    return clone(link);
+  }
+
+  async editBusinessChatLink(link: string, title: string, text: string): Promise<import("./types").BusinessChatLink> {
+    const existing = this.mockBusinessChatLinks.find((l) => l.link === link);
+    if (!existing) throw new Error("Business chat link not found");
+    existing.title = title;
+    existing.text = text;
+    return clone(existing);
+  }
+
+  async deleteBusinessChatLink(link: string): Promise<void> {
+    this.mockBusinessChatLinks = this.mockBusinessChatLinks.filter((l) => l.link !== link);
   }
 
   async forwardMessages({ fromChatId, toChatId, toTopicId, messageIds }: ForwardMessagesInput): Promise<ForwardMessagesResult> {

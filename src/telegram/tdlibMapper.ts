@@ -28,6 +28,15 @@ import type {
   ChatSponsoredMessages,
   SponsoredMessage,
   User,
+  BusinessAwayMessageSettings,
+  BusinessAwaySchedule,
+  BusinessChatLink,
+  BusinessGreetingMessageSettings,
+  BusinessInfo,
+  BusinessLocation,
+  BusinessOpeningHours,
+  BusinessStartPage,
+  QuickReplyShortcut,
 } from "./types";
 import { messagePreviewText } from "./messageContent";
 import { deriveChatManagementCapabilitiesFromTd } from "./chatManagement";
@@ -2052,5 +2061,105 @@ export const mapTdUser = (raw: TdObject): User | undefined => {
     },
     presence: online ? "online" : "offline",
     lastSeenLabel: lastSeen ? new Date(lastSeen * 1000).toLocaleString(currentLanguage()) : undefined,
+  };
+};
+
+export const mapTdBusinessLocation = (value: unknown): BusinessLocation | undefined => {
+  const obj = asTdObject(value);
+  if (!obj || typeof obj.address !== "string") return undefined;
+  const loc = asTdObject(obj.location);
+  return {
+    address: obj.address,
+    latitude: typeof loc?.latitude === "number" ? loc.latitude : undefined,
+    longitude: typeof loc?.longitude === "number" ? loc.longitude : undefined,
+  };
+};
+
+export const mapTdBusinessOpeningHours = (value: unknown): BusinessOpeningHours | undefined => {
+  const obj = asTdObject(value);
+  if (!obj || typeof obj.time_zone_id !== "string") return undefined;
+  const intervals = asTdObjects(obj.intervals).map((item) => ({
+    startMinute: tdNumber(item.start_minute) ?? 0,
+    endMinute: tdNumber(item.end_minute) ?? 0,
+  }));
+  return {
+    timeZoneId: obj.time_zone_id,
+    intervals,
+  };
+};
+
+export const mapTdBusinessStartPage = (value: unknown): BusinessStartPage | undefined => {
+  const obj = asTdObject(value);
+  if (!obj) return undefined;
+  return {
+    title: typeof obj.title === "string" ? obj.title : "",
+    message: typeof obj.message === "string" ? obj.message : "",
+  };
+};
+
+export const mapTdBusinessGreetingSettings = (value: unknown): BusinessGreetingMessageSettings | undefined => {
+  const obj = asTdObject(value);
+  if (!obj) return undefined;
+  return {
+    shortcutId: tdNumber(obj.shortcut_id) ?? 0,
+    noActivityDays: tdNumber(obj.no_activity_days) ?? 7,
+  };
+};
+
+export const mapTdBusinessAwaySettings = (value: unknown): BusinessAwayMessageSettings | undefined => {
+  const obj = asTdObject(value);
+  if (!obj) return undefined;
+  const scheduleObj = asTdObject(obj.schedule);
+  let schedule: BusinessAwaySchedule = { kind: "always" };
+  if (scheduleObj?.["@type"] === "businessAwayMessageScheduleOutsideOfOpeningHours") {
+    schedule = { kind: "outsideOfOpeningHours" };
+  } else if (scheduleObj?.["@type"] === "businessAwayMessageScheduleCustom") {
+    schedule = {
+      kind: "custom",
+      startDate: tdNumber(scheduleObj.start_date) ?? 0,
+      endDate: tdNumber(scheduleObj.end_date) ?? 0,
+    };
+  }
+  return {
+    shortcutId: tdNumber(obj.shortcut_id) ?? 0,
+    schedule,
+    offlineOnly: obj.offline_only === true,
+  };
+};
+
+export const mapTdBusinessInfo = (value: unknown): BusinessInfo | undefined => {
+  const obj = asTdObject(value);
+  if (!obj) return undefined;
+  return {
+    location: mapTdBusinessLocation(obj.location),
+    openingHours: mapTdBusinessOpeningHours(obj.opening_hours),
+    localOpeningHours: mapTdBusinessOpeningHours(obj.local_opening_hours),
+    nextOpenIn: tdNumber(obj.next_open_in),
+    nextCloseIn: tdNumber(obj.next_close_in),
+    greetingMessageSettings: mapTdBusinessGreetingSettings(obj.greeting_message_settings),
+    awayMessageSettings: mapTdBusinessAwaySettings(obj.away_message_settings),
+    startPage: mapTdBusinessStartPage(obj.start_page),
+  };
+};
+
+export const mapTdQuickReplyShortcut = (value: unknown): QuickReplyShortcut | undefined => {
+  const obj = asTdObject(value);
+  if (!obj || obj.id === undefined) return undefined;
+  return {
+    id: tdNumber(obj.id) ?? 0,
+    name: typeof obj.name === "string" ? obj.name : "",
+    messageCount: tdNumber(obj.message_count),
+  };
+};
+
+export const mapTdBusinessChatLink = (value: unknown): BusinessChatLink | undefined => {
+  const obj = asTdObject(value);
+  if (!obj || typeof obj.link !== "string") return undefined;
+  const textObj = asTdObject(obj.text);
+  return {
+    link: obj.link,
+    title: typeof obj.title === "string" ? obj.title : "",
+    text: typeof textObj?.text === "string" ? textObj.text : typeof obj.text === "string" ? obj.text : "",
+    viewCount: tdNumber(obj.view_count) ?? 0,
   };
 };

@@ -435,6 +435,80 @@ export interface ChatProfile {
   profilePhotos?: ProfilePhoto[];
   profileAudioCount?: number;
   profileAudios?: ProfileAudio[];
+  businessInfo?: BusinessInfo;
+}
+
+export interface BusinessLocation {
+  address: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface BusinessOpeningHoursInterval {
+  startMinute: number; // 0..10079
+  endMinute: number;
+}
+
+export interface BusinessOpeningHours {
+  timeZoneId: string;
+  intervals: BusinessOpeningHoursInterval[];
+}
+
+export interface BusinessStartPage {
+  title: string;
+  message: string;
+}
+
+export interface BusinessRecipients {
+  selectExistingChats?: boolean;
+  selectNewChats?: boolean;
+  selectContacts?: boolean;
+  selectNonContacts?: boolean;
+  excludeSelected?: boolean;
+  chatIds?: string[];
+  excludedChatIds?: string[];
+}
+
+export interface BusinessGreetingMessageSettings {
+  shortcutId: number;
+  recipients?: BusinessRecipients;
+  noActivityDays: number;
+}
+
+export type BusinessAwaySchedule =
+  | { kind: "always" }
+  | { kind: "outsideOfOpeningHours" }
+  | { kind: "custom"; startDate: number; endDate: number };
+
+export interface BusinessAwayMessageSettings {
+  shortcutId: number;
+  recipients?: BusinessRecipients;
+  schedule: BusinessAwaySchedule;
+  offlineOnly: boolean;
+}
+
+export interface BusinessInfo {
+  location?: BusinessLocation;
+  openingHours?: BusinessOpeningHours;
+  localOpeningHours?: BusinessOpeningHours;
+  nextOpenIn?: number;
+  nextCloseIn?: number;
+  greetingMessageSettings?: BusinessGreetingMessageSettings;
+  awayMessageSettings?: BusinessAwayMessageSettings;
+  startPage?: BusinessStartPage;
+}
+
+export interface QuickReplyShortcut {
+  id: number;
+  name: string;
+  messageCount?: number;
+}
+
+export interface BusinessChatLink {
+  link: string;
+  title: string;
+  text: string;
+  viewCount: number;
 }
 
 export interface UpdateCurrentUserProfileInput {

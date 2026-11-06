@@ -7,6 +7,7 @@ import {
   AtSign,
   BatteryCharging,
   Bell,
+  Briefcase,
   Camera,
   CloudDownload,
   Code2,
@@ -82,6 +83,7 @@ import { UpdateSettings } from "./UpdateSettings";
 import { SafetySettings } from "./SafetySettings";
 import { ApiCredentialsSettings } from "./ApiCredentialsSettings";
 import { ProxySettingsEditor } from "./ProxySettingsEditor";
+import { BusinessSettingsPanel } from "./BusinessSettingsPanel";
 import { mergeProxySettingsDraft } from "../telegram/proxySettings";
 import type { LanguagePreference } from "../i18n";
 import {
@@ -102,6 +104,7 @@ interface SettingsDialogProps {
 
 type SettingsCategoryId =
   | "account"
+  | "business"
   | "fardgram"
   | "notifications"
   | "chats"
@@ -124,6 +127,7 @@ const searchTerms = (value: string) => decodeURIComponent(value);
 
 const categories: SettingsCategory[] = [
   { id: "account", label: "My Account", icon: UserCircle, searchTerms: "account profile avatar phone username dc datacenter bio logout" },
+  { id: "business", label: "Telegram Business", icon: Briefcase, searchTerms: "business location opening hours quick replies greeting away message chat links start page" },
   { id: "fardgram", label: "Fardgram", icon: SendHorizontal, searchTerms: "fardgram adblock ghost stealth anti-delete anti-edit zalgo typing startup" },
   { id: "notifications", label: "Notifications & Sounds", icon: Bell, searchTerms: "notifications sound alerts preview desktop permissions" },
   { id: "chats", label: "Chats & Appearance", icon: MessageCircle, searchTerms: "theme wallpaper font density spacing collapse lines display unread badge" },
@@ -543,6 +547,8 @@ export function SettingsDialog({ onClose, standalone = false }: SettingsDialogPr
               onUpdate={updateCurrentUserProfile}
               onChangeAvatar={changeCurrentUserAvatar}
             />
+          ) : activeCategory === "business" ? (
+            <BusinessSettingsPanel />
           ) : activeCategory === "advanced" ? (
             <AdvancedSettings
               draft={draft}

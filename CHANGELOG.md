@@ -6,6 +6,13 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Telegram Business Features (FG-008)**: Comprehensive Telegram Business profile, automated messaging, and business chat links management:
+  - **Business Identity & Profile**: Business location/address with optional coordinates, opening hours with weekly schedules and timezone selector, and business start page (intro title and message) customization.
+  - **Automated Messaging**: Greeting message settings with configurable inactivity period (7 to 28 days), away message settings with schedule presets (`always`, `outsideOfOpeningHours`) and offline-only dispatch toggle.
+  - **Quick Replies**: Shortcut manager to list, create, edit, delete, and send quick reply shortcuts (`/`), fully integrated into the composer slash autocomplete popup.
+  - **Business Chat Links**: Create, view, edit, revoke, and copy business chat links with prefilled messages and real-time visitor click count tracking.
+  - **Native Rust Security**: Validated request whitelist in `src-tauri/src/telegram/security.rs` covering 16 TDLib business methods with identifier bounds, shortcut character verification, and link length checks.
+  - **Dual-Theme Settings UI**: Dedicated `BusinessSettingsPanel` in Settings with light/dark theme styling, badge counters, and real TDLib & mock transport parity.
 - **Photo, Video and GIF Pre-Send Editor (FG-007)**: Full-featured non-destructive pre-send media editor for photos, videos, and animated GIFs:
   - Photo editor with crop presets (`Free`, `Original`, `1:1`, `4:3`, `16:9`, `9:16`, `3:2`), 90° rotation, horizontal/vertical flipping, freehand drawing brush with 10-color palette, stroke width adjustments, undo/redo stack, customizable draggable text overlays with solid background highlights, and spoiler mask toggling.
   - Video and GIF editor with timeline start and end trimming sliders, dynamic duration and resulting file-size estimation, video playback scrubber with looping preview, audio mute toggle (silent video / animation), and cover/thumbnail frame capture from video playback position.

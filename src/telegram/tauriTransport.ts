@@ -19,6 +19,8 @@ import {
   mapTdChatFolders,
   mapTdMessage,
   mapTdSponsoredMessages,
+  mapTdQuickReplyShortcut,
+  mapTdBusinessChatLink,
   messageSenderId,
   mapTdUser,
   tdId,
@@ -2377,6 +2379,216 @@ export class TauriTelegramTransport implements TelegramTransport {
       chat_id: numericId(chatId),
       message_id: numericId(messageId),
       scheduling_state: messageSchedulingStateObject(schedulingState),
+    });
+  }
+
+  async getBusinessFeatures(): Promise<string[]> {
+    try {
+      const response = await this.request({
+        "@type": "getBusinessFeatures",
+        source: null,
+      });
+      if (response["@type"] === "businessFeatures" && Array.isArray(response.features)) {
+        return response.features.map((f: TdObject) => (typeof f["@type"] === "string" ? f["@type"] : "")).filter(Boolean);
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  async setBusinessLocation(location: import("./types").BusinessLocation | null): Promise<void> {
+    await this.request({
+      "@type": "setBusinessLocation",
+      location: location
+        ? {
+            "@type": "businessLocation",
+            address: location.address,
+            location: location.latitude !== undefined && location.longitude !== undefined
+              ? { "@type": "location", latitude: location.latitude, longitude: location.longitude }
+              : null,
+          }
+        : null,
+    });
+  }
+
+  async setBusinessOpeningHours(openingHours: import("./types").BusinessOpeningHours | null): Promise<void> {
+    await this.request({
+      "@type": "setBusinessOpeningHours",
+      opening_hours: openingHours
+        ? {
+            "@type": "businessOpeningHours",
+            time_zone_id: openingHours.timeZoneId,
+            intervals: openingHours.intervals.map((i) => ({
+              "@type": "businessOpeningHoursInterval",
+              start_minute: i.startMinute,
+              end_minute: i.endMinute,
+            })),
+          }
+        : null,
+    });
+  }
+
+  async setBusinessGreetingSettings(settings: import("./types").BusinessGreetingMessageSettings | null): Promise<void> {
+    await this.request({
+      "@type": "setBusinessGreetingMessageSettings",
+      greeting_message_settings: settings
+        ? {
+            "@type": "businessGreetingMessageSettings",
+            shortcut_id: settings.shortcutId,
+            recipients: {
+              "@type": "businessRecipients",
+              select_existing_chats: settings.recipients?.selectExistingChats ?? true,
+              select_new_chats: settings.recipients?.selectNewChats ?? true,
+              select_contacts: settings.recipients?.selectContacts ?? true,
+              select_non_contacts: settings.recipients?.selectNonContacts ?? true,
+              exclude_selected: settings.recipients?.excludeSelected ?? false,
+              chat_ids: (settings.recipients?.chatIds ?? []).map(numericId),
+              excluded_chat_ids: (settings.recipients?.excludedChatIds ?? []).map(numericId),
+            },
+            no_activity_days: settings.noActivityDays,
+          }
+        : null,
+    });
+  }
+
+  async setBusinessAwaySettings(settings: import("./types").BusinessAwayMessageSettings | null): Promise<void> {
+    let scheduleObj: TdObject = { "@type": "businessAwayMessageScheduleAlways" };
+    if (settings?.schedule.kind === "outsideOfOpeningHours") {
+      scheduleObj = { "@type": "businessAwayMessageScheduleOutsideOfOpeningHours" };
+    } else if (settings?.schedule.kind === "custom") {
+      scheduleObj = {
+        "@type": "businessAwayMessageScheduleCustom",
+        start_date: settings.schedule.startDate,
+        end_date: settings.schedule.endDate,
+      };
+    }
+    await this.request({
+      "@type": "setBusinessAwayMessageSettings",
+      away_message_settings: settings
+        ? {
+            "@type": "businessAwayMessageSettings",
+            shortcut_id: settings.shortcutId,
+            recipients: {
+              "@type": "businessRecipients",
+              select_existing_chats: settings.recipients?.selectExistingChats ?? true,
+              select_new_chats: settings.recipients?.selectNewChats ?? true,
+              select_contacts: settings.recipients?.selectContacts ?? true,
+              select_non_contacts: settings.recipients?.selectNonContacts ?? true,
+              exclude_selected: settings.recipients?.excludeSelected ?? false,
+              chat_ids: (settings.recipients?.chatIds ?? []).map(numericId),
+              excluded_chat_ids: (settings.recipients?.excludedChatIds ?? []).map(numericId),
+            },
+            schedule: scheduleObj,
+            offline_only: settings.offlineOnly,
+          }
+        : null,
+    });
+  }
+
+  async setBusinessStartPage(startPage: import("./types").BusinessStartPage | null): Promise<void> {
+    await this.request({
+      "@type": "setBusinessStartPage",
+      start_page: startPage
+        ? {
+            "@type": "inputBusinessStartPage",
+            title: startPage.title,
+            message: startPage.message,
+            sticker: null,
+          }
+        : null,
+    });
+  }
+
+  async getQuickReplyShortcuts(): Promise<import("./types").QuickReplyShortcut[]> {
+    try {
+      const response = await this.request({
+        "@type": "loadQuickReplyShortcuts",
+      });
+      if (response["@type"] === "quickReplyShortcuts" && Array.isArray(response.shortcuts)) {
+        return response.shortcuts
+          .map(mapTdQuickReplyShortcut)
+          .filter((s): s is import("./types").QuickReplyShortcut => Boolean(s));
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  async setQuickReplyShortcutName(shortcutId: number, name: string): Promise<void> {
+    await this.request({
+      "@type": "setQuickReplyShortcutName",
+      shortcut_id: shortcutId,
+      name,
+    });
+  }
+
+  async deleteQuickReplyShortcut(shortcutId: number): Promise<void> {
+    await this.request({
+      "@type": "deleteQuickReplyShortcut",
+      shortcut_id: shortcutId,
+    });
+  }
+
+  async sendQuickReplyShortcut(chatId: string, shortcutId: number): Promise<void> {
+    await this.request({
+      "@type": "sendQuickReplyShortcutMessages",
+      chat_id: numericId(chatId),
+      shortcut_id: shortcutId,
+      sending_id: Math.floor(Math.random() * 1000000) + 1,
+    });
+  }
+
+  async getBusinessChatLinks(): Promise<import("./types").BusinessChatLink[]> {
+    try {
+      const response = await this.request({
+        "@type": "getBusinessChatLinks",
+      });
+      if (response["@type"] === "businessChatLinks" && Array.isArray(response.links)) {
+        return response.links
+          .map(mapTdBusinessChatLink)
+          .filter((l): l is import("./types").BusinessChatLink => Boolean(l));
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  async createBusinessChatLink(title: string, text: string): Promise<import("./types").BusinessChatLink> {
+    const response = await this.request({
+      "@type": "createBusinessChatLink",
+      link_info: {
+        "@type": "inputBusinessChatLink",
+        text: formattedTextObject(text),
+        title,
+      },
+    });
+    const mapped = mapTdBusinessChatLink(response);
+    if (!mapped) throw new Error(translate("创建 Business 链接失败"));
+    return mapped;
+  }
+
+  async editBusinessChatLink(link: string, title: string, text: string): Promise<import("./types").BusinessChatLink> {
+    const response = await this.request({
+      "@type": "editBusinessChatLink",
+      link,
+      link_info: {
+        "@type": "inputBusinessChatLink",
+        text: formattedTextObject(text),
+        title,
+      },
+    });
+    const mapped = mapTdBusinessChatLink(response);
+    if (!mapped) throw new Error(translate("修改 Business 链接失败"));
+    return mapped;
+  }
+
+  async deleteBusinessChatLink(link: string): Promise<void> {
+    await this.request({
+      "@type": "deleteBusinessChatLink",
+      link,
     });
   }
 

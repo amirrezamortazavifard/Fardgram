@@ -251,6 +251,8 @@ export const ConversationComposer = memo(function ConversationComposer({
   const saveLocalAttachmentDraft = useTelegramStore((state) => state.saveLocalAttachmentDraft);
   const updateLocalAttachmentDraftOptions = useTelegramStore((state) => state.updateLocalAttachmentDraftOptions);
   const clearLocalAttachmentDraft = useTelegramStore((state) => state.clearLocalAttachmentDraft);
+  const quickReplyShortcuts = useTelegramStore((state) => state.quickReplyShortcuts);
+  const loadQuickReplyShortcuts = useTelegramStore((state) => state.loadQuickReplyShortcuts);
   const activeReplyQuote = replyingTo ? replyQuote : chatDraft?.replyQuote;
   const composerContextMessage = editingMessage ?? replyingTo;
   const editingCaption = Boolean(editingMessage && isCaptionContent(editingMessage.content));
@@ -283,6 +285,10 @@ export const ConversationComposer = memo(function ConversationComposer({
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const paperclipAnchorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void loadQuickReplyShortcuts();
+  }, [loadQuickReplyShortcuts]);
 
   useEffect(() => {
     if (!aiMenuOpen) return;
@@ -477,21 +483,31 @@ export const ConversationComposer = memo(function ConversationComposer({
     setBotSuggestions([]);
     setActiveBotSuggestionIndex(0);
     if (!selectedBotMatchesDraft) selectedBotRef.current = undefined;
+
+    const matchingQuickReplies: BotCommandSuggestion[] = (quickReplyShortcuts ?? [])
+      .filter((qr) => !slash[1] || qr.name.toLowerCase().startsWith(slash[1].toLowerCase()))
+      .map((qr) => ({
+        botUserId: "",
+        command: qr.name,
+        description: `Quick Reply (/${qr.name})`,
+        botUsername: "",
+      }));
+
     botCommandQueryTimerRef.current = globalThis.setTimeout(() => {
       void onGetBotCommands(slash[1], username)
         .then((suggestions) => {
           if (botCommandGenerationRef.current !== generation) return;
-          setBotSuggestions(suggestions);
+          setBotSuggestions([...matchingQuickReplies, ...suggestions]);
           setActiveBotSuggestionIndex(0);
         })
         .catch(() => {
-          if (botCommandGenerationRef.current === generation) setBotSuggestions([]);
+          if (botCommandGenerationRef.current === generation) setBotSuggestions(matchingQuickReplies);
         });
     }, 80);
     return () => {
       if (botCommandQueryTimerRef.current) globalThis.clearTimeout(botCommandQueryTimerRef.current);
     };
-  }, [defaultBotUsername, draft, editingMessage, onGetBotCommands]);
+  }, [defaultBotUsername, draft, editingMessage, onGetBotCommands, quickReplyShortcuts]);
 
   const recentMentionKey = JSON.stringify(recentMentionUserIds);
   useLayoutEffect(() => {

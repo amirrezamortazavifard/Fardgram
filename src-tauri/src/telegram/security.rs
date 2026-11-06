@@ -154,6 +154,22 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "unpinChatMessage",
     "readAllChatReactions",
     "viewMessages",
+    "getBusinessFeatures",
+    "getBusinessConnectedBot",
+    "getBusinessChatLinks",
+    "createBusinessChatLink",
+    "editBusinessChatLink",
+    "deleteBusinessChatLink",
+    "setBusinessLocation",
+    "setBusinessOpeningHours",
+    "setBusinessStartPage",
+    "setBusinessGreetingMessageSettings",
+    "setBusinessAwayMessageSettings",
+    "loadQuickReplyShortcuts",
+    "loadQuickReplyShortcutMessages",
+    "setQuickReplyShortcutName",
+    "deleteQuickReplyShortcut",
+    "sendQuickReplyShortcutMessages",
 ];
 
 pub(super) fn request_type_from_extra(extra: &str) -> Option<&str> {
@@ -229,6 +245,44 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
             validate_nonzero_identifier(request, "chat_id")?;
             validate_nonzero_identifier(request, "message_id")?;
         }
+        "getBusinessFeatures" | "getBusinessConnectedBot" | "getBusinessChatLinks" | "loadQuickReplyShortcuts" => {}
+        "loadQuickReplyShortcutMessages" | "deleteQuickReplyShortcut" => {
+            validate_nonzero_identifier(request, "shortcut_id")?;
+        }
+        "setQuickReplyShortcutName" => {
+            validate_nonzero_identifier(request, "shortcut_id")?;
+            let name = request.get("name").and_then(Value::as_str).ok_or("Missing shortcut name")?;
+            if name.is_empty() || name.len() > 32 || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                return Err("Shortcut name must be 1 to 32 alphanumeric characters".to_string());
+            }
+        }
+        "sendQuickReplyShortcutMessages" => {
+            validate_nonzero_identifier(request, "chat_id")?;
+            validate_nonzero_identifier(request, "shortcut_id")?;
+        }
+        "deleteBusinessChatLink" => {
+            let link = request.get("link").and_then(Value::as_str).ok_or("Missing link")?;
+            if link.is_empty() {
+                return Err("Link cannot be empty".to_string());
+            }
+        }
+        "createBusinessChatLink" => {
+            let title = request.get("title").and_then(Value::as_str).unwrap_or("");
+            if title.len() > 64 {
+                return Err("Business chat link title too long".to_string());
+            }
+        }
+        "editBusinessChatLink" => {
+            let link = request.get("link").and_then(Value::as_str).ok_or("Missing link")?;
+            if link.is_empty() {
+                return Err("Link cannot be empty".to_string());
+            }
+        }
+        "setBusinessLocation"
+        | "setBusinessOpeningHours"
+        | "setBusinessStartPage"
+        | "setBusinessGreetingMessageSettings"
+        | "setBusinessAwayMessageSettings" => {}
         "joinChat" | "openChat" | "closeChat" => {
             validate_nonzero_identifier(request, "chat_id")?;
         }
@@ -3667,5 +3721,53 @@ mod tests {
         assert_eq!(request["@type"], "setChatPhoto");
         assert_eq!(request["chat_id"], 72);
         assert!(validate_webview_tdlib_request(&request).is_err());
+    }
+
+    #[test]
+    fn validates_business_requests() {
+        let features = json!({
+            "@type": "getBusinessFeatures",
+            "source": null,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&features).is_ok());
+
+        let set_shortcut = json!({
+            "@type": "setQuickReplyShortcutName",
+            "shortcut_id": 5,
+            "name": "pricing_faq",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&set_shortcut).is_ok());
+
+        let mut invalid_shortcut = set_shortcut.clone();
+        invalid_shortcut["name"] = json!("invalid name with spaces!");
+        assert!(validate_webview_tdlib_request(&invalid_shortcut).is_err());
+
+        let send_shortcut = json!({
+            "@type": "sendQuickReplyShortcutMessages",
+            "chat_id": 123,
+            "shortcut_id": 5,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&send_shortcut).is_ok());
+
+        let create_link = json!({
+            "@type": "createBusinessChatLink",
+            "title": "Special Deal",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&create_link).is_ok());
+
+        let delete_link = json!({
+            "@type": "deleteBusinessChatLink",
+            "link": "https://t.me/m/test123",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&delete_link).is_ok());
+
+        let mut empty_link = delete_link.clone();
+        empty_link["link"] = json!("");
+        assert!(validate_webview_tdlib_request(&empty_link).is_err());
     }
 }

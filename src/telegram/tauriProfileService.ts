@@ -6,6 +6,7 @@ import {
   mapTdFormattedText,
   mapTdMessageContent,
   mapTdUser,
+  mapTdBusinessInfo,
   tdId,
   tdNumber,
   type TdObject,
@@ -381,6 +382,7 @@ export class TauriProfileService {
       profilePhotos,
       profileAudioCount: profileAudioPage.totalCount,
       profileAudios: profileAudioPage.audios,
+      businessInfo: mapTdBusinessInfo(full.business_info),
     };
   }
 

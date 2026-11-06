@@ -194,6 +194,12 @@ export interface TelegramState {
   groupManagementError?: string;
   blockedSenders: BlockedSender[];
   blockedSendersLoading: boolean;
+  businessInfo?: import("../telegram/types").BusinessInfo;
+  businessFeatures: string[];
+  quickReplyShortcuts: import("../telegram/types").QuickReplyShortcut[];
+  businessChatLinks: import("../telegram/types").BusinessChatLink[];
+  businessLoading: boolean;
+  businessError?: string;
   initialize: (options?: {
     settingsOnly?: boolean;
     preserveAccountPending?: boolean;
@@ -468,6 +474,20 @@ export interface TelegramState {
   deleteScheduledMessage: (chatId: string, messageId: string) => Promise<boolean>;
   openMessageContent: (chatId: string, messageId: string) => Promise<boolean>;
   saveTimedMedia: (message: import("../telegram/types").Message, target?: "downloads" | "fileAs") => Promise<boolean>;
+  loadBusinessProfile: () => Promise<void>;
+  updateBusinessLocation: (location: import("../telegram/types").BusinessLocation | null) => Promise<boolean>;
+  updateBusinessOpeningHours: (openingHours: import("../telegram/types").BusinessOpeningHours | null) => Promise<boolean>;
+  updateBusinessGreetingSettings: (settings: import("../telegram/types").BusinessGreetingMessageSettings | null) => Promise<boolean>;
+  updateBusinessAwaySettings: (settings: import("../telegram/types").BusinessAwayMessageSettings | null) => Promise<boolean>;
+  updateBusinessStartPage: (startPage: import("../telegram/types").BusinessStartPage | null) => Promise<boolean>;
+  loadQuickReplyShortcuts: () => Promise<void>;
+  createQuickReplyShortcut: (name: string) => Promise<boolean>;
+  deleteQuickReplyShortcut: (shortcutId: number) => Promise<boolean>;
+  sendQuickReplyShortcut: (chatId: string, shortcutId: number) => Promise<boolean>;
+  loadBusinessChatLinks: () => Promise<void>;
+  createBusinessChatLink: (title: string, text: string) => Promise<boolean>;
+  editBusinessChatLink: (link: string, title: string, text: string) => Promise<boolean>;
+  deleteBusinessChatLink: (link: string) => Promise<boolean>;
   clearError: () => void;
   clearOperationError: () => void;
 }

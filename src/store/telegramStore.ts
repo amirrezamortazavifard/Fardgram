@@ -1162,6 +1162,12 @@ export const createTelegramStore = (
         groupManagementError: undefined,
         blockedSenders: [],
         blockedSendersLoading: false,
+        businessInfo: undefined,
+        businessFeatures: [],
+        quickReplyShortcuts: [],
+        businessChatLinks: [],
+        businessLoading: false,
+        businessError: undefined,
         folderManagementPending: false,
         chatCreationPending: false,
         chatFilter: "main",
@@ -2735,6 +2741,12 @@ export const createTelegramStore = (
       groupManagementError: undefined,
       blockedSenders: [],
       blockedSendersLoading: false,
+      businessInfo: undefined,
+      businessFeatures: [],
+      quickReplyShortcuts: [],
+      businessChatLinks: [],
+      businessLoading: false,
+      businessError: undefined,
       folderManagementPending: false,
       chatCreationPending: false,
 
@@ -5791,6 +5803,209 @@ export const createTelegramStore = (
           return false;
         } catch (error) {
           set({ operationError: errorMessage(error, translate("无法保存文件")) });
+          return false;
+        }
+      },
+
+      loadBusinessProfile: async () => {
+        set({ businessLoading: true, businessError: undefined });
+        try {
+          const [features, shortcuts, links, profile] = await Promise.all([
+            transport.getBusinessFeatures?.() ?? [],
+            transport.getQuickReplyShortcuts?.() ?? [],
+            transport.getBusinessChatLinks?.() ?? [],
+            transport.getCurrentUserProfile(),
+          ]);
+          set({
+            businessFeatures: features,
+            quickReplyShortcuts: shortcuts,
+            businessChatLinks: links,
+            businessInfo: profile.businessInfo,
+            businessLoading: false,
+            businessError: undefined,
+          });
+        } catch (error) {
+          set({
+            businessLoading: false,
+            businessError: errorMessage(error, translate("无法读取 Business 资料")),
+          });
+        }
+      },
+
+      updateBusinessLocation: async (location) => {
+        try {
+          await transport.setBusinessLocation?.(location);
+          set((state) => ({
+            businessInfo: {
+              ...state.businessInfo,
+              location: location ?? undefined,
+            },
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("更新地址失败")) });
+          return false;
+        }
+      },
+
+      updateBusinessOpeningHours: async (openingHours) => {
+        try {
+          await transport.setBusinessOpeningHours?.(openingHours);
+          set((state) => ({
+            businessInfo: {
+              ...state.businessInfo,
+              openingHours: openingHours ?? undefined,
+            },
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("更新营业时间失败")) });
+          return false;
+        }
+      },
+
+      updateBusinessGreetingSettings: async (settings) => {
+        try {
+          await transport.setBusinessGreetingSettings?.(settings);
+          set((state) => ({
+            businessInfo: {
+              ...state.businessInfo,
+              greetingMessageSettings: settings ?? undefined,
+            },
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("更新问候语设置失败")) });
+          return false;
+        }
+      },
+
+      updateBusinessAwaySettings: async (settings) => {
+        try {
+          await transport.setBusinessAwaySettings?.(settings);
+          set((state) => ({
+            businessInfo: {
+              ...state.businessInfo,
+              awayMessageSettings: settings ?? undefined,
+            },
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("更新离开消息设置失败")) });
+          return false;
+        }
+      },
+
+      updateBusinessStartPage: async (startPage) => {
+        try {
+          await transport.setBusinessStartPage?.(startPage);
+          set((state) => ({
+            businessInfo: {
+              ...state.businessInfo,
+              startPage: startPage ?? undefined,
+            },
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("更新欢迎主页失败")) });
+          return false;
+        }
+      },
+
+      loadQuickReplyShortcuts: async () => {
+        try {
+          const shortcuts = await transport.getQuickReplyShortcuts?.();
+          if (shortcuts) set({ quickReplyShortcuts: shortcuts });
+        } catch {
+          // Ignored
+        }
+      },
+
+      createQuickReplyShortcut: async (name) => {
+        try {
+          const nextId = (get().quickReplyShortcuts.reduce((max, s) => Math.max(max, s.id), 0) || 0) + 1;
+          await transport.setQuickReplyShortcutName?.(nextId, name);
+          set((state) => ({
+            quickReplyShortcuts: [...state.quickReplyShortcuts, { id: nextId, name, messageCount: 0 }],
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("创建快捷回复失败")) });
+          return false;
+        }
+      },
+
+      deleteQuickReplyShortcut: async (shortcutId) => {
+        try {
+          await transport.deleteQuickReplyShortcut?.(shortcutId);
+          set((state) => ({
+            quickReplyShortcuts: state.quickReplyShortcuts.filter((s) => s.id !== shortcutId),
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("删除快捷回复失败")) });
+          return false;
+        }
+      },
+
+      sendQuickReplyShortcut: async (chatId, shortcutId) => {
+        try {
+          await transport.sendQuickReplyShortcut?.(chatId, shortcutId);
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("发送快捷回复失败")) });
+          return false;
+        }
+      },
+
+      loadBusinessChatLinks: async () => {
+        try {
+          const links = await transport.getBusinessChatLinks?.();
+          if (links) set({ businessChatLinks: links });
+        } catch {
+          // Ignored
+        }
+      },
+
+      createBusinessChatLink: async (title, text) => {
+        try {
+          const created = await transport.createBusinessChatLink?.(title, text);
+          if (created) {
+            set((state) => ({ businessChatLinks: [...state.businessChatLinks, created] }));
+            return true;
+          }
+          return false;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("创建 Business 链接失败")) });
+          return false;
+        }
+      },
+
+      editBusinessChatLink: async (link, title, text) => {
+        try {
+          const edited = await transport.editBusinessChatLink?.(link, title, text);
+          if (edited) {
+            set((state) => ({
+              businessChatLinks: state.businessChatLinks.map((l) => (l.link === link ? edited : l)),
+            }));
+            return true;
+          }
+          return false;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("修改 Business 链接失败")) });
+          return false;
+        }
+      },
+
+      deleteBusinessChatLink: async (link) => {
+        try {
+          await transport.deleteBusinessChatLink?.(link);
+          set((state) => ({
+            businessChatLinks: state.businessChatLinks.filter((l) => l.link !== link),
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("删除 Business 链接失败")) });
           return false;
         }
       },
