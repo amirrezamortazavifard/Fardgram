@@ -6,6 +6,12 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Passkey Login & Passkey Management (FG-009)**: Official WebAuthn passkey authentication and device credential enrollment:
+  - **Passkey Authorization Flow**: Seamless sign-in with passkey challenge resolution (`getAuthenticationPasskeyParameters`, `checkAuthenticationPasskey`) on the authorization screen, integrating platform authenticators (Windows Hello, Touch ID, security keys) with instant fallback to QR and phone login.
+  - **Passkey Management Panel**: Dedicated `PasskeysSettingsPanel` in Privacy & Security settings allowing users to inspect enrolled passkeys, review last-used and addition timestamps, and delete obsolete keys (`getLoginPasskeys`, `removeLoginPasskey`).
+  - **Passkey Enrollment**: Device registration ceremony (`getPasskeyParameters`, `navigator.credentials.create`, `addLoginPasskey`) storing cryptographic public-key credentials with zero raw secrets exposed.
+  - **Native Rust Security**: Validated request whitelist in `src-tauri/src/telegram/security.rs` covering all 6 TDLib passkey functions with credential ID, client data, and attestation payload bounds.
+  - **Theme & Transport Parity**: Dual-theme UI styling with light/dark parity and comprehensive mock transport support for automated headless testing.
 - **Telegram Business Features (FG-008)**: Comprehensive Telegram Business profile, automated messaging, and business chat links management:
   - **Business Identity & Profile**: Business location/address with optional coordinates, opening hours with weekly schedules and timezone selector, and business start page (intro title and message) customization.
   - **Automated Messaging**: Greeting message settings with configurable inactivity period (7 to 28 days), away message settings with schedule presets (`always`, `outsideOfOpeningHours`) and offline-only dispatch toggle.

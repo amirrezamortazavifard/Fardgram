@@ -250,6 +250,18 @@ export interface TelegramTransport {
   createBusinessChatLink?(title: string, text: string): Promise<import("./types").BusinessChatLink>;
   editBusinessChatLink?(link: string, title: string, text: string): Promise<import("./types").BusinessChatLink>;
   deleteBusinessChatLink?(link: string): Promise<void>;
+  getAuthenticationPasskeyParameters?(): Promise<string>;
+  checkAuthenticationPasskey?(params: {
+    credentialId: string;
+    clientData: string;
+    authenticatorData: string;
+    signature: string;
+    userHandle: string;
+  }): Promise<void>;
+  getPasskeyParameters?(): Promise<string>;
+  addLoginPasskey?(clientData: string, attestationObject: string): Promise<import("./types").TelegramPasskey>;
+  getLoginPasskeys?(): Promise<import("./types").TelegramPasskey[]>;
+  removeLoginPasskey?(passkeyId: string): Promise<void>;
   forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult>;
   sendMediaCopy(input: SendMediaCopyInput): Promise<void>;
   setChatDraft(input: SetChatDraftInput): Promise<void>;

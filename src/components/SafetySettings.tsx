@@ -6,6 +6,7 @@ import { useTelegramStore } from "../store/telegramStore";
 import { useStableVisibility } from "../hooks/useStableVisibility";
 import type { DeviceSession, PrivacyRule, PrivacySettingKey } from "../telegram/types";
 import { Avatar } from "./Avatar";
+import { PasskeysSettingsPanel } from "./PasskeysSettingsPanel";
 
 export function SafetySettings() {
   const activeAccountId = useTelegramStore((state) => state.activeAccountId);
@@ -127,6 +128,8 @@ export function SafetySettings() {
           ))}
         </div>
       </section>
+
+      <PasskeysSettingsPanel />
 
       <section className="settings-section" aria-labelledby="sessions-heading">
         <div className="settings-section-heading">

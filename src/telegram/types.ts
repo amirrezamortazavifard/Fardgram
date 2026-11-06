@@ -1634,6 +1634,14 @@ export interface CacheCleanupResult {
   usage: CacheUsage;
 }
 
+export interface TelegramPasskey {
+  id: string;
+  name: string;
+  additionDate: number;
+  lastUsageDate: number;
+  softwareIconCustomEmojiId?: string;
+}
+
 export type AuthorizationAction =
   | { kind: "qr" }
   | { kind: "phone"; phoneNumber: string }
@@ -1641,7 +1649,15 @@ export type AuthorizationAction =
   | { kind: "password"; password: string }
   | { kind: "emailAddress"; emailAddress: string }
   | { kind: "emailCode"; code: string }
-  | { kind: "registration"; firstName: string; lastName: string };
+  | { kind: "registration"; firstName: string; lastName: string }
+  | {
+      kind: "passkey";
+      credentialId: string;
+      clientData: string;
+      authenticatorData: string;
+      signature: string;
+      userHandle: string;
+    };
 
 /** Mirrors the `WarpState` enum in `proxy/warp.rs`. */
 export type WarpState =

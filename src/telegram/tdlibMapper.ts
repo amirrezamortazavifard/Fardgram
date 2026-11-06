@@ -37,6 +37,7 @@ import type {
   BusinessOpeningHours,
   BusinessStartPage,
   QuickReplyShortcut,
+  TelegramPasskey,
 } from "./types";
 import { messagePreviewText } from "./messageContent";
 import { deriveChatManagementCapabilitiesFromTd } from "./chatManagement";
@@ -2161,5 +2162,17 @@ export const mapTdBusinessChatLink = (value: unknown): BusinessChatLink | undefi
     title: typeof obj.title === "string" ? obj.title : "",
     text: typeof textObj?.text === "string" ? textObj.text : typeof obj.text === "string" ? obj.text : "",
     viewCount: tdNumber(obj.view_count) ?? 0,
+  };
+};
+
+export const mapTdPasskey = (value: unknown): TelegramPasskey | undefined => {
+  const obj = asTdObject(value);
+  if (!obj || typeof obj.id !== "string") return undefined;
+  return {
+    id: obj.id,
+    name: typeof obj.name === "string" ? obj.name : "",
+    additionDate: tdNumber(obj.addition_date) ?? 0,
+    lastUsageDate: tdNumber(obj.last_usage_date) ?? 0,
+    softwareIconCustomEmojiId: obj.software_icon_custom_emoji_id ? String(obj.software_icon_custom_emoji_id) : undefined,
   };
 };

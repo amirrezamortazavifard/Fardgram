@@ -170,6 +170,12 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "setQuickReplyShortcutName",
     "deleteQuickReplyShortcut",
     "sendQuickReplyShortcutMessages",
+    "getAuthenticationPasskeyParameters",
+    "checkAuthenticationPasskey",
+    "getPasskeyParameters",
+    "addLoginPasskey",
+    "getLoginPasskeys",
+    "removeLoginPasskey",
 ];
 
 pub(super) fn request_type_from_extra(extra: &str) -> Option<&str> {
@@ -282,7 +288,51 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
         | "setBusinessOpeningHours"
         | "setBusinessStartPage"
         | "setBusinessGreetingMessageSettings"
-        | "setBusinessAwayMessageSettings" => {}
+        | "setBusinessAwayMessageSettings"
+        | "getAuthenticationPasskeyParameters"
+        | "getPasskeyParameters"
+        | "getLoginPasskeys" => {}
+        "checkAuthenticationPasskey" => {
+            let credential_id = request
+                .get("credential_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing credential_id".to_string())?;
+            if credential_id.is_empty() || credential_id.len() > 1024 {
+                return Err("Invalid credential_id length".to_string());
+            }
+            let client_data = request
+                .get("client_data")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing client_data".to_string())?;
+            if client_data.is_empty() || client_data.len() > 8192 {
+                return Err("Invalid client_data length".to_string());
+            }
+        }
+        "addLoginPasskey" => {
+            let client_data = request
+                .get("client_data")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing client_data".to_string())?;
+            if client_data.is_empty() || client_data.len() > 8192 {
+                return Err("Invalid client_data length".to_string());
+            }
+            let attestation_object = request
+                .get("attestation_object")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing attestation_object".to_string())?;
+            if attestation_object.is_empty() || attestation_object.len() > 65536 {
+                return Err("Invalid attestation_object length".to_string());
+            }
+        }
+        "removeLoginPasskey" => {
+            let passkey_id = request
+                .get("passkey_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing passkey_id".to_string())?;
+            if passkey_id.is_empty() || passkey_id.len() > 256 {
+                return Err("Invalid passkey_id length".to_string());
+            }
+        }
         "joinChat" | "openChat" | "closeChat" => {
             validate_nonzero_identifier(request, "chat_id")?;
         }
@@ -3769,5 +3819,52 @@ mod tests {
         let mut empty_link = delete_link.clone();
         empty_link["link"] = json!("");
         assert!(validate_webview_tdlib_request(&empty_link).is_err());
+    }
+
+    #[test]
+    fn validates_passkey_requests() {
+        let get_params = json!({
+            "@type": "getAuthenticationPasskeyParameters",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&get_params).is_ok());
+
+        let check_passkey = json!({
+            "@type": "checkAuthenticationPasskey",
+            "credential_id": "cred-test-123",
+            "client_data": "{\"type\":\"webauthn.get\"}",
+            "authenticator_data": "base64authdata",
+            "signature": "base64sig",
+            "user_handle": "base64user",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&check_passkey).is_ok());
+
+        let mut invalid_check = check_passkey.clone();
+        invalid_check["credential_id"] = json!("");
+        assert!(validate_webview_tdlib_request(&invalid_check).is_err());
+
+        let add_passkey = json!({
+            "@type": "addLoginPasskey",
+            "client_data": "{\"type\":\"webauthn.create\"}",
+            "attestation_object": "base64attestation",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&add_passkey).is_ok());
+
+        let mut invalid_add = add_passkey.clone();
+        invalid_add["attestation_object"] = json!("");
+        assert!(validate_webview_tdlib_request(&invalid_add).is_err());
+
+        let remove_passkey = json!({
+            "@type": "removeLoginPasskey",
+            "passkey_id": "pk_12345",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&remove_passkey).is_ok());
+
+        let mut invalid_remove = remove_passkey.clone();
+        invalid_remove["passkey_id"] = json!("");
+        assert!(validate_webview_tdlib_request(&invalid_remove).is_err());
     }
 }

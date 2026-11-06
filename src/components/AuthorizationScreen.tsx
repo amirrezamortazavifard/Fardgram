@@ -40,6 +40,7 @@ interface AuthorizationScreenProps {
   inactive?: boolean;
   backPending?: boolean;
   onSubmit: (action: AuthorizationAction) => Promise<void>;
+  onLoginWithPasskey?: () => Promise<boolean | void>;
   onOpenSettings: () => void;
   onOpenConnect?: () => void;
   onBack?: () => void;
@@ -53,6 +54,7 @@ export function AuthorizationScreen({
   inactive = false,
   backPending = false,
   onSubmit,
+  onLoginWithPasskey,
   onOpenSettings,
   onOpenConnect,
   onBack,
@@ -95,6 +97,11 @@ export function AuthorizationScreen({
   const returnToQrLogin = () => {
     qrRequested.current = false;
     setPhoneMode(false);
+  };
+  const handlePasskeyLogin = async () => {
+    if (onLoginWithPasskey) {
+      await onLoginWithPasskey();
+    }
   };
 
   if (showQrLogin) {
@@ -161,10 +168,18 @@ export function AuthorizationScreen({
           {error && <div className="auth-error" role="alert">{error}</div>}
 
           <div className="auth-alternative"><span>{translate("或")}</span></div>
-          <button className="auth-phone-button" type="button" disabled={pending} onClick={showPhoneLogin}>
-            <Phone size={18} />
-            <span>{translate("使用手机号登录")}</span>
-          </button>
+          <div className="flex flex-col gap-2 w-full max-w-sm">
+            <button className="auth-phone-button" type="button" disabled={pending} onClick={showPhoneLogin}>
+              <Phone size={18} />
+              <span>{translate("使用手机号登录")}</span>
+            </button>
+            {onLoginWithPasskey && (
+              <button className="auth-phone-button" type="button" disabled={pending} onClick={handlePasskeyLogin}>
+                <KeyRound size={18} />
+                <span>Log in with Passkey</span>
+              </button>
+            )}
+          </div>
         </section>
       </AuthLayout>
     );
@@ -236,8 +251,16 @@ export function AuthorizationScreen({
           {pending && <LoaderCircle className="spin" size={18} />}<span>{definition.submitLabel}</span>
         </button>
         {(state.kind === "waitPhoneNumber" || state.kind === "waitOtherDeviceConfirmation") && (
-          <button className="auth-link-button" type="button" disabled={pending} onClick={returnToQrLogin}>
-            <ArrowLeft size={17} />{translate("返回二维码登录")}</button>
+          <div className="flex flex-col items-center gap-2 w-full mt-2">
+            {onLoginWithPasskey && (
+              <button className="auth-phone-button" type="button" disabled={pending} onClick={handlePasskeyLogin}>
+                <KeyRound size={18} />
+                <span>Log in with Passkey</span>
+              </button>
+            )}
+            <button className="auth-link-button" type="button" disabled={pending} onClick={returnToQrLogin}>
+              <ArrowLeft size={17} />{translate("返回二维码登录")}</button>
+          </div>
         )}
       </form>
     </AuthLayout>

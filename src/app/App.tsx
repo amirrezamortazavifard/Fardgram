@@ -368,6 +368,7 @@ export function App() {
     ));
   }, [activeSponsoredMessages, adBlockingEnabled, blockSponsoredMessages, customAdBlockingEnabled, adBlockKeywords, adBlockRegexRules]);
   const authenticate = useTelegramStore((state) => state.authenticate);
+  const loginWithPasskey = useTelegramStore((state) => state.loginWithPasskey);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [mobileViewport, setMobileViewport] = useState(false);
   const [activeDiscussionPostId, setActiveDiscussionPostId] = useState<string>();
@@ -1979,6 +1980,7 @@ export function App() {
         inactive={settingsOpen || connectOpen}
         backPending={accountPending}
         onSubmit={authenticate}
+        onLoginWithPasskey={loginWithPasskey}
         onBack={returnAccount ? handleExitAddAccount : undefined}
         onOpenSettings={openLoginSettings}
         onOpenConnect={() => setConnectOpen(true)}

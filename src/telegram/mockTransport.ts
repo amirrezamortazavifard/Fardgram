@@ -88,6 +88,7 @@ import type {
   StickerSet,
   TelegramAccount,
   TelegramAccountState,
+  TelegramPasskey,
   TelegramSnapshot,
   UpdateCurrentUserProfileInput,
   ChatHistoryPage,
@@ -494,6 +495,20 @@ export class MockTelegramTransport implements TelegramTransport {
   private mockBusinessChatLinks: import("./types").BusinessChatLink[] = [
     { link: "https://t.me/m/fardgram_orders", title: "Order Form", text: "Hi, I'd like to place an order", viewCount: 24 },
   ];
+  private mockPasskeys: TelegramPasskey[] = [
+    {
+      id: "pk-win-hello-1",
+      name: "Windows Hello (Workstation)",
+      additionDate: Math.floor(Date.now() / 1000) - 86400 * 14,
+      lastUsageDate: Math.floor(Date.now() / 1000) - 3600 * 2,
+    },
+    {
+      id: "pk-yubikey-2",
+      name: "YubiKey 5C NFC",
+      additionDate: Math.floor(Date.now() / 1000) - 86400 * 30,
+      lastUsageDate: Math.floor(Date.now() / 1000) - 86400 * 5,
+    },
+  ];
 
   private folderTitle(title: string) {
     try {
@@ -717,7 +732,7 @@ export class MockTelegramTransport implements TelegramTransport {
             ? { kind: "ready" as const }
             : action.kind === "emailAddress"
               ? { kind: "waitEmailCode" as const, emailPattern: "m•••@example.com", codeLength: 6 }
-              : action.kind === "emailCode" || action.kind === "registration"
+              : action.kind === "emailCode" || action.kind === "registration" || action.kind === "passkey"
                 ? { kind: "ready" as const }
                 : { kind: "waitPhoneNumber" as const };
     this.snapshot.authorization = next;
@@ -2695,6 +2710,71 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async deleteBusinessChatLink(link: string): Promise<void> {
     this.mockBusinessChatLinks = this.mockBusinessChatLinks.filter((l) => l.link !== link);
+  }
+
+  async getAuthenticationPasskeyParameters(): Promise<string> {
+    return JSON.stringify({
+      challenge: "dGVzdC1hdXRoLWNoYWxsZW5nZQ",
+      timeout: 60000,
+      rpId: "telegram.org",
+      allowCredentials: this.mockPasskeys.map((p) => ({
+        type: "public-key",
+        id: btoa(p.id).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+      })),
+    });
+  }
+
+  async checkAuthenticationPasskey(params: {
+    credentialId: string;
+    clientData: string;
+    authenticatorData: string;
+    signature: string;
+    userHandle: string;
+  }): Promise<void> {
+    const existing = this.mockPasskeys.find((p) => p.id === params.credentialId) ?? this.mockPasskeys[0];
+    if (existing) {
+      existing.lastUsageDate = Math.floor(Date.now() / 1000);
+    }
+    await this.authenticate({
+      kind: "passkey",
+      ...params,
+    });
+  }
+
+  async getPasskeyParameters(): Promise<string> {
+    return JSON.stringify({
+      challenge: "dGVzdC1jcmVhdGUtY2hhbGxlbmdl",
+      rp: { name: "Telegram" },
+      user: {
+        id: "dXNlci1pZC0xMjM0NQ",
+        name: "Telegram User",
+        displayName: "Telegram User",
+      },
+      pubKeyCredParams: [
+        { alg: -7, type: "public-key" },
+        { alg: -257, type: "public-key" },
+      ],
+      timeout: 60000,
+    });
+  }
+
+  async addLoginPasskey(clientData: string, attestationObject: string): Promise<TelegramPasskey> {
+    const newPasskey: TelegramPasskey = {
+      id: `pk_${Date.now()}`,
+      name: `Passkey ${this.mockPasskeys.length + 1}`,
+      additionDate: Math.floor(Date.now() / 1000),
+      lastUsageDate: 0,
+    };
+    this.mockPasskeys.push(newPasskey);
+    return clone(newPasskey);
+  }
+
+  async getLoginPasskeys(): Promise<TelegramPasskey[]> {
+    return clone(this.mockPasskeys);
+  }
+
+  async removeLoginPasskey(passkeyId: string): Promise<void> {
+    this.mockPasskeys = this.mockPasskeys.filter((p) => p.id !== passkeyId);
   }
 
   async forwardMessages({ fromChatId, toChatId, toTopicId, messageIds }: ForwardMessagesInput): Promise<ForwardMessagesResult> {

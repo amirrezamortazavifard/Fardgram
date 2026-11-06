@@ -200,6 +200,10 @@ export interface TelegramState {
   businessChatLinks: import("../telegram/types").BusinessChatLink[];
   businessLoading: boolean;
   businessError?: string;
+  passkeys: import("../telegram/types").TelegramPasskey[];
+  passkeysLoading: boolean;
+  passkeyAuthAvailable: boolean;
+  passkeyError?: string;
   initialize: (options?: {
     settingsOnly?: boolean;
     preserveAccountPending?: boolean;
@@ -488,6 +492,10 @@ export interface TelegramState {
   createBusinessChatLink: (title: string, text: string) => Promise<boolean>;
   editBusinessChatLink: (link: string, title: string, text: string) => Promise<boolean>;
   deleteBusinessChatLink: (link: string) => Promise<boolean>;
+  loadLoginPasskeys: () => Promise<void>;
+  registerPasskey: (name?: string) => Promise<import("../telegram/types").TelegramPasskey | null>;
+  removePasskey: (passkeyId: string) => Promise<boolean>;
+  loginWithPasskey: () => Promise<boolean>;
   clearError: () => void;
   clearOperationError: () => void;
 }

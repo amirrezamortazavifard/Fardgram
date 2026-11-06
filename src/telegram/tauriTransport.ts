@@ -21,6 +21,7 @@ import {
   mapTdSponsoredMessages,
   mapTdQuickReplyShortcut,
   mapTdBusinessChatLink,
+  mapTdPasskey,
   messageSenderId,
   mapTdUser,
   tdId,
@@ -150,6 +151,7 @@ import type {
   StickerSet,
   StickerSetSummary,
   StreamFileInput,
+  TelegramPasskey,
   TelegramSnapshot,
   TelegramAccount,
   TelegramAccountState,
@@ -786,6 +788,17 @@ export class TauriTelegramTransport implements TelegramTransport {
           last_name: identityTextField(action.lastName, 64, translate("姓氏")),
           disable_notification: false,
         });
+        return;
+      case "passkey":
+        await this.request({
+          "@type": "checkAuthenticationPasskey",
+          credential_id: action.credentialId,
+          client_data: action.clientData,
+          authenticator_data: action.authenticatorData,
+          signature: action.signature,
+          user_handle: action.userHandle,
+        });
+        return;
     }
   }
 
@@ -2589,6 +2602,57 @@ export class TauriTelegramTransport implements TelegramTransport {
     await this.request({
       "@type": "deleteBusinessChatLink",
       link,
+    });
+  }
+
+  async getAuthenticationPasskeyParameters(): Promise<string> {
+    const res = await this.request({ "@type": "getAuthenticationPasskeyParameters" });
+    return typeof res?.text === "string" ? res.text : JSON.stringify(res);
+  }
+
+  async checkAuthenticationPasskey(params: {
+    credentialId: string;
+    clientData: string;
+    authenticatorData: string;
+    signature: string;
+    userHandle: string;
+  }): Promise<void> {
+    await this.request({
+      "@type": "checkAuthenticationPasskey",
+      credential_id: params.credentialId,
+      client_data: params.clientData,
+      authenticator_data: params.authenticatorData,
+      signature: params.signature,
+      user_handle: params.userHandle,
+    });
+  }
+
+  async getPasskeyParameters(): Promise<string> {
+    const res = await this.request({ "@type": "getPasskeyParameters" });
+    return typeof res?.text === "string" ? res.text : JSON.stringify(res);
+  }
+
+  async addLoginPasskey(clientData: string, attestationObject: string): Promise<TelegramPasskey> {
+    const res = await this.request({
+      "@type": "addLoginPasskey",
+      client_data: clientData,
+      attestation_object: attestationObject,
+    });
+    const mapped = mapTdPasskey(res);
+    if (!mapped) throw new Error("Failed to map created passkey");
+    return mapped;
+  }
+
+  async getLoginPasskeys(): Promise<TelegramPasskey[]> {
+    const res = await this.request({ "@type": "getLoginPasskeys" });
+    const list = Array.isArray(res?.passkeys) ? res.passkeys : [];
+    return list.map(mapTdPasskey).filter((pk): pk is TelegramPasskey => Boolean(pk));
+  }
+
+  async removeLoginPasskey(passkeyId: string): Promise<void> {
+    await this.request({
+      "@type": "removeLoginPasskey",
+      passkey_id: passkeyId,
     });
   }
 

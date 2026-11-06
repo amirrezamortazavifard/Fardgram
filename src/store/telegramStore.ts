@@ -39,6 +39,11 @@ import type {
 } from "../telegram/types";
 import { connectionPresentation } from "../telegram/connectionState";
 import {
+  authenticateWithPasskey,
+  createPasskeyWithWebAuthn,
+  isPasskeySupported,
+} from "../telegram/passkeys";
+import {
   accountStatePatch,
   currentAccountRegistration,
   preserveUserAvatarMedia,
@@ -1168,6 +1173,10 @@ export const createTelegramStore = (
         businessChatLinks: [],
         businessLoading: false,
         businessError: undefined,
+        passkeys: [],
+        passkeysLoading: false,
+        passkeyAuthAvailable: false,
+        passkeyError: undefined,
         folderManagementPending: false,
         chatCreationPending: false,
         chatFilter: "main",
@@ -2747,6 +2756,10 @@ export const createTelegramStore = (
       businessChatLinks: [],
       businessLoading: false,
       businessError: undefined,
+      passkeys: [],
+      passkeysLoading: false,
+      passkeyAuthAvailable: false,
+      passkeyError: undefined,
       folderManagementPending: false,
       chatCreationPending: false,
 
@@ -6006,6 +6019,82 @@ export const createTelegramStore = (
           return true;
         } catch (error) {
           set({ operationError: errorMessage(error, translate("删除 Business 链接失败")) });
+          return false;
+        }
+      },
+
+      loadLoginPasskeys: async () => {
+        set({ passkeysLoading: true, passkeyError: undefined });
+        try {
+          const passkeys = (await transport.getLoginPasskeys?.()) ?? [];
+          const supported = await isPasskeySupported();
+          set({
+            passkeys,
+            passkeysLoading: false,
+            passkeyAuthAvailable: supported,
+            passkeyError: undefined,
+          });
+        } catch (error) {
+          set({
+            passkeysLoading: false,
+            passkeyError: errorMessage(error, translate("Failed to load passkeys")),
+          });
+        }
+      },
+
+      registerPasskey: async (_name) => {
+        set({ passkeysLoading: true, passkeyError: undefined });
+        try {
+          const paramsJson = await transport.getPasskeyParameters?.();
+          if (!paramsJson) throw new Error(translate("Passkey creation parameters not available"));
+          const { clientData, attestationObject } = await createPasskeyWithWebAuthn(paramsJson);
+          const passkey = await transport.addLoginPasskey?.(clientData, attestationObject);
+          if (!passkey) throw new Error(translate("Failed to enroll passkey"));
+          set((state) => ({
+            passkeys: [passkey, ...state.passkeys.filter((p) => p.id !== passkey.id)],
+            passkeysLoading: false,
+            passkeyError: undefined,
+          }));
+          return passkey;
+        } catch (error) {
+          const message = errorMessage(error, translate("Failed to register passkey"));
+          set({ passkeysLoading: false, passkeyError: message });
+          return null;
+        }
+      },
+
+      removePasskey: async (passkeyId) => {
+        try {
+          await transport.removeLoginPasskey?.(passkeyId);
+          set((state) => ({
+            passkeys: state.passkeys.filter((p) => p.id !== passkeyId),
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("Failed to delete passkey")) });
+          return false;
+        }
+      },
+
+      loginWithPasskey: async () => {
+        set({ authorizationPending: true, authorizationError: undefined });
+        try {
+          const paramsJson = await transport.getAuthenticationPasskeyParameters?.();
+          if (!paramsJson) throw new Error(translate("Passkey login parameters not available"));
+          const result = await authenticateWithPasskey(paramsJson);
+          await get().authenticate({
+            kind: "passkey",
+            credentialId: result.credentialId,
+            clientData: result.clientData,
+            authenticatorData: result.authenticatorData,
+            signature: result.signature,
+            userHandle: result.userHandle,
+          });
+          set({ authorizationPending: false, authorizationError: undefined });
+          return true;
+        } catch (error) {
+          const message = errorMessage(error, translate("Passkey login failed or was cancelled"));
+          set({ authorizationPending: false, authorizationError: message });
           return false;
         }
       },
