@@ -256,4 +256,111 @@ describe("message notification policy", () => {
       body: "林然：候选包已上传",
     });
   });
+
+  describe("FG-023 Advanced Notification Categories, Mentions and Privacy Levels", () => {
+    it("respects category switches for private chats, groups and channels", () => {
+      expect(shouldNotifyMessage({
+        ...incomingMessage,
+        chatKind: "direct",
+        notifyPrivateChats: false,
+      })).toBe(false);
+
+      expect(shouldNotifyMessage({
+        ...incomingMessage,
+        chatKind: "direct",
+        notifyPrivateChats: true,
+      })).toBe(true);
+
+      expect(shouldNotifyMessage({
+        ...incomingMessage,
+        chatKind: "group",
+        isMember: true,
+        notifyGroups: false,
+      })).toBe(false);
+
+      expect(shouldNotifyMessage({
+        ...incomingMessage,
+        chatKind: "channel",
+        isMember: true,
+        notifyChannels: false,
+      })).toBe(false);
+    });
+
+    it("allows mentions to override muted chat or disabled category when notifyMentions is true", () => {
+      // Muted group with mention -> should notify
+      expect(shouldNotifyMessage({
+        ...incomingMessage,
+        chatKind: "group",
+        isMember: true,
+        muted: true,
+        containsUnreadMention: true,
+        notifyMentions: true,
+      })).toBe(true);
+
+      // Disabled group with mention -> should notify
+      expect(shouldNotifyMessage({
+        ...incomingMessage,
+        chatKind: "group",
+        isMember: true,
+        notifyGroups: false,
+        containsUnreadMention: true,
+        notifyMentions: true,
+      })).toBe(true);
+
+      // Muted group with mention but notifyMentions is false -> should NOT notify
+      expect(shouldNotifyMessage({
+        ...incomingMessage,
+        chatKind: "group",
+        isMember: true,
+        muted: true,
+        containsUnreadMention: true,
+        notifyMentions: false,
+      })).toBe(false);
+    });
+
+    it("supports preview privacy modes: nameOnly and hidden", () => {
+      expect(notificationPresentation({
+        previewMode: "hidden",
+        chatTitle: "Design Team",
+        senderName: "Sarah",
+        messageText: "Here are the mockups",
+      })).toEqual({
+        title: "Fardgram",
+        body: "收到一条新消息",
+      });
+
+      expect(notificationPresentation({
+        previewMode: "nameOnly",
+        chatTitle: "Design Team",
+        senderName: "Sarah",
+        messageText: "Here are the mockups",
+      })).toEqual({
+        title: "Design Team",
+        body: "Sarah：收到一条新消息",
+      });
+    });
+
+    it("enforces protected content safeguard by redacting message body across previews", () => {
+      expect(notificationPresentation({
+        previewMode: "full",
+        chatTitle: "Secret Channel",
+        senderName: "Alex",
+        messageText: "Confidential credentials",
+        isProtected: true,
+      })).toEqual({
+        title: "Secret Channel",
+        body: "Alex：[受保护的内容]",
+      });
+
+      expect(notificationPresentation({
+        previewMode: "full",
+        chatTitle: "Private Chat",
+        messageText: "Self-destructing secret image",
+        isProtected: true,
+      })).toEqual({
+        title: "Private Chat",
+        body: "[受保护的内容]",
+      });
+    });
+  });
 });

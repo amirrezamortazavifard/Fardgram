@@ -884,7 +884,7 @@ export class MockTelegramTransport implements TelegramTransport {
     this.listener?.({ type: "chat.upsert", chat: clone(chat) });
   }
 
-  async setChatMuted(chatId: string, muted: boolean) {
+  async setChatMuted(chatId: string, muted: boolean, muteForSeconds?: number) {
     const chat = this.snapshot.chats.find((item) => item.id === chatId);
     if (!chat) throw new Error("Chat not found");
     chat.muted = muted;

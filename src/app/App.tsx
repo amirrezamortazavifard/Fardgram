@@ -563,6 +563,12 @@ export function App() {
           (chat?.kind === "group" || user.mode === "hide")
         )
       ) return;
+      const isProtected = Boolean(
+        chat?.hasProtectedContent ||
+        message.content.kind === "paidMedia" ||
+        (message.content as any).isSecret ||
+        (message as any).selfDestructType
+      );
       if (!shouldNotifyMessage({
         chatKind: chat?.kind,
         isMember: chat?.isMember,
@@ -585,20 +591,28 @@ export function App() {
         lastReadInboxMessageId: topic?.lastReadInboxMessageId ?? chat?.lastReadInboxMessageId,
         notBeforeMs,
         streaming: isMessageStreaming(message),
+        notifyPrivateChats: preferences.notifyPrivateChats,
+        notifyGroups: preferences.notifyGroups,
+        notifyChannels: preferences.notifyChannels,
+        notifyMentions: preferences.notifyMentions,
+        containsUnreadMention: message.containsUnreadMention === true,
+        suppressActiveConversation: preferences.suppressActiveConversation,
       })) return;
       const includeSender = chat?.kind === "group" || chat?.isForum === true;
       const presentation = notificationPresentation({
         showPreview: preferences.notificationPreview,
+        previewMode: preferences.notificationPreviewMode,
         chatTitle: chat?.title,
         topicTitle: topic?.name,
         senderName: includeSender && chat
           ? senderNameForMessage(message, state.users, chat, state.chats)
           : undefined,
         messageText: messageContentText(message.content),
+        isProtected,
       });
       void showDesktopNotification({
         ...presentation,
-        avatar: preferences.notificationPreview && chat
+        avatar: preferences.notificationPreviewMode !== "hidden" && chat
           ? {
               label: chat.avatar.label,
               color: chat.avatar.color,
@@ -608,6 +622,7 @@ export function App() {
         sound: preferences.notificationSound,
         themeId: preferences.themeId,
         reduceMotion: preferences.effectiveReduceMotion,
+        flashWindow: preferences.flashWindowOnNotification,
         route: {
           accountId,
           chatId: message.chatId,
@@ -2258,8 +2273,8 @@ export function App() {
                 pinned,
               )
             : Promise.resolve(false)}
-          onSetChatMuted={(muted) => activeChatId
-            ? setChatMuted(activeChatId, muted)
+          onSetChatMuted={(muted, muteForSeconds) => activeChatId
+            ? setChatMuted(activeChatId, muted, muteForSeconds)
             : Promise.resolve(false)}
           onSetChatArchived={(archived) => activeChatId
             ? setChatArchived(activeChatId, archived)

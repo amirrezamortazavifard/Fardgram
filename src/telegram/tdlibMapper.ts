@@ -2084,6 +2084,7 @@ export const mapTdChat = (
     listOrderByFolder,
     muted: (tdNumber(notifications?.use_default_mute_for === true
       ? asTdObject(scopeNotificationSettings)?.mute_for : notifications?.mute_for) ?? 0) > 0,
+    hasProtectedContent: raw.has_protected_content === true,
     ...(tdNumber(raw.message_auto_delete_time) !== undefined
       ? { messageAutoDeleteTime: Math.max(0, tdNumber(raw.message_auto_delete_time) ?? 0) }
       : {}),

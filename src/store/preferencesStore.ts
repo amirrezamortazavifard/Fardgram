@@ -31,6 +31,7 @@ import { getWallpaperUrl } from "../theme/wallpapers";
 export type ColorTheme = ColorScheme;
 export type UnreadBadgePosition = "right" | "avatar";
 export type BackgroundStyle = "plain" | "soft";
+export type NotificationPreviewMode = "full" | "nameOnly" | "hidden";
 
 export interface AppPreferences {
   shortcuts: ShortcutBindings;
@@ -38,6 +39,15 @@ export interface AppPreferences {
   notificationsEnabled: boolean;
   notificationSound: boolean;
   notificationPreview: boolean;
+  notificationPreviewMode: NotificationPreviewMode;
+  notifyPrivateChats: boolean;
+  notifyGroups: boolean;
+  notifyChannels: boolean;
+  notifyMentions: boolean;
+  notifyReactions: boolean;
+  suppressActiveConversation: boolean;
+  flashWindowOnNotification: boolean;
+  respectFocusMode: boolean;
   deletedMessageArchiveEnabled: boolean;
   antiEditEnabled: boolean;
   bypassProtectedContent: boolean;
@@ -95,6 +105,15 @@ const defaults: AppPreferences = {
   notificationsEnabled: true,
   notificationSound: true,
   notificationPreview: true,
+  notificationPreviewMode: "full",
+  notifyPrivateChats: true,
+  notifyGroups: true,
+  notifyChannels: true,
+  notifyMentions: true,
+  notifyReactions: true,
+  suppressActiveConversation: true,
+  flashWindowOnNotification: true,
+  respectFocusMode: true,
   deletedMessageArchiveEnabled: true,
   antiEditEnabled: true,
   bypassProtectedContent: true,
@@ -162,7 +181,16 @@ const readPreferences = (): AppPreferences => {
         : (isLanguagePreference(stored.language) && stored.language !== "zh-CN" && stored.language !== "system" ? stored.language : "en"),
       notificationsEnabled: stored.notificationsEnabled ?? defaults.notificationsEnabled,
       notificationSound: stored.notificationSound ?? defaults.notificationSound,
-      notificationPreview: stored.notificationPreview ?? defaults.notificationPreview,
+      notificationPreview: stored.notificationPreview ?? (stored.notificationPreviewMode ? stored.notificationPreviewMode !== "hidden" : defaults.notificationPreview),
+      notificationPreviewMode: stored.notificationPreviewMode ?? (stored.notificationPreview === false ? "hidden" : defaults.notificationPreviewMode),
+      notifyPrivateChats: stored.notifyPrivateChats ?? defaults.notifyPrivateChats,
+      notifyGroups: stored.notifyGroups ?? defaults.notifyGroups,
+      notifyChannels: stored.notifyChannels ?? defaults.notifyChannels,
+      notifyMentions: stored.notifyMentions ?? defaults.notifyMentions,
+      notifyReactions: stored.notifyReactions ?? defaults.notifyReactions,
+      suppressActiveConversation: stored.suppressActiveConversation ?? defaults.suppressActiveConversation,
+      flashWindowOnNotification: stored.flashWindowOnNotification ?? defaults.flashWindowOnNotification,
+      respectFocusMode: stored.respectFocusMode ?? defaults.respectFocusMode,
       deletedMessageArchiveEnabled: stored.deletedMessageArchiveEnabled ?? defaults.deletedMessageArchiveEnabled,
       antiEditEnabled: stored.antiEditEnabled ?? defaults.antiEditEnabled,
       bypassProtectedContent: stored.bypassProtectedContent ?? defaults.bypassProtectedContent,
@@ -366,6 +394,15 @@ preferencesStore.subscribe((state) => {
     notificationsEnabled: state.notificationsEnabled,
     notificationSound: state.notificationSound,
     notificationPreview: state.notificationPreview,
+    notificationPreviewMode: state.notificationPreviewMode,
+    notifyPrivateChats: state.notifyPrivateChats,
+    notifyGroups: state.notifyGroups,
+    notifyChannels: state.notifyChannels,
+    notifyMentions: state.notifyMentions,
+    notifyReactions: state.notifyReactions,
+    suppressActiveConversation: state.suppressActiveConversation,
+    flashWindowOnNotification: state.flashWindowOnNotification,
+    respectFocusMode: state.respectFocusMode,
     deletedMessageArchiveEnabled: state.deletedMessageArchiveEnabled,
     antiEditEnabled: state.antiEditEnabled,
     bypassProtectedContent: state.bypassProtectedContent,

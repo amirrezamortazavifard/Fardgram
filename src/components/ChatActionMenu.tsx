@@ -24,6 +24,7 @@ interface ChatActionMenuProps {
   canSetAutoDelete: boolean;
   onSetPinned: (pinned: boolean) => Promise<boolean>;
   onSetMuted: (muted: boolean) => Promise<boolean>;
+  onOpenMuteDialog?: () => void;
   onSetArchived: (archived: boolean) => Promise<boolean>;
   onOpenPinned: () => void;
   onOpenMessageSearch: () => void;
@@ -43,6 +44,7 @@ export function ChatActionMenu({
   canSetAutoDelete,
   onSetPinned,
   onSetMuted,
+  onOpenMuteDialog,
   onSetArchived,
   onOpenPinned,
   onOpenMessageSearch,
@@ -166,7 +168,14 @@ export function ChatActionMenu({
         role="menuitem"
         disabled={busy || chat.kind === "saved"}
         title={chat.kind === "saved" ? translate("收藏夹不支持静音") : undefined}
-        onClick={() => void run("mute", () => onSetMuted(!chat.muted))}
+        onClick={() => {
+          if (!chat.muted && onOpenMuteDialog) {
+            onClose();
+            onOpenMuteDialog();
+          } else {
+            void run("mute", () => onSetMuted(!chat.muted));
+          }
+        }}
       >
         {icon("mute", chat.muted
           ? <Bell size={16} strokeWidth={1.9} />

@@ -80,6 +80,7 @@ import { TelegramProtocolSettings } from "./TelegramProtocolSettings";
 import { MotionPresence } from "./MotionPresence";
 import { PerformanceMonitor } from "./PerformanceMonitor";
 import { UpdateSettings } from "./UpdateSettings";
+import { NotificationSettings } from "./NotificationSettings";
 import { SafetySettings } from "./SafetySettings";
 import { ApiCredentialsSettings } from "./ApiCredentialsSettings";
 import { ProxySettingsEditor } from "./ProxySettingsEditor";
@@ -233,6 +234,15 @@ export function SettingsDialog({ onClose, standalone = false }: SettingsDialogPr
   const language = usePreferencesStore((state) => state.language);
   const notificationSound = usePreferencesStore((state) => state.notificationSound);
   const notificationPreview = usePreferencesStore((state) => state.notificationPreview);
+  const notificationPreviewMode = usePreferencesStore((state) => state.notificationPreviewMode);
+  const notifyPrivateChats = usePreferencesStore((state) => state.notifyPrivateChats);
+  const notifyGroups = usePreferencesStore((state) => state.notifyGroups);
+  const notifyChannels = usePreferencesStore((state) => state.notifyChannels);
+  const notifyMentions = usePreferencesStore((state) => state.notifyMentions);
+  const notifyReactions = usePreferencesStore((state) => state.notifyReactions);
+  const suppressActiveConversation = usePreferencesStore((state) => state.suppressActiveConversation);
+  const flashWindowOnNotification = usePreferencesStore((state) => state.flashWindowOnNotification);
+  const respectFocusMode = usePreferencesStore((state) => state.respectFocusMode);
   const deletedMessageArchiveEnabled = usePreferencesStore((state) => state.deletedMessageArchiveEnabled);
   const sendOnEnter = usePreferencesStore((state) => state.sendOnEnter);
   const blockTypingStatus = usePreferencesStore((state) => state.blockTypingStatus);
@@ -282,6 +292,15 @@ export function SettingsDialog({ onClose, standalone = false }: SettingsDialogPr
     notificationsEnabled,
     notificationSound,
     notificationPreview,
+    notificationPreviewMode,
+    notifyPrivateChats,
+    notifyGroups,
+    notifyChannels,
+    notifyMentions,
+    notifyReactions,
+    suppressActiveConversation,
+    flashWindowOnNotification,
+    respectFocusMode,
     deletedMessageArchiveEnabled,
     sendOnEnter,
     blockTypingStatus,
@@ -840,11 +859,7 @@ function PreferenceSettings({
         { key: "blockTypingStatus" as const, label: "Block Typing Status (Suppress typing indicator)" },
       ]
     : category === "notifications"
-    ? [
-        { key: "notificationsEnabled" as const, label: "Desktop Notifications" },
-        { key: "notificationPreview" as const, label: "Show Message Preview", disabled: !preferences.notificationsEnabled },
-        { key: "notificationSound" as const, label: "Notification Sound", disabled: !preferences.notificationsEnabled },
-      ]
+    ? []
     : category === "chats"
       ? []
       : [
@@ -854,6 +869,7 @@ function PreferenceSettings({
 
   return (
     <div className="settings-detail-scroll preference-settings">
+      {category === "notifications" && <NotificationSettings preferences={preferences} onChange={onChange} />}
       {category === "fardgram" && <AdBlockingSettings preferences={preferences} onChange={onChange} />}
       {category === "fardgram" && <DesktopStartupSettings />}
       {category === "fardgram" && <TelegramProtocolSettings />}

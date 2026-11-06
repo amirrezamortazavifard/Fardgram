@@ -9,7 +9,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, UserAttentionType, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
 
@@ -61,6 +61,8 @@ pub struct DesktopNotificationRequest {
     theme_id: String,
     reduce_motion: bool,
     route: NotificationRoute,
+    #[serde(default)]
+    flash_window: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -443,6 +445,7 @@ pub async fn fardgram_show_notification(
 ) -> Result<(), String> {
     validate_request(&notification)?;
     let sound = notification.sound;
+    let flash_window = notification.flash_window.unwrap_or(true);
     let item = state.push(notification)?;
     if let Err(error) = notification_window(&app) {
         let _ = state.remove(&item.id, item.updated_at_ms);
@@ -452,6 +455,13 @@ pub async fn fardgram_show_notification(
     emit_snapshot(&app, &snapshot);
     if sound {
         play_notification_sound(&app);
+    }
+    if flash_window {
+        if let Some(main_window) = app.get_webview_window("main") {
+            if !main_window.is_focused().unwrap_or(false) {
+                let _ = main_window.request_user_attention(Some(UserAttentionType::Informational));
+            }
+        }
     }
     Ok(())
 }
@@ -525,6 +535,7 @@ mod tests {
                 message_id: "456".to_string(),
                 topic_id: None,
             },
+            flash_window: Some(true),
         }
     }
 

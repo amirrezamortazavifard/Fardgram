@@ -23,6 +23,7 @@ export interface DesktopNotification {
   themeId: ThemeId;
   reduceMotion: boolean;
   route: DesktopNotificationRoute;
+  flashWindow?: boolean;
 }
 
 const NOTIFICATION_OPEN_EVENT = "fardgram://notification-open";
@@ -62,10 +63,11 @@ export const showDesktopNotification = async ({
   themeId,
   reduceMotion,
   route,
+  flashWindow,
 }: DesktopNotification) => {
   try {
     await invoke("fardgram_show_notification", {
-      notification: { title, body, avatar, sound, themeId, reduceMotion, route },
+      notification: { title, body, avatar, sound, themeId, reduceMotion, route, flashWindow },
     });
     return true;
   } catch {

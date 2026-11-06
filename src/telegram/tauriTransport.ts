@@ -1957,10 +1957,11 @@ export class TauriTelegramTransport implements TelegramTransport {
     await this.refreshChat(chatId);
   }
 
-  async setChatMuted(chatId: string, muted: boolean) {
+  async setChatMuted(chatId: string, muted: boolean, muteForSeconds?: number) {
     const raw = this.rawChats.get(chatId) ?? await this.refreshChat(chatId);
     const currentSettings = asTdObject(raw.notification_settings);
     if (!currentSettings) throw new Error(translate("无法读取会话通知设置"));
+    const muteFor = muted ? (muteForSeconds !== undefined && muteForSeconds > 0 ? muteForSeconds : 2_147_483_647) : 0;
     await this.request({
       "@type": "setChatNotificationSettings",
       chat_id: numericId(chatId),
@@ -1968,7 +1969,7 @@ export class TauriTelegramTransport implements TelegramTransport {
         ...currentSettings,
         "@type": "chatNotificationSettings",
         use_default_mute_for: false,
-        mute_for: muted ? 2_147_483_647 : 0,
+        mute_for: muteFor,
       },
     });
     await this.refreshChat(chatId);

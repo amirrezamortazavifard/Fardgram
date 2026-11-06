@@ -279,7 +279,7 @@ export interface TelegramState {
   loadMoreChats: (chatListId?: string) => Promise<void>;
   setChatPinned: (chatListId: string, chatId: string, pinned: boolean) => Promise<boolean>;
   reorderPinnedChats: (chatListId: string, chatIds: string[]) => Promise<boolean>;
-  setChatMuted: (chatId: string, muted: boolean) => Promise<boolean>;
+  setChatMuted: (chatId: string, muted: boolean, muteForSeconds?: number) => Promise<boolean>;
   setChatArchived: (chatId: string, archived: boolean) => Promise<boolean>;
   leaveGroup: (chatId: string) => Promise<boolean>;
   deletePrivateChat: (chatId: string, forEveryone?: boolean) => Promise<boolean>;

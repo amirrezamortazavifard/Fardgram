@@ -616,6 +616,8 @@ export interface Chat {
   pinnedFolderIds?: string[];
   listOrderByFolder?: Record<string, string>;
   muted: boolean;
+  muteUntil?: number;
+  hasProtectedContent?: boolean;
   messageAutoDeleteTime?: number;
 }
 

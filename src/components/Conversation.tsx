@@ -132,6 +132,7 @@ import { ForumTopicStrip } from "./ForumTopicStrip";
 import { SavedMessagesOrganizer } from "./SavedMessagesOrganizer";
 import { ConversationTranslationBar } from "./ConversationTranslationBar";
 import { ChatExportDialog } from "./Export/ChatExportDialog";
+import { MuteDurationDialog } from "./MuteDurationDialog";
 import { copyMessageContent, writeClipboardText } from "../utils/clipboard";
 import { formatSelectedMessages } from "../utils/messageClipboard";
 import {
@@ -405,7 +406,7 @@ interface ConversationProps {
   onClickSponsoredMessage?: (chatId: string, messageId: string, isMediaClick?: boolean) => Promise<void>;
   onStartPrivateChat: (senderId: string) => void;
   onSetChatPinned: (pinned: boolean) => Promise<boolean>;
-  onSetChatMuted: (muted: boolean) => Promise<boolean>;
+  onSetChatMuted: (muted: boolean, muteForSeconds?: number) => Promise<boolean>;
   onSetChatArchived: (archived: boolean) => Promise<boolean>;
   discussionPostId?: string;
   onOpenDiscussion: (postId: string) => void;
@@ -650,6 +651,7 @@ export function Conversation({
   const [editHistoryTarget, setEditHistoryTarget] = useState<Message>();
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [muteDialogOpen, setMuteDialogOpen] = useState(false);
   const [reportTarget, setReportTarget] = useState<Message>();
   const [pinTarget, setPinTarget] = useState<Message>();
   const [pinPending, setPinPending] = useState(false);
@@ -2504,6 +2506,10 @@ export function Conversation({
                     canSetAutoDelete={chat.kind === "direct" || chat.management?.canChangeInfo === true}
                     onSetPinned={onSetChatPinned}
                     onSetMuted={onSetChatMuted}
+                    onOpenMuteDialog={() => {
+                      setChatMenuOpen(false);
+                      setMuteDialogOpen(true);
+                    }}
                     onSetArchived={onSetChatArchived}
                     onOpenPinned={() => {
                       forwarding.clearSelection();
@@ -2623,6 +2629,10 @@ export function Conversation({
                     canSetAutoDelete={chat.kind === "direct" || chat.management?.canChangeInfo === true}
                     onSetPinned={onSetChatPinned}
                     onSetMuted={onSetChatMuted}
+                    onOpenMuteDialog={() => {
+                      setChatMenuOpen(false);
+                      setMuteDialogOpen(true);
+                    }}
                     onSetArchived={onSetChatArchived}
                     onOpenPinned={() => openPinnedMessages()}
                     onOpenMessageSearch={() => onOpenMessageSearch()}
@@ -3539,6 +3549,18 @@ export function Conversation({
         <ChatExportDialog
           chat={chat}
           onClose={() => setExportDialogOpen(false)}
+        />
+      )}
+
+      {muteDialogOpen && chat && (
+        <MuteDurationDialog
+          isOpen={muteDialogOpen}
+          chatTitle={chat.title}
+          isMuted={chat.muted}
+          onClose={() => setMuteDialogOpen(false)}
+          onConfirm={async (muted, muteForSeconds) => {
+            return onSetChatMuted(muted, muteForSeconds);
+          }}
         />
       )}
     </section>

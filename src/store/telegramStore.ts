@@ -3765,7 +3765,7 @@ export const createTelegramStore = (
           return false;
         }
       },
-      setChatMuted: (chatId, muted) => {
+      setChatMuted: (chatId, muted, muteForSeconds) => {
         if (get().chats.get(chatId)?.kind === "saved") {
           set({ operationError: translate("收藏夹不支持静音") });
           return Promise.resolve(false);
@@ -3774,7 +3774,7 @@ export const createTelegramStore = (
           chatId,
           translate("无法更新通知设置"),
           translate("Telegram 未确认静音状态"),
-          () => transport.setChatMuted(chatId, muted),
+          () => transport.setChatMuted(chatId, muted, muteForSeconds),
           () => get().chats.get(chatId)?.muted === muted,
         );
       },

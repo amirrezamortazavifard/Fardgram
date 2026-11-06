@@ -180,7 +180,7 @@ export interface TelegramTransport {
   loadMoreChats(chatListId: string, limit?: number): Promise<ChatListPage>;
   setChatPinned(chatListId: string, chatId: string, pinned: boolean): Promise<void>;
   setPinnedChats(chatListId: string, chatIds: string[]): Promise<void>;
-  setChatMuted(chatId: string, muted: boolean): Promise<void>;
+  setChatMuted(chatId: string, muted: boolean, muteForSeconds?: number): Promise<void>;
   setChatArchived(chatId: string, archived: boolean): Promise<void>;
   leaveChat(chatId: string): Promise<void>;
   deletePrivateChat(chatId: string, forEveryone?: boolean): Promise<void>;

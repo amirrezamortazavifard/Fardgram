@@ -48,6 +48,12 @@ export interface MessageNotificationContext {
   lastReadInboxMessageId?: string;
   notBeforeMs?: number;
   streaming?: boolean;
+  notifyPrivateChats?: boolean;
+  notifyGroups?: boolean;
+  notifyChannels?: boolean;
+  notifyMentions?: boolean;
+  containsUnreadMention?: boolean;
+  suppressActiveConversation?: boolean;
 }
 
 export const isMessageInActiveConversation = ({
@@ -104,38 +110,90 @@ export const shouldNotifyMessage = ({
   lastReadInboxMessageId,
   notBeforeMs,
   streaming,
-}: MessageNotificationContext) =>
-  notificationsEnabled &&
-  // Public previews and channel discussion threads can receive live updates without membership.
-  (chatKind === "direct" || ((chatKind === "group" || chatKind === "channel") && isMember === true)) &&
-  !outgoing &&
-  !streaming &&
-  !muted &&
-  !(activeConversation && appVisible) &&
-  !isAtOrBeforeReadCursor(messageId, lastReadInboxMessageId) &&
-  !predatesNotificationSession(sentAt, notBeforeMs);
+  notifyPrivateChats = true,
+  notifyGroups = true,
+  notifyChannels = true,
+  notifyMentions = true,
+  containsUnreadMention = false,
+  suppressActiveConversation = true,
+}: MessageNotificationContext) => {
+  if (!notificationsEnabled) return false;
+  if (outgoing || streaming) return false;
+  if (isAtOrBeforeReadCursor(messageId, lastReadInboxMessageId)) return false;
+  if (predatesNotificationSession(sentAt, notBeforeMs)) return false;
 
-export const notificationPresentation = ({
-  showPreview,
-  chatTitle,
-  topicTitle,
-  senderName,
-  messageText,
-}: {
-  showPreview: boolean;
+  // Membership check for groups/channels
+  const hasValidMembership =
+    chatKind === "direct" ||
+    ((chatKind === "group" || chatKind === "channel") && isMember === true);
+  if (!hasValidMembership) return false;
+
+  // Category switch checks
+  const mentionOverridesCategory = notifyMentions && containsUnreadMention;
+  if (chatKind === "direct" && !notifyPrivateChats) return false;
+  if (chatKind === "group" && !notifyGroups && !mentionOverridesCategory) return false;
+  if (chatKind === "channel" && !notifyChannels && !mentionOverridesCategory) return false;
+
+  // Mentions exception: mentions can break through muted chats if notifyMentions is true
+  const mentionOverridesMute = notifyMentions && containsUnreadMention;
+  if (muted && !mentionOverridesMute) return false;
+
+  // Active conversation suppression
+  if (suppressActiveConversation && activeConversation && appVisible) return false;
+
+  return true;
+};
+
+export interface NotificationPresentationOptions {
+  showPreview?: boolean;
+  previewMode?: "full" | "nameOnly" | "hidden";
   chatTitle?: string;
   topicTitle?: string;
   senderName?: string;
   messageText: string;
-}) => {
-  if (!showPreview) return { title: "Fardgram", body: translate("收到一条新消息") };
+  isProtected?: boolean;
+}
+
+export const notificationPresentation = ({
+  showPreview,
+  previewMode,
+  chatTitle,
+  topicTitle,
+  senderName,
+  messageText,
+  isProtected = false,
+}: NotificationPresentationOptions) => {
+  const effectiveMode = previewMode ?? (showPreview === false ? "hidden" : "full");
+
+  if (effectiveMode === "hidden") {
+    return { title: "Fardgram", body: translate("收到一条新消息") };
+  }
+
   const titleParts = [chatTitle, topicTitle]
     .map((part) => part?.trim())
     .filter((part): part is string => Boolean(part));
-  const message = messageText.trim() || translate("收到一条新消息");
+  const title = titleParts.join(" · ") || "Fardgram";
   const sender = senderName?.trim();
+
+  if (effectiveMode === "nameOnly") {
+    return {
+      title,
+      body: sender ? `${sender}：${translate("收到一条新消息")}` : translate("收到一条新消息"),
+    };
+  }
+
+  // Full preview mode: redact protected/view-once message content
+  if (isProtected) {
+    const protectedTag = `[${translate("受保护的内容") || "Protected content"}]`;
+    return {
+      title,
+      body: sender ? `${sender}：${protectedTag}` : protectedTag,
+    };
+  }
+
+  const message = messageText.trim() || translate("收到一条新消息");
   return {
-    title: titleParts.join(" · ") || "Fardgram",
+    title,
     body: sender ? `${sender}：${message}` : message,
   };
 };

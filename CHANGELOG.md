@@ -6,6 +6,29 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Advanced Notification, Focus & Desktop Integration Parity (FG-023)**: Comprehensive notification policy engine, privacy modes, focus integration, taskbar flashing, and mute presets with full dual-theme parity and TDLib synchronization:
+  - **Comprehensive Notification Settings View (`src/components/NotificationSettings.tsx`)**:
+    - Dedicated dual-theme panel integrated into `SettingsDialog.tsx` under the Notifications category.
+    - Master controls: Desktop Notifications toggle, Alert Sound, and Taskbar Icon flashing.
+    - Message Preview & Privacy segmented cards: `"full"` (Name and Message), `"nameOnly"` (Sender Name Only), and `"hidden"` (No Preview) with illustrative icons and descriptions.
+    - Notification Category toggles: Private Chats, Groups, and Channels.
+    - Exceptions & Focus toggles: Notify on @Mentions & Replies (breaks through muted chats), Notify on Reactions, Suppress in Active Conversation (silences alerts for currently viewed chat), and Respect OS Focus Assist / Do Not Disturb.
+    - Responsive layout with dark/light theme parity and 100% professional English UI text.
+  - **Mute Presets & Custom Duration Dialog (`src/components/MuteDurationDialog.tsx`)**:
+    - Quick mute presets: 1 Hour ($3,600$s), 8 Hours ($28,800$s), 2 Days ($172,800$s), and Mute Forever ($2,147,483,647$s).
+    - Custom duration slider allowing fine-grained selection from 1 to 365 days with instant time projection preview.
+    - Unmute action button for currently muted conversations.
+    - Wired into conversation header action menu (`Conversation.tsx`) and chat context menu (`ChatActionMenu.tsx`).
+  - **Notification Policy Engine & Protected Content Redaction (`src/notifications/messageNotificationPolicy.ts`)**:
+    - Evaluates category filters (`notifyPrivateChats`, `notifyGroups`, `notifyChannels`) and active conversation suppression (`suppressActiveConversation`).
+    - High-priority mention/reply override (`notifyMentions: true`, `containsUnreadMention: true`) bypassing chat mute and category restrictions.
+    - Protected content safeguard: view-once media, self-destructing messages, and protected content chats (`hasProtectedContent: true`) automatically redact message preview text across all privacy modes to `[Protected content]`, preventing leakage on lockscreens or OS banner popups.
+  - **Native Window Attention & Taskbar Flashing (`src-tauri/src/desktop_notification.rs`)**:
+    - Extended `DesktopNotificationRequest` with optional `flash_window` parameter.
+    - Integrated Tauri native user attention API (`main_window.request_user_attention(Some(UserAttentionType::Informational))`) to flash taskbar icon when notifications arrive while the window is unfocused.
+  - **Preferences & TDLib Synchronization**:
+    - Added notification preferences to `AppPreferences` with persistent local storage schema migration and reactive subscribers.
+    - Extended `setChatMuted` in `transport.ts`, `tauriTransport.ts`, `mockTransport.ts`, and `telegramStore.ts` to support relative mute durations in seconds, mapping to official TDLib `setChatNotificationSettings`.
 - **Location Sharing & Live Location Parity (FG-022)**: Complete location messaging and real-time live location tracking parity with official TDLib methods, dual-theme support, and privacy safeguards:
   - **Interactive Location Card Component (`src/components/LocationMessage.tsx`)**:
     - Visual map card with coordinate formatting (`37.7749° N, 122.4194° W`), venue title, and street address.
