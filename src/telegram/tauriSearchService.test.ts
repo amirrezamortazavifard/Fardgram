@@ -149,4 +149,67 @@ describe("tauri search service", () => {
       first_name: "Mia",
     });
   });
+
+  it("dispatches global search with audio and voice filters and date ranges (FG-016)", async () => {
+    const harness = createHarness();
+    vi.mocked(harness.context.request)
+      .mockResolvedValueOnce({
+        "@type": "foundMessages",
+        total_count: 5,
+        messages: [],
+      })
+      .mockResolvedValueOnce({ "@type": "chats", chat_ids: [] })
+      .mockResolvedValueOnce({ "@type": "chats", chat_ids: [] })
+      .mockResolvedValueOnce({ "@type": "error", code: 404, message: "Not found" });
+
+    await harness.service.searchGlobal({
+      query: "podcast",
+      filter: "audio",
+      minDate: 1700000000,
+      maxDate: 1700086400,
+      limit: 25,
+    });
+
+    expect(harness.context.request).toHaveBeenNthCalledWith(1, {
+      "@type": "searchMessages",
+      chat_list: null,
+      query: "podcast",
+      offset: "",
+      limit: 25,
+      filter: { "@type": "searchMessagesFilterAudio" },
+      chat_type_filter: null,
+      min_date: 1700000000,
+      max_date: 1700086400,
+    });
+  });
+
+  it("dispatches global search with voice filter (FG-016)", async () => {
+    const harness = createHarness();
+    vi.mocked(harness.context.request)
+      .mockResolvedValueOnce({
+        "@type": "foundMessages",
+        total_count: 3,
+        messages: [],
+      })
+      .mockResolvedValueOnce({ "@type": "chats", chat_ids: [] })
+      .mockResolvedValueOnce({ "@type": "chats", chat_ids: [] })
+      .mockResolvedValueOnce({ "@type": "error", code: 404, message: "Not found" });
+
+    await harness.service.searchGlobal({
+      query: "hello",
+      filter: "voice",
+    });
+
+    expect(harness.context.request).toHaveBeenNthCalledWith(1, {
+      "@type": "searchMessages",
+      chat_list: null,
+      query: "hello",
+      offset: "",
+      limit: 30,
+      filter: { "@type": "searchMessagesFilterVoiceAndVideoNote" },
+      chat_type_filter: null,
+      min_date: 0,
+      max_date: 0,
+    });
+  });
 });

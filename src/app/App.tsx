@@ -724,11 +724,13 @@ export function App() {
     scope: sidebarSearchScope,
     chatId: sidebarSearchChatId,
     senderId: chatSearchSenderId,
+    dateRange: chatSearchDateRange,
     stateMatchesInput: chatSearchStateMatchesInput,
     enterChat: enterChatSearch,
     exitScope: exitSidebarSearchScope,
     restoreScope: restoreSidebarSearchScope,
     setSenderId: setChatSearchSenderId,
+    setDateRange: setChatSearchDateRange,
   } = sidebarSearch;
   const sidebarSearchMessages = useTelegramStore((state) =>
     sidebarSearchChatId ? state.messages.get(sidebarSearchChatId) ?? EMPTY_MESSAGES : EMPTY_MESSAGES
@@ -2068,8 +2070,10 @@ export function App() {
           chatMessageSearch={chatMessageSearch}
           chatSearchSenderId={chatSearchSenderId}
           chatSearchSenderOptions={chatSearchSenderOptions}
+          chatSearchDateRange={chatSearchDateRange}
           chatSearchStateMatchesInput={chatSearchStateMatchesInput}
           onChatSearchSenderChange={setChatSearchSenderId}
+          onChatSearchDateRangeChange={setChatSearchDateRange}
           onLoadMoreChatSearch={loadMoreChatMessages}
           onExitSearchScope={(preserveQuery) => {
             exitSidebarSearchScope(preserveQuery);

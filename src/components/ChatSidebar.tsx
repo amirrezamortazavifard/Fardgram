@@ -15,7 +15,7 @@ import type { GlobalSearchState } from "../store/globalSearchState";
 import type { Chat, ChatFolder, ConnectionStatus, GlobalSearchFilter, User } from "../telegram/types";
 import { connectionPresentation } from "../telegram/connectionState";
 import type { ChatMessageSearchState } from "../store/chatMessageSearchState";
-import type { SidebarSearchScope } from "../hooks/useSidebarSearch";
+import type { SidebarSearchDateRange, SidebarSearchScope } from "../hooks/useSidebarSearch";
 import { groupChatsByFolder } from "../store/telegramStore.selectors";
 import { Avatar } from "./Avatar";
 import { ChatSearchResults, GlobalSearchResults, type SidebarSearchSenderOption } from "./GlobalSearchView";
@@ -48,7 +48,9 @@ interface ChatSidebarProps {
   chatSearchSenderId?: string;
   chatSearchStateMatchesInput: boolean;
   chatSearchSenderOptions: SidebarSearchSenderOption[];
+  chatSearchDateRange?: SidebarSearchDateRange;
   onChatSearchSenderChange: (senderId: string | undefined) => void;
+  onChatSearchDateRangeChange?: (range: SidebarSearchDateRange | undefined) => void;
   onLoadMoreChatSearch: () => Promise<void>;
   onExitSearchScope: (preserveQuery: boolean) => void;
   onSelect: (chatId: string) => void;
@@ -102,7 +104,9 @@ export function ChatSidebar({
   chatSearchSenderId,
   chatSearchStateMatchesInput,
   chatSearchSenderOptions,
+  chatSearchDateRange,
   onChatSearchSenderChange,
+  onChatSearchDateRangeChange,
   onLoadMoreChatSearch,
   onExitSearchScope,
   onSelect,
@@ -317,15 +321,15 @@ export function ChatSidebar({
                 searchInputRef.current?.blur();
               }
             }}
-            placeholder={translate("搜索会话和消息")}
+            placeholder={translate("Search chats and messages")}
             type="search"
           />
           {searchQuery && (
             <button
               type="button"
               className="clear-search"
-              aria-label={translate("清除搜索")}
-              title={translate("清除搜索")}
+              aria-label={translate("Clear search")}
+              title={translate("Clear search")}
               onClick={() => onSearchChange("")}
             >
               ×
@@ -335,10 +339,10 @@ export function ChatSidebar({
       </div>
 
       {scopedChat && (
-        <div className="sidebar-search-scope" role="group" aria-label={translate("搜索范围：{{value0}}", { value0: scopedChat.title })}>
+        <div className="sidebar-search-scope" role="group" aria-label={translate("Search scope: {{value0}}", { value0: scopedChat.title })}>
           <Avatar avatar={scopedChat.avatar} size="small" />
-          <span>{translate("此会话：")}{scopedChat.title}</span>
-          <button type="button" className="icon-button" aria-label={translate("移除会话搜索范围")} title={translate("移除会话搜索范围")} onClick={() => onExitSearchScope(true)}>
+          <span>{translate("This chat: ")}{scopedChat.title}</span>
+          <button type="button" className="icon-button" aria-label={translate("Remove chat search scope")} title={translate("Remove chat search scope")} onClick={() => onExitSearchScope(true)}>
             <X size={16} strokeWidth={1.9} />
           </button>
         </div>
@@ -373,11 +377,13 @@ export function ChatSidebar({
           query={searchQuery}
           senderId={chatSearchSenderId}
           senderOptions={chatSearchSenderOptions}
+          dateRange={chatSearchDateRange}
           knownChats={allChats}
           knownUsers={users}
           state={chatMessageSearch}
           stateMatchesInput={chatSearchStateMatchesInput}
           onSenderChange={onChatSearchSenderChange}
+          onDateRangeChange={onChatSearchDateRangeChange}
           onLoadMore={onLoadMoreChatSearch}
           onOpenMessage={onOpenSearchMessage}
         />

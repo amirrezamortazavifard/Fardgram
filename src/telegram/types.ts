@@ -1542,13 +1542,23 @@ export interface ChatMessageSearchPage {
   hasMore: boolean;
 }
 
-export type GlobalSearchFilter = "all" | "message" | "media" | "file" | "link";
+export type GlobalSearchFilter =
+  | "all"
+  | "message"
+  | "media"
+  | "file"
+  | "link"
+  | "audio"
+  | "voice"
+  | "posts";
 
 export interface GlobalSearchInput {
   query: string;
   filter: GlobalSearchFilter;
   offset?: string;
   limit?: number;
+  minDate?: number;
+  maxDate?: number;
 }
 
 export interface GlobalSearchPage {

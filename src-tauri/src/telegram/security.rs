@@ -1233,6 +1233,46 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                 return Err("Unsupported chat search filter".to_string());
             }
         }
+        "searchMessages" => {
+            validate_profile_text(request, "query", 1_024, false, false)?;
+            if request
+                .get("limit")
+                .and_then(Value::as_i64)
+                .is_none_or(|limit| !(1..=100).contains(&limit))
+            {
+                return Err("Invalid search messages pagination".to_string());
+            }
+            for field in ["min_date", "max_date"] {
+                if request.get(field).is_some_and(|value| {
+                    !value.is_null() && value.as_i64().is_none_or(|number| number < 0)
+                }) {
+                    return Err("Invalid search messages date range".to_string());
+                }
+            }
+            let filter = request
+                .get("filter")
+                .and_then(|value| value.get("@type"))
+                .and_then(Value::as_str);
+            if filter.is_some_and(|filter| {
+                !matches!(
+                    filter,
+                    "searchMessagesFilterAnimation"
+                        | "searchMessagesFilterAudio"
+                        | "searchMessagesFilterDocument"
+                        | "searchMessagesFilterPhoto"
+                        | "searchMessagesFilterPhotoAndVideo"
+                        | "searchMessagesFilterUrl"
+                        | "searchMessagesFilterVoiceNote"
+                        | "searchMessagesFilterVoiceAndVideoNote"
+                        | "searchMessagesFilterVideoNote"
+                        | "searchMessagesFilterVideo"
+                        | "searchMessagesFilterPinned"
+                        | "searchMessagesFilterMention"
+                )
+            }) {
+                return Err("Unsupported search messages filter".to_string());
+            }
+        }
         "getChatScheduledMessages" => {
             validate_nonzero_identifier(request, "chat_id")?;
         }
@@ -4233,5 +4273,34 @@ mod tests {
         let mut invalid_quiz_id = send_quiz.clone();
         invalid_quiz_id["input_message_content"]["type"]["correct_option_id"] = json!(99);
         assert!(validate_webview_tdlib_request(&invalid_quiz_id).is_err());
+    }
+
+    #[test]
+    fn validates_search_messages_requests() {
+        let valid_search = json!({
+            "@type": "searchMessages",
+            "chat_list": null,
+            "query": "photos from trip",
+            "offset": "",
+            "limit": 30,
+            "filter": { "@type": "searchMessagesFilterPhotoAndVideo" },
+            "chat_type_filter": null,
+            "min_date": 1700000000,
+            "max_date": 1700086400,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_search).is_ok());
+
+        let mut invalid_limit = valid_search.clone();
+        invalid_limit["limit"] = json!(500);
+        assert!(validate_webview_tdlib_request(&invalid_limit).is_err());
+
+        let mut invalid_filter = valid_search.clone();
+        invalid_filter["filter"] = json!({ "@type": "searchMessagesFilterSecret" });
+        assert!(validate_webview_tdlib_request(&invalid_filter).is_err());
+
+        let mut invalid_date = valid_search.clone();
+        invalid_date["min_date"] = json!(-5);
+        assert!(validate_webview_tdlib_request(&invalid_date).is_err());
     }
 }

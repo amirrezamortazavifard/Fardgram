@@ -1761,7 +1761,7 @@ export class MockTelegramTransport implements TelegramTransport {
     }
   }
 
-  async searchGlobal({ query, filter, offset = "", limit = 30 }: GlobalSearchInput): Promise<GlobalSearchPage> {
+  async searchGlobal({ query, filter, offset = "", limit = 30, minDate, maxDate }: GlobalSearchInput): Promise<GlobalSearchPage> {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) return { chats: [], messages: [], totalCount: 0 };
     const typeMatches = (message: Message) => {
@@ -1770,15 +1770,28 @@ export class MockTelegramTransport implements TelegramTransport {
       if (filter === "message") return ["text", "rich", "service"].includes(content.kind);
       if (filter === "media") {
         return content.kind === "media" &&
-          ["photo", "video", "videoNote", "animation", "sticker"].includes(content.mediaType);
+          ["photo", "video", "animation"].includes(content.mediaType);
       }
       if (filter === "file") return content.kind === "file";
-      if (content.kind !== "text") return false;
-      return content.entities?.some((entity) => entity.kind === "textUrl" || entity.kind === "url") ||
-        /https?:\/\//i.test(content.text);
+      if (filter === "audio") return content.kind === "media" && content.mediaType === "audio";
+      if (filter === "voice") return content.kind === "media" && ["voice", "videoNote"].includes(content.mediaType);
+      if (filter === "posts") return message.chatId.startsWith("-100");
+      if (content.kind === "text") {
+        return Boolean(
+          content.entities?.some((entity) => entity.kind === "textUrl" || entity.kind === "url") ||
+          /https?:\/\//i.test(content.text)
+        );
+      }
+      if (content.kind === "rich") {
+        return /https?:\/\//i.test(content.text);
+      }
+      return false;
     };
     const matches = this.snapshot.messages
       .filter((message) => {
+        const timestamp = Math.floor(Date.parse(message.sentAt) / 1000);
+        if (minDate && timestamp < minDate) return false;
+        if (maxDate && timestamp > maxDate) return false;
         const content = message.content;
         const fileName = content.kind === "file" || content.kind === "media"
           ? content.fileName

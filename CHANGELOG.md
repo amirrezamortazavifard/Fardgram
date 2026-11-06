@@ -6,6 +6,23 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Advanced Search Tabs, Date Filtering & Query Highlighting (FG-016)**: Comprehensive Telegram Desktop 7.3.4+ search parity across global tabs, in-chat search scopes, date range pickers, and keyword highlighting:
+  - **10 Global Search Tabs (`GlobalSearchResults`)**:
+    - Added Telegram Desktop category tabs: `All`, `Chats`, `Channels`, `Apps`, `Posts`, `Media`, `Files`, `Music`, `Voice`, and `Links`.
+    - Tab filters mapped to official TDLib `searchMessagesFilter` structures (`searchMessagesFilterPhotoAndVideo`, `searchMessagesFilterDocument`, `searchMessagesFilterAudio`, `searchMessagesFilterVoiceAndVideoNote`, `searchMessagesFilterUrl`).
+    - Channel post discovery through `posts` category filter and public username queries.
+  - **In-Chat Search Date Picker & Quick Presets (`ChatSearchDatePicker`)**:
+    - Integrated calendar date picker popover in in-chat search header with quick presets: `Today`, `Yesterday`, `Past 7 days`, and `Past 30 days`.
+    - Custom date range form with native date inputs (`From` and `To`) bound to Unix timestamp filters (`minDate` / `maxDate`).
+    - Clear date filter affordance with visual active badge.
+  - **Search Query Keyword Highlighting (`highlightedText`)**:
+    - Highlighting matched query tokens inside search snippet text, preview excerpts, and user display names with clean accessible mark styling (`.chat-search-highlight`).
+  - **TDLib IPC & Rust Security Whitelisting**:
+    - Added `searchMessages` to `WEBVIEW_TDLIB_REQUESTS` in `src-tauri/src/telegram/security.rs`.
+    - Implemented deep payload bounds checking (query up to 1024 characters, limit 1..=100, min_date/max_date >= 0, and filter type whitelist).
+  - **100% Professional English & Dual-Theme Parity**:
+    - Replaced all non-English labels and placeholders with polished English terminology across search panels, tabs, and filters.
+    - Strict dark/light theme parity across all tabs, badges, popover pickers, and result rows.
 - **Advanced Polls & Quiz Parity (FG-015)**: Full TDLib-backed poll and quiz authoring, live voting, revoting, quiz answer validation, explanation feedback, and creator lifecycle management:
   - **Comprehensive Poll & Quiz Creator (`CreatePollDialog`)**:
     - Question input with dynamic character limit counter (1–255 characters).

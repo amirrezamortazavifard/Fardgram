@@ -1,6 +1,7 @@
 import { translate } from "../i18n";
 import {
   Bot,
+  Calendar,
   Check,
   ChevronDown,
   Clock,
@@ -12,6 +13,8 @@ import {
   Link2,
   LoaderCircle,
   Megaphone,
+  Mic,
+  Music,
   Search,
   Sparkles,
   Users,
@@ -31,6 +34,8 @@ import { messageSearchSender, messageSearchSource } from "./searchMessagePresent
 import { useTelegramStore } from "../store/telegramStore";
 import { useLocalHiddenUserIds } from "../store/localUserBlocks";
 import { isLocalHiddenMessage } from "../utils/localBlockedMessages";
+import type { SidebarSearchDateRange } from "../hooks/useSidebarSearch";
+import { highlightedText } from "../utils/textHighlight";
 
 export interface SidebarSearchSenderOption {
   id: string;
@@ -116,15 +121,28 @@ export function formatMemberCount(count?: number, kind?: string): string {
   return `${count.toLocaleString()} ${label}`;
 }
 
-export type SearchFilterTab = "all" | "channels" | "groups" | "bots" | "media" | "file" | "link";
+export type SearchFilterTab =
+  | "all"
+  | "chats"
+  | "channels"
+  | "apps"
+  | "posts"
+  | "media"
+  | "file"
+  | "music"
+  | "voice"
+  | "link";
 
 const FILTER_TABS: Array<{ id: SearchFilterTab; label: string }> = [
   { id: "all", label: "All" },
+  { id: "chats", label: "Chats" },
   { id: "channels", label: "Channels" },
-  { id: "groups", label: "Groups" },
-  { id: "bots", label: "Bots" },
+  { id: "apps", label: "Apps" },
+  { id: "posts", label: "Posts" },
   { id: "media", label: "Media" },
   { id: "file", label: "Files" },
+  { id: "music", label: "Music" },
+  { id: "voice", label: "Voice" },
   { id: "link", label: "Links" },
 ];
 
@@ -156,7 +174,7 @@ function ChatSearchSenderPicker({
   const optionsRef = useRef<HTMLDivElement>(null);
   const popupId = useId();
   const selectedLabel = options.find((option) => option.id === senderId)?.label ?? (
-    senderId ? translate("已选成员") : translate("所有成员")
+    senderId ? translate("Selected Member") : translate("All Members")
   );
   const normalizedMemberQuery = memberQuery.trim().toLocaleLowerCase();
   const visibleOptions = normalizedMemberQuery
@@ -206,7 +224,7 @@ function ChatSearchSenderPicker({
           ref={triggerRef}
           className="chat-search-member-trigger"
           type="button"
-          aria-label={translate("成员筛选：{{value0}}", { value0: selectedLabel })}
+          aria-label={translate("Filter by member: {{value0}}", { value0: selectedLabel })}
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls={open ? popupId : undefined}
@@ -223,8 +241,8 @@ function ChatSearchSenderPicker({
           <button
             className="chat-search-member-clear"
             type="button"
-            aria-label={translate("清除成员筛选")}
-            title={translate("清除成员筛选")}
+            aria-label={translate("Clear member filter")}
+            title={translate("Clear member filter")}
             onClick={() => selectSender(undefined)}
           >
             <X size={15} />
@@ -232,16 +250,16 @@ function ChatSearchSenderPicker({
         )}
       </div>
       <MotionPresence present={open} variant="popover">
-        {open ? <div id={popupId} className="chat-search-member-popup" role="dialog" aria-label={translate("选择成员")}>
+        {open ? <div id={popupId} className="chat-search-member-popup" role="dialog" aria-label={translate("Select Member")}>
           <label className="chat-search-member-field">
             <Search size={14} strokeWidth={1.8} />
-            <span className="sr-only">{translate("搜索成员")}</span>
+            <span className="sr-only">{translate("Search members...")}</span>
             <input
               ref={searchRef}
               type="search"
               value={memberQuery}
-              placeholder={translate("搜索成员")}
-              aria-label={translate("搜索成员")}
+              placeholder={translate("Search members...")}
+              aria-label={translate("Search members...")}
               onChange={(event) => setMemberQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowDown") return;
@@ -250,7 +268,7 @@ function ChatSearchSenderPicker({
               }}
             />
             {memberQuery && (
-              <button type="button" aria-label={translate("清除成员搜索")} title={translate("清除成员搜索")} onClick={() => setMemberQuery("")}>
+              <button type="button" aria-label={translate("Clear search")} title={translate("Clear search")} onClick={() => setMemberQuery("")}>
                 <X size={13} />
               </button>
             )}
@@ -258,12 +276,12 @@ function ChatSearchSenderPicker({
           <div
             ref={optionsRef}
             className="chat-search-member-options"
-            aria-label={translate("成员列表")}
+            aria-label={translate("Member list")}
             onKeyDown={(event) => handleMenuKeyboard(event, () => closePicker(true))}
           >
             {!normalizedMemberQuery && (
               <button type="button" aria-pressed={!senderId} onClick={() => selectSender(undefined)}>
-                <span>{translate("所有成员")}</span>
+                <span>{translate("All Members")}</span>
                 {!senderId && <Check size={14} />}
               </button>
             )}
@@ -279,10 +297,142 @@ function ChatSearchSenderPicker({
               </button>
             ))}
             {visibleOptions.length === 0 && (
-              <div className="chat-search-member-empty" role="status">{translate("没有匹配的成员")}</div>
+              <div className="chat-search-member-empty" role="status">{translate("No matching members")}</div>
             )}
           </div>
         </div> : null}
+      </MotionPresence>
+    </div>
+  );
+}
+
+function ChatSearchDatePicker({
+  dateRange,
+  onChange,
+}: {
+  dateRange?: SidebarSearchDateRange;
+  onChange: (range: SidebarSearchDateRange | undefined) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [customDate, setCustomDate] = useState("");
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popupId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const dismissOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && pickerRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const dismissWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", dismissOutside, true);
+    document.addEventListener("keydown", dismissWithKeyboard);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside, true);
+      document.removeEventListener("keydown", dismissWithKeyboard);
+    };
+  }, [open]);
+
+  const selectPreset = (daysAgo: number, label: string) => {
+    setOpen(false);
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, 0, 0, 0, 0);
+    onChange({
+      minDate: Math.floor(start.getTime() / 1000),
+      maxDate: Math.floor(end.getTime() / 1000),
+      label,
+    });
+  };
+
+  const handleCustomDateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customDate) return;
+    const [year, month, day] = customDate.split("-").map(Number);
+    if (!year || !month || !day) return;
+    const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const end = new Date(year, month - 1, day, 23, 59, 59, 999);
+    setOpen(false);
+    onChange({
+      minDate: Math.floor(start.getTime() / 1000),
+      maxDate: Math.floor(end.getTime() / 1000),
+      label: customDate,
+    });
+  };
+
+  const selectedLabel = dateRange?.label ?? translate("All Dates");
+
+  return (
+    <div className="chat-search-date-picker" ref={pickerRef}>
+      <div className="chat-search-date-control">
+        <button
+          ref={triggerRef}
+          className="chat-search-date-trigger"
+          type="button"
+          aria-label={translate("Filter by date: {{value0}}", { value0: selectedLabel })}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-controls={open ? popupId : undefined}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <Calendar size={15} strokeWidth={1.8} />
+          <span>{selectedLabel}</span>
+          <ChevronDown size={14} strokeWidth={1.8} />
+        </button>
+        {dateRange && (
+          <button
+            className="chat-search-date-clear"
+            type="button"
+            aria-label={translate("Clear date filter")}
+            title={translate("Clear date filter")}
+            onClick={() => onChange(undefined)}
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+      <MotionPresence present={open} variant="popover">
+        {open ? (
+          <div id={popupId} className="chat-search-date-popup" role="dialog" aria-label={translate("Select Date")}>
+            <div className="chat-search-date-presets">
+              <button type="button" onClick={() => selectPreset(0, "Today")}>
+                Today
+              </button>
+              <button type="button" onClick={() => selectPreset(1, "Yesterday")}>
+                Yesterday
+              </button>
+              <button type="button" onClick={() => selectPreset(7, "Past 7 days")}>
+                Past 7 days
+              </button>
+              <button type="button" onClick={() => selectPreset(30, "Past 30 days")}>
+                Past 30 days
+              </button>
+            </div>
+            <form onSubmit={handleCustomDateSubmit} className="chat-search-custom-date">
+              <label htmlFor="chat-search-date-input">Specific Date:</label>
+              <div className="chat-search-date-row">
+                <input
+                  id="chat-search-date-input"
+                  type="date"
+                  value={customDate}
+                  onChange={(e) => setCustomDate(e.target.value)}
+                  max={new Date().toISOString().split("T")[0]}
+                />
+                <button type="submit" disabled={!customDate}>
+                  Apply
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : null}
       </MotionPresence>
     </div>
   );
@@ -293,11 +443,13 @@ export interface ChatSearchResultsProps {
   query: string;
   senderId?: string;
   senderOptions: SidebarSearchSenderOption[];
+  dateRange?: SidebarSearchDateRange;
   knownChats: Map<string, Chat>;
   knownUsers: Map<string, User>;
   state: ChatMessageSearchState;
   stateMatchesInput: boolean;
   onSenderChange: (senderId: string | undefined) => void;
+  onDateRangeChange?: (range: SidebarSearchDateRange | undefined) => void;
   onLoadMore: () => Promise<void>;
   onOpenMessage: (chatId: string, messageId: string) => void;
 }
@@ -307,35 +459,59 @@ export function ChatSearchResults({
   query,
   senderId,
   senderOptions,
+  dateRange,
   knownChats,
   knownUsers,
   state,
   stateMatchesInput,
   onSenderChange,
+  onDateRangeChange,
   onLoadMore,
   onOpenMessage,
 }: ChatSearchResultsProps) {
-  const accountId = useTelegramStore(state => state.activeAccountId);
+  const accountId = useTelegramStore((state) => state.activeAccountId);
   const hiddenUserIds = useLocalHiddenUserIds(accountId);
-  const messages = state.messages.filter(message => !isLocalHiddenMessage(message, hiddenUserIds));
+  const messages = state.messages.filter((message) => !isLocalHiddenMessage(message, hiddenUserIds));
   const total = hiddenUserIds.size > 0 ? messages.length : state.totalCount ?? messages.length;
   const primaryLoading = !stateMatchesInput || (state.loading && state.messages.length === 0);
   const showLoading = useStableVisibility(primaryLoading);
   const showLoadingMore = useStableVisibility(state.loadingMore, { minimumVisible: 220 });
-  const prompt = stateMatchesInput && !state.loading && !state.error && query.trim() === "" && !senderId;
-  const empty = stateMatchesInput && !state.loading && !state.error && messages.length === 0 && Boolean(query.trim() || senderId);
-  const statusKind = showLoading ? "loading" : state.error && stateMatchesInput
-    ? "error"
-    : prompt ? "prompt" : empty ? "empty" : undefined;
+  const hasFilter = Boolean(query.trim() || senderId || dateRange);
+  const prompt = stateMatchesInput && !state.loading && !state.error && !hasFilter;
+  const empty = stateMatchesInput && !state.loading && !state.error && messages.length === 0 && hasFilter;
+  const statusKind = showLoading
+    ? "loading"
+    : state.error && stateMatchesInput
+      ? "error"
+      : prompt
+        ? "prompt"
+        : empty
+          ? "empty"
+          : undefined;
+
   return (
-    <section className="global-search-results-panel chat-search-results-panel" aria-label={translate("搜索{{value0}}中的消息", { value0: chat.title })}>
+    <section
+      className="global-search-results-panel chat-search-results-panel"
+      aria-label={translate("Search messages in {{value0}}", { value0: chat.title })}
+    >
       <div className="global-search-controls chat-search-controls">
         <ChatSearchSenderPicker senderId={senderId} options={senderOptions} onChange={onSenderChange} />
+        {onDateRangeChange && (
+          <ChatSearchDatePicker dateRange={dateRange} onChange={onDateRangeChange} />
+        )}
       </div>
-      <div className="global-search-results" aria-live="polite" aria-busy={primaryLoading} data-search-state={primaryLoading ? "updating" : "settled"}>
+      <div
+        className="global-search-results"
+        aria-live="polite"
+        aria-busy={primaryLoading}
+        data-search-state={primaryLoading ? "updating" : "settled"}
+      >
         {stateMatchesInput && !showLoading && messages.length > 0 && (
           <section className="global-result-section" aria-labelledby="chat-message-results">
-            <h2 id="chat-message-results">{translate("{{value0}} 中的消息", { value0: chat.title })}<span>{total}</span></h2>
+            <h2 id="chat-message-results">
+              {translate("Messages in {{value0}}", { value0: chat.title })}
+              <span className="section-badge-count">{total}</span>
+            </h2>
             <div className="global-message-results">
               {messages.map((message) => (
                 <MessageSearchResult
@@ -345,6 +521,7 @@ export function ChatSearchResults({
                   knownChats={knownChats}
                   knownUsers={knownUsers}
                   scope="chat"
+                  highlightQuery={query}
                   onOpen={() => onOpenMessage(message.chatId, message.id)}
                 />
               ))}
@@ -353,17 +530,35 @@ export function ChatSearchResults({
         )}
         <MotionPresence present={Boolean(statusKind)} variant="status">
           {statusKind ? (
-            <div key={statusKind} className={`global-search-state ${statusKind === "error" ? "is-error" : ""}`.trim()} role={statusKind === "error" ? "alert" : "status"} aria-label={statusKind === "loading" ? translate("正在搜索") : undefined}>
-              {statusKind === "loading" ? <LoaderCircle className="spin" size={21} />
-                : statusKind === "error" ? state.error
-                  : <span>{statusKind === "prompt" ? translate("输入关键词搜索此会话") : translate("没有搜索结果")}</span>}
+            <div
+              key={statusKind}
+              className={`global-search-state ${statusKind === "error" ? "is-error" : ""}`.trim()}
+              role={statusKind === "error" ? "alert" : "status"}
+              aria-label={statusKind === "loading" ? translate("Searching...") : undefined}
+            >
+              {statusKind === "loading" ? (
+                <LoaderCircle className="spin" size={21} />
+              ) : statusKind === "error" ? (
+                state.error
+              ) : (
+                <span>
+                  {statusKind === "prompt"
+                    ? translate("Type keywords or filter by sender/date to search this chat")
+                    : translate("No results found")}
+                </span>
+              )}
             </div>
           ) : null}
         </MotionPresence>
         {stateMatchesInput && state.nextFromMessageId && (
-          <button className="global-search-more" type="button" disabled={state.loadingMore} onClick={() => void onLoadMore()}>
+          <button
+            className="global-search-more"
+            type="button"
+            disabled={state.loadingMore}
+            onClick={() => void onLoadMore()}
+          >
             {showLoadingMore && <LoaderCircle className="spin" size={16} />}
-            <span>{translate("加载更多")}</span>
+            <span>{translate("Load More")}</span>
           </button>
         )}
       </div>
@@ -404,10 +599,20 @@ export function GlobalSearchResults({
 
   const normalizedQuery = query.trim();
 
-  // Backend search filter maps media, file, link to their types, otherwise "all"
+  // Backend search filter maps media, file, link, music, voice, posts to their types, otherwise "all"
   const backendFilter: GlobalSearchFilter =
-    filterTab === "media" || filterTab === "file" || filterTab === "link"
-      ? filterTab
+    filterTab === "media"
+      ? "media"
+      : filterTab === "file"
+      ? "file"
+      : filterTab === "music"
+      ? "audio"
+      : filterTab === "voice"
+      ? "voice"
+      : filterTab === "link"
+      ? "link"
+      : filterTab === "posts"
+      ? "posts"
       : "all";
 
   const current = state.query === normalizedQuery && state.filter === backendFilter;
@@ -433,15 +638,22 @@ export function GlobalSearchResults({
   // Local matching chats (from user's joined chats & contacts)
   const localMatchingChats = useMemo(() => {
     if (!normalizedQuery) return [];
-    if (filterTab === "media" || filterTab === "file" || filterTab === "link") return [];
+    if (
+      filterTab === "media" ||
+      filterTab === "file" ||
+      filterTab === "music" ||
+      filterTab === "voice" ||
+      filterTab === "link" ||
+      filterTab === "posts"
+    ) return [];
     const queryLower = normalizedQuery.toLocaleLowerCase();
     const cleanLower = queryLower.replace(/^@/, "");
     return [...knownChats.values()].filter((chat) => {
       const matchText = `${chat.title} ${chat.username ?? ""} ${chatPreview(chat)}`.toLocaleLowerCase();
       if (!matchText.includes(queryLower) && !matchText.includes(cleanLower)) return false;
+      if (filterTab === "chats") return chat.kind === "direct" || chat.kind === "group";
       if (filterTab === "channels") return chat.kind === "channel";
-      if (filterTab === "groups") return chat.kind === "group";
-      if (filterTab === "bots") {
+      if (filterTab === "apps") {
         return (
           chat.kind === "direct" &&
           (chat.title.toLocaleLowerCase().endsWith("bot") ||
@@ -455,7 +667,14 @@ export function GlobalSearchResults({
   // Global matching chats (from Telegram public search, excluding already shown local chats)
   const globalMatchingChats = useMemo(() => {
     if (!normalizedQuery) return [];
-    if (filterTab === "media" || filterTab === "file" || filterTab === "link") return [];
+    if (
+      filterTab === "media" ||
+      filterTab === "file" ||
+      filterTab === "music" ||
+      filterTab === "voice" ||
+      filterTab === "link" ||
+      filterTab === "posts"
+    ) return [];
     const queryLower = normalizedQuery.toLocaleLowerCase();
     const cleanLower = queryLower.replace(/^@/, "");
     const localIds = new Set(knownChats.keys());
@@ -463,9 +682,9 @@ export function GlobalSearchResults({
       if (localIds.has(chat.id)) return false;
       const matchText = `${chat.title} ${chat.username ?? ""} ${chatPreview(chat)}`.toLocaleLowerCase();
       if (!matchText.includes(queryLower) && !matchText.includes(cleanLower)) return false;
+      if (filterTab === "chats") return chat.kind === "direct" || chat.kind === "group";
       if (filterTab === "channels") return chat.kind === "channel";
-      if (filterTab === "groups") return chat.kind === "group";
-      if (filterTab === "bots") {
+      if (filterTab === "apps") {
         return (
           chat.kind === "direct" &&
           (chat.title.toLocaleLowerCase().endsWith("bot") ||
@@ -745,6 +964,7 @@ export function GlobalSearchResults({
                       knownChats={chatById}
                       knownUsers={knownUsers}
                       scope="global"
+                      highlightQuery={normalizedQuery}
                       onOpen={() => handleOpenMessage(message.chatId, message.id)}
                     />
                   ))}
@@ -874,6 +1094,7 @@ function MessageSearchResult({
   knownChats,
   knownUsers,
   scope,
+  highlightQuery,
   onOpen,
 }: {
   message: Message;
@@ -881,6 +1102,7 @@ function MessageSearchResult({
   knownChats: Map<string, Chat>;
   knownUsers: Map<string, User>;
   scope: "chat" | "global";
+  highlightQuery?: string;
   onOpen: () => void;
 }) {
   const content = message.content;
@@ -896,12 +1118,12 @@ function MessageSearchResult({
       <Avatar avatar={primary.avatar} size="small" />
       <span className="global-message-result-copy">
         <span>
-          <strong>{primary.name}</strong>
+          <strong>{highlightedText(primary.name, highlightQuery)}</strong>
           <time dateTime={message.sentAt}>{formatChatTime(message.sentAt)}</time>
         </span>
         <small>
-          {scope === "global" && <span className="global-message-result-sender">{sender.name}：</span>}
-          <span>{messageContentText(content)}</span>
+          {scope === "global" && <span className="global-message-result-sender">{sender.name}: </span>}
+          <span>{highlightedText(messageContentText(content), highlightQuery)}</span>
         </small>
       </span>
     </button>

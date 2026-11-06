@@ -8,6 +8,12 @@ export type SidebarSearchScope =
   | { type: "global" }
   | { type: "chat"; chatId: string };
 
+export interface SidebarSearchDateRange {
+  minDate?: number;
+  maxDate?: number;
+  label?: string;
+}
+
 interface SidebarSearchOptions {
   query: string;
   chatMessageSearch: ChatMessageSearchState;
@@ -30,13 +36,16 @@ export const useSidebarSearch = ({
 }: SidebarSearchOptions) => {
   const [scope, setScope] = useState<SidebarSearchScope>({ type: "global" });
   const [senderId, setSenderId] = useState<string>();
+  const [dateRange, setDateRange] = useState<SidebarSearchDateRange>();
   const chatId = scope.type === "chat" ? scope.chatId : undefined;
   const input = useMemo<ChatMessageSearchInput>(() => ({
     chatId: chatId ?? "",
     query: query.trim(),
     senderId,
+    minDate: dateRange?.minDate,
+    maxDate: dateRange?.maxDate,
     filter: "all",
-  }), [chatId, query, senderId]);
+  }), [chatId, query, senderId, dateRange]);
   const active = Boolean(chatId && chatMessageSearchCriteriaActive(input));
   const stateMatchesInput = !active && !chatMessageSearch.input
     ? true
@@ -57,6 +66,7 @@ export const useSidebarSearch = ({
     onClearSearch();
     setScope({ type: "chat", chatId: nextChatId });
     setSenderId(nextSenderId);
+    setDateRange(undefined);
     onQueryChange("");
   }, [onClearSearch, onQueryChange]);
 
@@ -64,12 +74,14 @@ export const useSidebarSearch = ({
     onClearSearch();
     setScope(nextScope);
     setSenderId(nextScope.type === "chat" ? nextSenderId : undefined);
+    setDateRange(undefined);
   }, [onClearSearch]);
 
   const exitScope = useCallback((preserveQuery = false) => {
     onClearSearch();
     setScope({ type: "global" });
     setSenderId(undefined);
+    setDateRange(undefined);
     if (!preserveQuery) onQueryChange("");
   }, [onClearSearch, onQueryChange]);
 
@@ -77,10 +89,12 @@ export const useSidebarSearch = ({
     scope,
     chatId,
     senderId,
+    dateRange,
     stateMatchesInput,
     enterChat,
     restoreScope,
     exitScope,
     setSenderId,
+    setDateRange,
   };
 };

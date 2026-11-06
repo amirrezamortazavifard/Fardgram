@@ -36,19 +36,31 @@ const globalSearchFilterObject = (filter: GlobalSearchFilter): TdObject | null =
     case "media": return { "@type": "searchMessagesFilterPhotoAndVideo" };
     case "file": return { "@type": "searchMessagesFilterDocument" };
     case "link": return { "@type": "searchMessagesFilterUrl" };
+    case "audio": return { "@type": "searchMessagesFilterAudio" };
+    case "voice": return { "@type": "searchMessagesFilterVoiceAndVideoNote" };
     default: return null;
   }
 };
 
 const globalSearchContentMatches = (message: Message, filter: GlobalSearchFilter) => {
+  const content = message.content;
   if (filter === "all") return true;
-  if (filter === "message") return ["text", "rich", "service"].includes(message.content.kind);
-  if (filter === "media") return message.content.kind === "media";
-  if (filter === "file") return message.content.kind === "file";
-  return message.content.kind === "text" && (
-    message.content.entities?.some((entity) => entity.kind === "textUrl" || entity.kind === "url") ||
-    /https?:\/\//i.test(message.content.text)
-  );
+  if (filter === "message") return ["text", "rich", "service"].includes(content.kind);
+  if (filter === "media") return content.kind === "media" && ["photo", "video"].includes(content.mediaType);
+  if (filter === "file") return content.kind === "file";
+  if (filter === "audio") return content.kind === "media" && content.mediaType === "audio";
+  if (filter === "voice") return content.kind === "media" && ["voice", "videoNote"].includes(content.mediaType);
+  if (filter === "posts") return message.chatId.startsWith("-100") || message.outgoing === false;
+  if (content.kind === "text") {
+    return Boolean(
+      content.entities?.some((entity) => entity.kind === "textUrl" || entity.kind === "url") ||
+      /https?:\/\//i.test(content.text)
+    );
+  }
+  if (content.kind === "rich") {
+    return /https?:\/\//i.test(content.text);
+  }
+  return false;
 };
 
 const chatSearchFilterTypes: Record<Exclude<ChatMessageSearchFilter, "all">, string> = {
@@ -145,6 +157,8 @@ export class TauriSearchService {
     filter,
     offset = "",
     limit = 30,
+    minDate = 0,
+    maxDate = 0,
   }: GlobalSearchInput): Promise<GlobalSearchPage> {
     const normalized = query.trim();
     if (!normalized) return { chats: [], messages: [], totalCount: 0 };
@@ -162,8 +176,8 @@ export class TauriSearchService {
         limit: boundedLimit,
         filter: filterObject,
         chat_type_filter: null,
-        min_date: 0,
-        max_date: 0,
+        min_date: minDate ?? 0,
+        max_date: maxDate ?? 0,
       }),
       offset ? Promise.resolve(undefined) : this.context.request({
         "@type": "searchChatsOnServer",

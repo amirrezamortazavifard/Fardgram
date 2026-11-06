@@ -1868,7 +1868,14 @@ html.is-reordering-pinned, html.is-reordering-pinned * { cursor: grabbing !impor
 .global-search-results-panel .global-search-results { padding: 0 10px 18px; }
 .global-search-results-panel .global-result-section { padding-top: 10px; }
 .global-search-results-panel .global-search-state { min-height: 150px; }
-.chat-search-results-panel .chat-search-controls { position: relative; z-index: 2; padding-top: 8px; }
+.chat-search-results-panel .chat-search-controls {
+  position: relative;
+  z-index: 2;
+  padding-top: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
 .chat-search-member-picker { position: relative; min-width: 0; }
 .chat-search-member-control { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
 .chat-search-member-trigger {
@@ -1899,6 +1906,53 @@ html.is-reordering-pinned, html.is-reordering-pinned * { cursor: grabbing !impor
 .chat-search-member-options > button:hover, .chat-search-member-options > button:focus-visible { background: var(--surface-hover); }
 .chat-search-member-options > button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); font-weight: 650; }
 .chat-search-member-empty { min-height: 60px; display: grid; place-items: center; color: var(--muted); font-size: 11px; }
+
+.chat-search-date-picker { position: relative; min-width: 0; }
+.chat-search-date-control { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
+.chat-search-date-trigger {
+  min-width: 0; height: 32px; padding: 0 9px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px;
+  color: var(--ink); text-align: left; background: var(--color-bg-elevated); border: 1px solid var(--color-border-default); border-radius: 6px; cursor: pointer; font-size: 11px;
+}
+.chat-search-date-trigger:hover, .chat-search-date-trigger:focus-visible { border-color: var(--accent); }
+.chat-search-date-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-search-date-clear {
+  width: 32px; height: 32px; display: grid; place-items: center; color: var(--muted); background: var(--color-bg-elevated); border: 1px solid var(--color-border-default); border-radius: 6px; cursor: pointer;
+}
+.chat-search-date-clear:hover, .chat-search-date-clear:focus-visible { color: var(--accent); border-color: var(--accent); }
+.chat-search-date-popup {
+  position: absolute; top: calc(100% + 5px); right: 0; z-index: 15; min-width: 220px; padding: 8px;
+  display: flex; flex-direction: column; gap: 8px; overflow: hidden; color: var(--ink); background: var(--color-bg-elevated); border: 1px solid var(--color-border-default); border-radius: 7px; box-shadow: 0 8px 24px var(--color-shadow);
+}
+.chat-search-date-presets {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+}
+.chat-search-date-presets button {
+  height: 28px; padding: 0 8px; font-size: 11px; font-weight: 500; border-radius: 5px; border: 1px solid var(--color-border-default); background: var(--color-bg-control-hover); color: var(--ink); cursor: pointer; transition: all 0.15s ease;
+}
+.chat-search-date-presets button:hover {
+  background: var(--surface-hover); border-color: var(--accent); color: var(--accent);
+}
+.chat-search-custom-date {
+  display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--color-border-default); padding-top: 6px;
+}
+.chat-search-custom-date label {
+  font-size: 10px; color: var(--muted);
+}
+.chat-search-date-row {
+  display: flex; gap: 6px; align-items: center;
+}
+.chat-search-date-row input[type="date"] {
+  flex: 1; height: 28px; padding: 0 6px; border-radius: 5px; border: 1px solid var(--color-border-default); background: var(--color-bg-control-hover); color: var(--ink); font-size: 11px; outline: none;
+}
+.chat-search-date-row input[type="date"]:focus {
+  border-color: var(--accent);
+}
+.chat-search-date-row button {
+  height: 28px; padding: 0 10px; font-size: 11px; font-weight: 600; border-radius: 5px; border: 0; background: var(--accent); color: #ffffff; cursor: pointer; transition: opacity 0.15s ease;
+}
+.chat-search-date-row button:disabled {
+  opacity: 0.5; cursor: default;
+}
 .contacts-view {
   grid-column: 2 / 4; min-width: 0; min-height: 0; display: grid; grid-template-rows: 58px auto minmax(0, 1fr);
   background: var(--color-bg-surface);
