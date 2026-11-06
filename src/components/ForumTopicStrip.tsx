@@ -78,12 +78,12 @@ export function ForumTopicStrip({
   if (orderedTopics.length === 0) return null;
 
   return (
-    <nav className="forum-topic-strip" aria-label={translate("话题切换")}>
+    <nav className="forum-topic-strip" aria-label={translate("Topic switcher")}>
       <div
         ref={tabsRef}
         className="forum-topic-tabs"
         role="tablist"
-        aria-label={translate("话题")}
+        aria-label={translate("Topics")}
       >
         {orderedTopics.map((topic) => {
           const active = topic.id === activeTopicId;
@@ -91,9 +91,9 @@ export function ForumTopicStrip({
             ? topic.unreadCount
             : topic.unreadReactionCount;
           const unreadLabel = topic.unreadCount > 0
-            ? translate("，{{value0}} 条未读消息", { value0: topic.unreadCount })
+            ? translate(", {{value0}} unread messages", { value0: topic.unreadCount })
             : topic.unreadReactionCount > 0
-              ? translate("，{{value0}} 条未读回应", { value0: topic.unreadReactionCount })
+              ? translate(", {{value0}} unread reactions", { value0: topic.unreadReactionCount })
               : "";
           return (
             <button

@@ -6,6 +6,33 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Advanced Group, Channel & Community Administration (FG-017)**: Comprehensive Telegram Desktop administration parity across member lists, administrator promotion with granular rights, exception permissions, topic lifecycle, invite links, join requests, and audit logs:
+  - **Group & Channel Member Management (`ChatManagementDialog`)**:
+    - Real-time search filter for existing members by display name, username, or custom title.
+    - Quick member remove/kick action button (`UserMinus`) for authorized administrators.
+    - Role selector (`Member`, `Administrator`, `Restricted`, `Banned`) enforcing actor hierarchy and permissions.
+    - Custom member tags editor with validation (0–16 characters without emojis or line breaks).
+    - Ownership transfer workflow with two-step verification password validation and safety error prompts.
+  - **Granular Permissions & Slow Mode Administration**:
+    - Default chat permission toggles across all 16 Telegram Desktop permission keys.
+    - Individual member exception permission editor for restricted members.
+    - Granular administrator rights configuration (`canManageChat`, `canChangeInfo`, `canPostMessages`, `canEditMessages`, `canDeleteMessages`, `canInviteUsers`, `canRestrictMembers`, `canPinMessages`, `canManageTopics`, `canPromoteMembers`, `canManageVideoChats`, `canPostStories`, `canEditStories`, `canDeleteStories`, `canManageDirectMessages`, `canManageTags`, `isAnonymous`).
+    - Slow mode configuration dropdown (Off, 5s, 10s, 30s, 1m, 5m, 15m, 1h).
+  - **Forum Topics Administration & Lifecycle (`ForumTopicsView`, `ForumTopicStrip`)**:
+    - Topic deletion workflow (`deleteForumTopic`) with confirmation prompt and store synchronization.
+    - Topic creation, renaming, pinning/unpinning, and closing/reopening with permission checks.
+    - Unread message and unread reaction badge presentation.
+  - **Invite Links & Join Request Management**:
+    - Invite link creator and editor with optional expiration date, usage limits, Stars subscriptions, and admin approval requirement.
+    - Member source statistics per invite link (Joined, Pending, Expired).
+    - One-click "Approve All" and "Decline All" bulk actions and per-user approval/rejection.
+  - **Rust Backend TDLib Security Whitelisting**:
+    - Added `"deleteForumTopic"` to `WEBVIEW_TDLIB_REQUESTS` in `src-tauri/src/telegram/security.rs`.
+    - Implemented deep payload bounds checking for `"deleteForumTopic"` requiring non-zero `chat_id` and positive `forum_topic_id`.
+    - Added unit test `validates_delete_forum_topic_requests`.
+  - **100% Professional English & Dual-Theme Parity**:
+    - Replaced all Chinese/mixed-language strings across `ChatManagementDialog`, `ChatMembershipBar`, `ForumTopicsView`, `ForumTopicStrip`, and `chatManagement.ts` with polished professional English.
+    - Strict dark/light theme styling parity across dialog headers, tabs, grids, and action buttons.
 - **Advanced Search Tabs, Date Filtering & Query Highlighting (FG-016)**: Comprehensive Telegram Desktop 7.3.4+ search parity across global tabs, in-chat search scopes, date range pickers, and keyword highlighting:
   - **10 Global Search Tabs (`GlobalSearchResults`)**:
     - Added Telegram Desktop category tabs: `All`, `Chats`, `Channels`, `Apps`, `Posts`, `Media`, `Files`, `Music`, `Voice`, and `Links`.

@@ -21,6 +21,7 @@ export interface ForumController {
   editForumTopic: (chatId: string, topicId: string, name: string) => Promise<boolean>;
   setForumTopicClosed: (chatId: string, topicId: string, closed: boolean) => Promise<boolean>;
   setForumTopicPinned: (chatId: string, topicId: string, pinned: boolean) => Promise<boolean>;
+  deleteForumTopic: (chatId: string, topicId: string) => Promise<boolean>;
 }
 
 export interface ForumControllerOptions {
@@ -72,7 +73,7 @@ export const createForumController = ({
         return page;
       } catch (error) {
         if (currentGeneration !== generation) return undefined;
-        set({ operationError: onError(error, translate("无法加载话题列表")) });
+        set({ operationError: onError(error, translate("Failed to load forum topics")) });
         return undefined;
       } finally {
         if (currentGeneration === generation) {
@@ -145,7 +146,7 @@ export const createForumController = ({
 
     createForumTopic: async (chatId, name) => {
       if (!canCreateTopic(chatId)) {
-        rejectTopicMutation(translate("当前账号没有创建话题的权限"));
+        rejectTopicMutation(translate("You do not have permission to create topics in this chat"));
         return undefined;
       }
       try {
@@ -153,45 +154,59 @@ export const createForumController = ({
         await reloadTopics(chatId);
         return topic;
       } catch (error) {
-        set({ operationError: onError(error, translate("无法创建话题")) });
+        set({ operationError: onError(error, translate("Failed to create forum topic")) });
         return undefined;
       }
     },
 
     editForumTopic: async (chatId, topicId, name) => {
-      if (!canChangeTopic(chatId, topicId)) return rejectTopicMutation(translate("当前账号没有编辑该话题的权限"));
+      if (!canChangeTopic(chatId, topicId)) return rejectTopicMutation(translate("You do not have permission to edit this topic"));
       try {
         await transport.editForumTopic(chatId, topicId, name);
         await reloadTopics(chatId);
         return true;
       } catch (error) {
-        set({ operationError: onError(error, translate("无法编辑话题")) });
+        set({ operationError: onError(error, translate("Failed to edit forum topic")) });
         return false;
       }
     },
 
     setForumTopicClosed: async (chatId, topicId, closed) => {
-      if (!canChangeTopic(chatId, topicId)) return rejectTopicMutation(translate("当前账号没有修改该话题状态的权限"));
+      if (!canChangeTopic(chatId, topicId)) return rejectTopicMutation(translate("You do not have permission to change this topic status"));
       try {
         await transport.setForumTopicClosed(chatId, topicId, closed);
         await reloadTopics(chatId);
         return true;
       } catch (error) {
-        set({ operationError: onError(error, translate("无法更新话题状态")) });
+        set({ operationError: onError(error, translate("Failed to update topic status")) });
         return false;
       }
     },
 
     setForumTopicPinned: async (chatId, topicId, pinned) => {
       if (get().chats.get(chatId)?.management?.canManageTopics !== true) {
-        return rejectTopicMutation(translate("当前账号没有置顶话题的权限"));
+        return rejectTopicMutation(translate("You do not have permission to pin topics in this chat"));
       }
       try {
         await transport.setForumTopicPinned(chatId, topicId, pinned);
         await reloadTopics(chatId);
         return true;
       } catch (error) {
-        set({ operationError: onError(error, translate("无法更新话题置顶")) });
+        set({ operationError: onError(error, translate("Failed to update topic pin status")) });
+        return false;
+      }
+    },
+
+    deleteForumTopic: async (chatId, topicId) => {
+      if (!canChangeTopic(chatId, topicId)) {
+        return rejectTopicMutation(translate("You do not have permission to delete this topic"));
+      }
+      try {
+        await transport.deleteForumTopic(chatId, topicId);
+        await reloadTopics(chatId);
+        return true;
+      } catch (error) {
+        set({ operationError: onError(error, translate("Failed to delete forum topic")) });
         return false;
       }
     },

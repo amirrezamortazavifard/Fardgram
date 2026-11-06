@@ -3597,6 +3597,7 @@ export const createTelegramStore = (
       editForumTopic: forumController.editForumTopic,
       setForumTopicClosed: forumController.setForumTopicClosed,
       setForumTopicPinned: forumController.setForumTopicPinned,
+      deleteForumTopic: forumController.deleteForumTopic,
 
       refreshChatMembership: async (chatId) => {
         const generation = accountGeneration;

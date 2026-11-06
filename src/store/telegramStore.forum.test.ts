@@ -60,6 +60,7 @@ const createHarness = () => {
     editForumTopic: vi.fn(),
     setForumTopicClosed: vi.fn(),
     setForumTopicPinned: vi.fn(),
+    deleteForumTopic: vi.fn(),
   } as unknown as ForumControllerOptions["transport"];
   const controller = createForumController({
     transport,
@@ -159,10 +160,12 @@ describe("telegram store forum controller", () => {
     await expect(harness.controller.editForumTopic("forum-1", "topic-1", "Renamed")).resolves.toBe(false);
     await expect(harness.controller.setForumTopicClosed("forum-1", "topic-1", true)).resolves.toBe(false);
     await expect(harness.controller.setForumTopicPinned("forum-1", "topic-1", true)).resolves.toBe(false);
+    await expect(harness.controller.deleteForumTopic("forum-1", "topic-1")).resolves.toBe(false);
     expect(harness.transport.createForumTopic).not.toHaveBeenCalled();
     expect(harness.transport.editForumTopic).not.toHaveBeenCalled();
     expect(harness.transport.setForumTopicClosed).not.toHaveBeenCalled();
     expect(harness.transport.setForumTopicPinned).not.toHaveBeenCalled();
+    expect(harness.transport.deleteForumTopic).not.toHaveBeenCalled();
   });
 
   it("lets a member manage an outgoing topic without granting administrator controls", async () => {

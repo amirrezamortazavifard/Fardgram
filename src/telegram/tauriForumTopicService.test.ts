@@ -153,4 +153,20 @@ describe("tauri forum topic service", () => {
     });
     expect(harness.context.request).toHaveBeenCalledTimes(1);
   });
+
+  it("dispatches deleteForumTopic and invalidates cached topic", async () => {
+    const harness = createHarness();
+    vi.mocked(harness.context.request).mockResolvedValue({
+      "@type": "ok",
+    });
+
+    await harness.service.deleteForumTopic("1001", "12");
+
+    expect(harness.context.request).toHaveBeenCalledWith({
+      "@type": "deleteForumTopic",
+      chat_id: 1001,
+      forum_topic_id: 12,
+    });
+    expect(harness.context.emitForumTopicsChanged).toHaveBeenCalledWith("1001");
+  });
 });

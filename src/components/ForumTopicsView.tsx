@@ -9,6 +9,7 @@ import {
   Pencil,
   Pin,
   Plus,
+  Trash2,
   X,
 } from "lucide-react";
 import { FormEvent, useMemo, useRef, useState } from "react";
@@ -30,6 +31,7 @@ interface ForumTopicsViewProps {
   onEditTopic: (topicId: string, name: string) => Promise<boolean>;
   onSetTopicClosed: (topicId: string, closed: boolean) => Promise<boolean>;
   onSetTopicPinned: (topicId: string, pinned: boolean) => Promise<boolean>;
+  onDeleteTopic?: (topicId: string) => Promise<boolean>;
   mobileViewport?: boolean;
   mobileChatOpen?: boolean;
 }
@@ -46,6 +48,7 @@ export function ForumTopicsView({
   onEditTopic,
   onSetTopicClosed,
   onSetTopicPinned,
+  onDeleteTopic,
   mobileViewport = false,
   mobileChatOpen = false,
 }: ForumTopicsViewProps) {
@@ -54,6 +57,7 @@ export function ForumTopicsView({
   const [editingTopicId, setEditingTopicId] = useState<string>();
   const [editingName, setEditingName] = useState("");
   const [menuTopicId, setMenuTopicId] = useState<string>();
+  const [confirmDeleteTopicId, setConfirmDeleteTopicId] = useState<string>();
   const [pendingTopicId, setPendingTopicId] = useState<string>();
   const topicsListRef = useRef<HTMLDivElement>(null);
   const canManage = chat.isMember !== false && chat.management?.canManageTopics === true;
@@ -100,30 +104,41 @@ export function ForumTopicsView({
     setMenuTopicId(undefined);
   };
 
+  const handleDelete = async (topicId: string) => {
+    if (!onDeleteTopic) return;
+    setPendingTopicId(topicId);
+    await onDeleteTopic(topicId);
+    setPendingTopicId(undefined);
+    setConfirmDeleteTopicId(undefined);
+    setMenuTopicId(undefined);
+  };
+
+  const topicToDelete = confirmDeleteTopicId ? topics.find((t) => t.id === confirmDeleteTopicId) : undefined;
+
   return (
     <section
       className="forum-topics-view"
-      aria-label={translate("{{value0}} 话题", { value0: chat.title })}
+      aria-label={translate("{{value0}} topics", { value0: chat.title })}
       aria-hidden={mobileViewport && !mobileChatOpen ? true : undefined}
       inert={mobileViewport && !mobileChatOpen ? true : undefined}
     >
       <header className="conversation-header forum-topics-header">
-        <button className="mobile-back icon-button" type="button" aria-label={translate("返回会话列表")} title={translate("返回会话列表")} onClick={onBack}>
+        <button className="mobile-back icon-button" type="button" aria-label={translate("Back to chats")} title={translate("Back to chats")} onClick={onBack}>
           <ArrowLeft size={20} strokeWidth={1.9} />
         </button>
         <button className="conversation-profile-trigger" type="button" aria-label={chat.title} title={chat.title}>
           <Avatar avatar={chat.avatar} size="medium" />
           <span className="conversation-title">
             <strong>{chat.title}</strong>
-            <span className="conversation-typing-status">{translate("话题")}</span>
+            <span className="conversation-typing-status">{translate("Topics")}</span>
           </span>
         </button>
         {canCreate && (
           <button
             className="icon-button forum-topic-create"
             type="button"
-            aria-label={translate("创建话题")}
-            title={translate("创建话题")}
+            aria-label={translate("Create topic")}
+            title={translate("Create topic")}
             onClick={() => setCreating(true)}
           >
             <Plus size={20} strokeWidth={2} />
@@ -139,13 +154,13 @@ export function ForumTopicsView({
               autoFocus
               value={newName}
               maxLength={128}
-              placeholder={translate("话题名称")}
+              placeholder={translate("Topic name")}
               onChange={(event) => setNewName(event.target.value)}
             />
-            <button className="icon-button" type="submit" aria-label={translate("确认创建")} title={translate("确认创建")} disabled={!newName.trim() || pendingTopicId === "new"}>
+            <button className="icon-button" type="submit" aria-label={translate("Create")} title={translate("Create")} disabled={!newName.trim() || pendingTopicId === "new"}>
               <Check size={18} strokeWidth={2} />
             </button>
-            <button className="icon-button" type="button" aria-label={translate("取消创建")} title={translate("取消创建")} onClick={() => { setCreating(false); setNewName(""); }} disabled={pendingTopicId === "new"}>
+            <button className="icon-button" type="button" aria-label={translate("Cancel")} title={translate("Cancel")} onClick={() => { setCreating(false); setNewName(""); }} disabled={pendingTopicId === "new"}>
               <X size={18} strokeWidth={2} />
             </button>
           </form>
@@ -154,7 +169,7 @@ export function ForumTopicsView({
         <MotionPresence present={showLoading || (!loading && orderedTopics.length === 0)} variant="status">
           {showLoading || (!loading && orderedTopics.length === 0) ? (
             <div key={showLoading ? "loading" : "empty"} className="forum-topics-state" role="status">
-              {showLoading ? translate("正在加载话题") : translate("暂无话题")}
+              {showLoading ? translate("Loading topics...") : translate("No topics yet")}
             </div>
           ) : null}
         </MotionPresence>
@@ -166,8 +181,8 @@ export function ForumTopicsView({
                   <form className="forum-topic-form forum-topic-edit" onSubmit={(event) => void submitEdit(event, topic.id)}>
                     <span className="forum-topic-icon" style={{ backgroundColor: topicIconColor(topic.iconColor) }}><Hash size={17} /></span>
                     <input autoFocus value={editingName} maxLength={128} onChange={(event) => setEditingName(event.target.value)} />
-                    <button className="icon-button" type="submit" aria-label={translate("保存话题")} title={translate("保存")} disabled={!editingName.trim() || pendingTopicId === topic.id}><Check size={18} /></button>
-                    <button className="icon-button" type="button" aria-label={translate("取消编辑")} title={translate("取消")} onClick={() => setEditingTopicId(undefined)} disabled={pendingTopicId === topic.id}><X size={18} /></button>
+                    <button className="icon-button" type="submit" aria-label={translate("Save")} title={translate("Save")} disabled={!editingName.trim() || pendingTopicId === topic.id}><Check size={18} /></button>
+                    <button className="icon-button" type="button" aria-label={translate("Cancel")} title={translate("Cancel")} onClick={() => setEditingTopicId(undefined)} disabled={pendingTopicId === topic.id}><X size={18} /></button>
                   </form>
                 ) : (
                   <>
@@ -175,17 +190,17 @@ export function ForumTopicsView({
                       <span className="forum-topic-icon" style={{ backgroundColor: topicIconColor(topic.iconColor) }}><Hash size={17} /></span>
                       <span className="forum-topic-copy">
                         <span className="forum-topic-name">{topic.name}</span>
-                        <span className="forum-topic-preview">{topic.lastMessage ? messagePreviewText(topic.lastMessage.content) : translate("暂无消息")}</span>
+                        <span className="forum-topic-preview">{topic.lastMessage ? messagePreviewText(topic.lastMessage.content) : translate("No messages yet")}</span>
                       </span>
                       <span className="forum-topic-meta">
-                        {topic.isPinned && <Pin size={14} strokeWidth={1.9} aria-label={translate("已置顶")} />}
-                        {topic.isClosed && <LockKeyhole size={14} strokeWidth={1.9} aria-label={translate("已关闭")} />}
+                        {topic.isPinned && <Pin size={14} strokeWidth={1.9} aria-label={translate("Pinned")} />}
+                        {topic.isClosed && <LockKeyhole size={14} strokeWidth={1.9} aria-label={translate("Closed")} />}
                         {(topic.unreadCount > 0 || topic.unreadReactionCount > 0) && (
                           <strong
                             className={topic.unreadCount === 0 ? "has-reaction" : undefined}
                             aria-label={topic.unreadCount > 0
-                              ? translate("{{value0}} 条未读消息", { value0: topic.unreadCount })
-                              : translate("{{value0}} 条未读回应", { value0: topic.unreadReactionCount })}
+                              ? translate("{{value0}} unread messages", { value0: topic.unreadCount })
+                              : translate("{{value0}} unread reactions", { value0: topic.unreadReactionCount })}
                           >
                             {formatUnreadCount(topic.unreadCount > 0
                               ? topic.unreadCount
@@ -198,8 +213,8 @@ export function ForumTopicsView({
                       <button
                         className="icon-button"
                         type="button"
-                        aria-label={translate("{{value0}} 更多操作", { value0: topic.name })}
-                        title={translate("更多操作")}
+                        aria-label={translate("More actions for {{value0}}", { value0: topic.name })}
+                        title={translate("More actions")}
                         disabled={pendingTopicId === topic.id}
                         onClick={() => setMenuTopicId((value) => value === topic.id ? undefined : topic.id)}
                       >
@@ -207,9 +222,23 @@ export function ForumTopicsView({
                       </button>
                       <MotionPresence present={menuTopicId === topic.id} variant="popover">
                         {menuTopicId === topic.id ? <div className="forum-topic-menu" role="menu">
-                          <button type="button" role="menuitem" onClick={() => { setEditingTopicId(topic.id); setEditingName(topic.name); setMenuTopicId(undefined); }}><Pencil size={16} />{translate("重命名")}</button>
-                          {canManage && <button type="button" role="menuitem" onClick={() => void toggleTopic(topic, "pinned")}><Pin size={16} />{topic.isPinned ? translate("取消置顶") : translate("置顶")}</button>}
-                          <button type="button" role="menuitem" onClick={() => void toggleTopic(topic, "closed")}><LockKeyhole size={16} />{topic.isClosed ? translate("重新开启") : translate("关闭话题")}</button>
+                          <button type="button" role="menuitem" onClick={() => { setEditingTopicId(topic.id); setEditingName(topic.name); setMenuTopicId(undefined); }}><Pencil size={16} />{translate("Rename")}</button>
+                          {canManage && <button type="button" role="menuitem" onClick={() => void toggleTopic(topic, "pinned")}><Pin size={16} />{topic.isPinned ? translate("Unpin") : translate("Pin")}</button>}
+                          <button type="button" role="menuitem" onClick={() => void toggleTopic(topic, "closed")}><LockKeyhole size={16} />{topic.isClosed ? translate("Reopen") : translate("Close topic")}</button>
+                          {onDeleteTopic && (canManage || topic.isOutgoing) && (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="forum-topic-delete-item"
+                              style={{ color: "#ef4444" }}
+                              onClick={() => {
+                                setConfirmDeleteTopicId(topic.id);
+                                setMenuTopicId(undefined);
+                              }}
+                            >
+                              <Trash2 size={16} />{translate("Delete topic")}
+                            </button>
+                          )}
                         </div> : null}
                       </MotionPresence>
                     </div>}
@@ -220,6 +249,37 @@ export function ForumTopicsView({
           </div>
         )}
       </div>
+
+      {topicToDelete && (
+        <div className="profile-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setConfirmDeleteTopicId(undefined)}>
+          <div className="chat-management-dialog" style={{ maxWidth: 420, padding: 20 }} role="dialog" aria-modal="true">
+            <header className="settings-dialog-header">
+              <div>
+                <h2>{translate("Delete topic")}</h2>
+                <small>{topicToDelete.name}</small>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setConfirmDeleteTopicId(undefined)}><X size={19} /></button>
+            </header>
+            <p style={{ margin: "16px 0", color: "var(--color-text-secondary, #64748b)", fontSize: 14 }}>
+              {translate("Are you sure you want to delete this topic? All messages within this topic will be permanently deleted.")}
+            </p>
+            <div className="management-inline-actions" style={{ justifyContent: "flex-end" }}>
+              <button className="dialog-secondary" type="button" disabled={pendingTopicId === topicToDelete.id} onClick={() => setConfirmDeleteTopicId(undefined)}>
+                {translate("Cancel")}
+              </button>
+              <button
+                className="dialog-danger"
+                type="button"
+                disabled={pendingTopicId === topicToDelete.id}
+                onClick={() => void handleDelete(topicToDelete.id)}
+              >
+                <Trash2 size={15} />{translate("Delete topic")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {needsMembershipBar(chat) && <ChatMembershipBar chat={chat} />}
     </section>
   );

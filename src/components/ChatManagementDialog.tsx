@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   Search,
   Shield,
+  UserMinus,
   UserPlus,
   UsersRound,
   X,
@@ -70,27 +71,27 @@ interface JoinRequestBucket extends ChatJoinRequestPage {
 }
 
 const roleLabel = (member: ManagedChatMember) => {
-  if (member.status === "owner") return member.customTitle || translate("所有者");
-  if (member.status === "administrator") return member.customTitle || translate("管理员");
+  if (member.status === "owner") return member.customTitle || translate("Owner");
+  if (member.status === "administrator") return member.customTitle || translate("Admin");
   if (member.customTitle) return member.customTitle;
-  if (member.status === "restricted") return translate("受限成员");
-  if (member.status === "banned") return translate("已封禁");
-  if (member.status === "left") return translate("已离开");
-  return translate("成员");
+  if (member.status === "restricted") return translate("Restricted");
+  if (member.status === "banned") return translate("Banned");
+  if (member.status === "left") return translate("Left");
+  return translate("Member");
 };
 
 const formatSlowMode = (seconds: number) => seconds === 0
-  ? translate("关闭")
-  : seconds >= 60 ? translate("{{value0}} 分钟", { value0: Math.round(seconds / 60) }) : translate("{{value0}} 秒", { value0: seconds });
+  ? translate("Off")
+  : seconds >= 60 ? translate("{{value0}} min", { value0: Math.round(seconds / 60) }) : translate("{{value0}} sec", { value0: seconds });
 
 const ownershipTransferMessage = (management?: ChatManagement) => {
   const transfer = management?.ownershipTransfer;
   if (!transfer || transfer.available) return undefined;
-  const wait = transfer.retryAfter ? translate("，约 {{value0}} 小时后重试", { value0: Math.ceil(transfer.retryAfter / 3600) }) : "";
-  if (transfer.reason === "passwordNeeded") return translate("需要先为 Telegram 账号启用两步验证");
-  if (transfer.reason === "passwordTooFresh") return translate("两步验证启用时间过短{{value0}}", { value0: wait });
-  if (transfer.reason === "sessionTooFresh") return translate("当前登录会话时间过短{{value0}}", { value0: wait });
-  return translate("当前会话暂时不能转移所有权");
+  const wait = transfer.retryAfter ? translate(", retry in ~{{value0}} hours", { value0: Math.ceil(transfer.retryAfter / 3600) }) : "";
+  if (transfer.reason === "passwordNeeded") return translate("Two-step verification must be enabled for your Telegram account");
+  if (transfer.reason === "passwordTooFresh") return translate("Two-step verification was enabled too recently{{value0}}", { value0: wait });
+  if (transfer.reason === "sessionTooFresh") return translate("This login session was created too recently{{value0}}", { value0: wait });
+  return translate("Ownership cannot be transferred at this time");
 };
 
 const visibleAdminRights = (chat: Chat, capabilities: ChatManagementCapabilities) =>
@@ -152,6 +153,7 @@ export function ChatManagementDialog({
   const capabilities = management?.capabilities ?? chat.management;
   const [tab, setTab] = useState<Tab>("members");
   const [query, setQuery] = useState("");
+  const [memberQuery, setMemberQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [events, setEvents] = useState<ChatEvent[]>([]);
@@ -218,6 +220,15 @@ export function ChatManagementDialog({
   }, [capabilities?.canManageAllInvites, capabilities?.canManageInvites, onGetInviteLinks, onGetJoinRequests, tab]);
 
   const members = management?.members ?? [];
+  const filteredMembers = useMemo(() => {
+    const normalized = memberQuery.trim().toLocaleLowerCase();
+    if (!normalized) return members;
+    return members.filter((member) =>
+      member.user.displayName.toLocaleLowerCase().includes(normalized) ||
+      (member.user.username && member.user.username.toLocaleLowerCase().includes(normalized)) ||
+      (member.customTitle && member.customTitle.toLocaleLowerCase().includes(normalized)),
+    );
+  }, [members, memberQuery]);
   const taggableMembers = members.filter(
     (member) => member.user.id !== currentUserId && member.status !== "left" && member.status !== "banned",
   );
@@ -437,77 +448,106 @@ export function ChatManagementDialog({
     <div className="profile-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section ref={dialogRef} className="chat-management-dialog" role="dialog" aria-modal="true" aria-labelledby="chat-management-title" tabIndex={-1}>
         <header className="settings-dialog-header">
-          <div><h2 id="chat-management-title">{translate("管理“")}{chat.title}”</h2><small>{translate("成员、权限和操作记录")}</small></div>
-          <button ref={closeRef} className="icon-button" type="button" aria-label={translate("关闭管理面板")} onClick={onClose}><X size={19} /></button>
+          <div><h2 id="chat-management-title">{translate("Manage \"{{value0}}\"", { value0: chat.title })}</h2><small>{translate("Members, permissions and recent actions")}</small></div>
+          <button ref={closeRef} className="icon-button" type="button" aria-label={translate("Close management dialog")} onClick={onClose}><X size={19} /></button>
         </header>
-        <nav className="chat-management-tabs" aria-label={translate("管理分类")}>
-          <button type="button" className={tab === "members" ? "is-active" : ""} onClick={() => setTab("members")}><UsersRound size={16} />{translate("成员")}</button>
-          {permissionTabVisible && <button type="button" className={tab === "permissions" ? "is-active" : ""} onClick={() => setTab("permissions")}><Shield size={16} />{translate("权限")}</button>}
-          {capabilities?.canManageInvites && <button type="button" className={tab === "invites" ? "is-active" : ""} onClick={() => setTab("invites")}><Link size={16} />{translate("邀请")}</button>}
-          {capabilities?.canViewEventLog && <button type="button" className={tab === "audit" ? "is-active" : ""} onClick={() => setTab("audit")}><ClipboardList size={16} />{translate("审计日志")}</button>}
+        <nav className="chat-management-tabs" aria-label={translate("Management categories")}>
+          <button type="button" className={tab === "members" ? "is-active" : ""} onClick={() => setTab("members")}><UsersRound size={16} />{translate("Members")}</button>
+          {permissionTabVisible && <button type="button" className={tab === "permissions" ? "is-active" : ""} onClick={() => setTab("permissions")}><Shield size={16} />{translate("Permissions")}</button>}
+          {capabilities?.canManageInvites && <button type="button" className={tab === "invites" ? "is-active" : ""} onClick={() => setTab("invites")}><Link size={16} />{translate("Invites")}</button>}
+          {capabilities?.canViewEventLog && <button type="button" className={tab === "audit" ? "is-active" : ""} onClick={() => setTab("audit")}><ClipboardList size={16} />{translate("Recent Actions")}</button>}
         </nav>
         <div className="chat-management-body">
-          {showLoading ? <div className="profile-state"><LoaderCircle className="spin" size={22} /></div> : error && !management ? <div className="profile-state is-error" role="alert">{error}<button className="dialog-secondary" type="button" onClick={() => void onLoad()}><LoaderCircle size={15} />{translate("重试")}</button></div> : (
+          {showLoading ? <div className="profile-state"><LoaderCircle className="spin" size={22} /></div> : error && !management ? <div className="profile-state is-error" role="alert">{error}<button className="dialog-secondary" type="button" onClick={() => void onLoad()}><LoaderCircle size={15} />{translate("Retry")}</button></div> : (
             <>
               {tab === "members" && (
                 <>
                   {capabilities?.canAddMembers && <section className="management-section">
-                    <div className="management-section-heading"><h3>{translate("添加成员")}</h3><span>{selected.length ? translate("已选 {{value0}}", { value0: selected.length }) : translate("从联系人中选择")}</span></div>
-                    <label className="new-chat-search"><Search size={15} /><input aria-label={translate("搜索联系人")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translate("搜索联系人")} /></label>
+                    <div className="management-section-heading"><h3>{translate("Add Members")}</h3><span>{selected.length ? translate("{{value0}} selected", { value0: selected.length }) : translate("Select from contacts")}</span></div>
+                    <label className="new-chat-search"><Search size={15} /><input aria-label={translate("Search contacts")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translate("Search contacts...")} /></label>
                     <div className="management-contact-list">
-                      {visibleContacts.slice(0, 20).map((user) => <label className="management-contact-row" key={user.id}><input type="checkbox" checked={selected.includes(user.id)} onChange={() => setSelected((current) => current.includes(user.id) ? current.filter((id) => id !== user.id) : [...current, user.id])} /><Avatar avatar={user.avatar} size="small" /><span><strong>{user.displayName}</strong><small>{user.username ? `@${user.username}` : translate("联系人")}</small></span></label>)}
-                      {visibleContacts.length === 0 && <p className="management-empty">{translate("没有可添加的联系人")}</p>}
+                      {visibleContacts.slice(0, 20).map((user) => <label className="management-contact-row" key={user.id}><input type="checkbox" checked={selected.includes(user.id)} onChange={() => setSelected((current) => current.includes(user.id) ? current.filter((id) => id !== user.id) : [...current, user.id])} /><Avatar avatar={user.avatar} size="small" /><span><strong>{user.displayName}</strong><small>{user.username ? `@${user.username}` : translate("Contact")}</small></span></label>)}
+                      {visibleContacts.length === 0 && <p className="management-empty">{translate("No contacts available to add")}</p>}
                     </div>
-                    <button className="dialog-primary" type="button" disabled={saving || selected.length === 0} onClick={() => void addSelected()}><UserPlus size={15} />{translate("添加成员")}</button>
+                    <button className="dialog-primary" type="button" disabled={saving || selected.length === 0} onClick={() => void addSelected()}><UserPlus size={15} />{translate("Add Members")}</button>
                   </section>}
                   <section className="management-section">
-                    <div className="management-section-heading"><h3>{translate("成员与角色")}</h3><span>{translate("{{value0}} 人", { value0: management?.memberCount ?? members.length })}</span></div>
+                    <div className="management-section-heading"><h3>{translate("Members & Roles")}</h3><span>{translate("{{value0}} members", { value0: management?.memberCount ?? members.length })}</span></div>
+                    {members.length > 5 && (
+                      <label className="new-chat-search" style={{ marginBottom: 12 }}>
+                        <Search size={15} />
+                        <input
+                          aria-label={translate("Search members")}
+                          value={memberQuery}
+                          onChange={(event) => setMemberQuery(event.target.value)}
+                          placeholder={translate("Search members...")}
+                        />
+                      </label>
+                    )}
                     <div className="management-member-list">
-                      {members.map((member) => {
+                      {filteredMembers.map((member) => {
                         const canChangeAny = (["member", "administrator", "restricted", "banned"] as const).some((action) => canChangeMemberTo(member, action));
+                        const canKick = canChangeMemberTo(member, "banned");
                         return <div className="management-member-row" key={member.user.id}>
                           <Avatar avatar={member.user.avatar} size="small" />
-                          <span className="management-member-identity"><strong>{member.user.displayName}{member.user.id === currentUserId ? translate("（我）") : ""}</strong><small>{roleLabel(member)}{member.untilDate ? translate(" · 至 {{value0}}", { value0: new Date(member.untilDate * 1000).toLocaleDateString(currentLanguage()) }) : ""}</small></span>
-                          {canChangeAny && <select aria-label={translate("设置 {{value0}} 的角色", { value0: member.user.displayName })} value={member.status === "left" ? "member" : member.status} disabled={saving} onChange={(event) => void updateMember(member, event.target.value as "administrator" | "restricted" | "banned" | "member")}>
-                            <option value="member" disabled={!canChangeMemberTo(member, "member")}>{translate("成员")}</option>
-                            <option value="administrator" disabled={!canChangeMemberTo(member, "administrator")}>{translate("管理员")}</option>
-                            <option value="restricted" disabled={!canChangeMemberTo(member, "restricted")}>{translate("受限")}</option>
-                            <option value="banned" disabled={!canChangeMemberTo(member, "banned")}>{translate("封禁")}</option>
-                          </select>}
+                          <span className="management-member-identity"><strong>{member.user.displayName}{member.user.id === currentUserId ? translate(" (You)") : ""}</strong><small>{roleLabel(member)}{member.untilDate ? translate(" · Until {{value0}}", { value0: new Date(member.untilDate * 1000).toLocaleDateString(currentLanguage()) }) : ""}</small></span>
+                          <div className="management-inline-actions">
+                            {canChangeAny && <select aria-label={translate("Set role for {{value0}}", { value0: member.user.displayName })} value={member.status === "left" ? "member" : member.status} disabled={saving} onChange={(event) => void updateMember(member, event.target.value as "administrator" | "restricted" | "banned" | "member")}>
+                              <option value="member" disabled={!canChangeMemberTo(member, "member")}>{translate("Member")}</option>
+                              <option value="administrator" disabled={!canChangeMemberTo(member, "administrator")}>{translate("Administrator")}</option>
+                              <option value="restricted" disabled={!canChangeMemberTo(member, "restricted")}>{translate("Restricted")}</option>
+                              <option value="banned" disabled={!canChangeMemberTo(member, "banned")}>{translate("Banned")}</option>
+                            </select>}
+                            {canKick && member.status !== "banned" && member.status !== "left" && (
+                              <button
+                                className="icon-button"
+                                type="button"
+                                title={translate("Remove member")}
+                                aria-label={translate("Remove {{value0}}", { value0: member.user.displayName })}
+                                disabled={saving}
+                                onClick={() => void updateMember(member, "banned")}
+                              >
+                                <UserMinus size={15} />
+                              </button>
+                            )}
+                          </div>
                         </div>;
                       })}
+                      {filteredMembers.length === 0 && memberQuery.trim() && (
+                        <p className="management-empty">{translate("No members match your search")}</p>
+                      )}
                     </div>
-                    {management?.memberHasMore && <button className="dialog-secondary" type="button" disabled={loading} onClick={() => void onLoad((management.memberOffset ?? 0) + members.length)}>{translate("加载更多成员")}</button>}
+                    {management?.memberHasMore && <button className="dialog-secondary" type="button" disabled={loading} onClick={() => void onLoad((management.memberOffset ?? 0) + members.length)}>{translate("Load more members")}</button>}
                   </section>
                   {capabilities?.canManageTags && taggableMembers.length > 0 && <section className="management-section">
-                    <div className="management-section-heading"><h3>{translate("成员标签")}</h3><span>{translate("{{value0}} 人", { value0: taggableMembers.length })}</span></div>
-                    {taggableMembers.map((member) => <div className="management-exception-editor" key={member.user.id}><div className="management-exception-row"><Avatar avatar={member.user.avatar} size="small" /><span>{member.user.displayName}</span><small>{roleLabel(member)}</small></div><div className="management-admin-title"><label><span>{translate("标签")}</span><input aria-label={translate("设置 {{value0}} 的成员标签", { value0: member.user.displayName })} value={memberTagDrafts[member.user.id] ?? member.customTitle ?? ""} maxLength={16} disabled={saving} onChange={(event) => setMemberTagDrafts((current) => ({ ...current, [member.user.id]: event.target.value }))} /></label><button className="dialog-secondary" type="button" disabled={saving || (memberTagDrafts[member.user.id] ?? "") === (member.customTitle ?? "")} onClick={() => void updateMemberTag(member)}>{translate("保存标签")}</button></div></div>)}
+                    <div className="management-section-heading"><h3>{translate("Member Tags")}</h3><span>{translate("{{value0}} members", { value0: taggableMembers.length })}</span></div>
+                    {taggableMembers.map((member) => <div className="management-exception-editor" key={member.user.id}><div className="management-exception-row"><Avatar avatar={member.user.avatar} size="small" /><span>{member.user.displayName}</span><small>{roleLabel(member)}</small></div><div className="management-admin-title"><label><span>{translate("Tag")}</span><input aria-label={translate("Set member tag for {{value0}}", { value0: member.user.displayName })} value={memberTagDrafts[member.user.id] ?? member.customTitle ?? ""} maxLength={16} disabled={saving} onChange={(event) => setMemberTagDrafts((current) => ({ ...current, [member.user.id]: event.target.value }))} /></label><button className="dialog-secondary" type="button" disabled={saving || (memberTagDrafts[member.user.id] ?? "") === (member.customTitle ?? "")} onClick={() => void updateMemberTag(member)}>{translate("Save Tag")}</button></div></div>)}
                   </section>}
                   {capabilities?.status === "owner" && <section className="management-section">
-                    <div className="management-section-heading"><h3>{translate("转移所有者")}</h3><span>{transferUnavailable ?? translate("需要两步验证密码")}</span></div>
+                    <div className="management-section-heading"><h3>{translate("Transfer Ownership")}</h3><span>{transferUnavailable ?? translate("Requires two-step verification password")}</span></div>
                     {capabilities.canTransferOwnership ? <>
-                      <select aria-label={translate("选择新的所有者")} value={transferUserId} onChange={(event) => setTransferUserId(event.target.value)}><option value="">{translate("选择成员")}</option>{members.filter((member) => member.status === "member" || member.status === "administrator").map((member) => <option key={member.user.id} value={member.user.id}>{member.user.displayName}</option>)}</select>
-                      <input aria-label={translate("两步验证密码")} type="password" value={transferPassword} onChange={(event) => setTransferPassword(event.target.value)} placeholder={translate("两步验证密码")} />
-                      <button className="dialog-danger" type="button" disabled={saving || !transferUserId || !transferPassword.trim()} onClick={() => void transfer()}>{translate("转移所有者")}</button>
+                      <select aria-label={translate("Select new owner")} value={transferUserId} onChange={(event) => setTransferUserId(event.target.value)}><option value="">{translate("Select member")}</option>{members.filter((member) => member.status === "member" || member.status === "administrator").map((member) => <option key={member.user.id} value={member.user.id}>{member.user.displayName}</option>)}</select>
+                      <input aria-label={translate("Two-step verification password")} type="password" value={transferPassword} onChange={(event) => setTransferPassword(event.target.value)} placeholder={translate("Two-step verification password")} />
+                      <button className="dialog-danger" type="button" disabled={saving || !transferUserId || !transferPassword.trim()} onClick={() => void transfer()}>{translate("Transfer Ownership")}</button>
                     </> : <p className="management-empty">{transferUnavailable}</p>}
                   </section>}
                 </>
               )}
               {tab === "permissions" && permissionTabVisible && <>
-                {capabilities?.canManagePermissions && <section className="management-section"><div className="management-section-heading"><h3>{translate("默认发送权限")}</h3><span>{translate("影响所有普通成员")}</span></div><div className="management-permission-grid">{(Object.keys(CHAT_PERMISSION_LABELS) as (keyof ChatPermissions)[]).map((key) => <label key={key}><input type="checkbox" checked={localPermissions[key]} disabled={saving} onChange={() => togglePermission(key)} /><span>{CHAT_PERMISSION_LABELS[key]}</span></label>)}</div><button className="dialog-primary" type="button" disabled={saving} onClick={() => void savePermissions()}>{translate("保存默认权限")}</button></section>}
-                {capabilities?.canManageSlowMode && <section className="management-section"><div className="management-section-heading"><h3>{translate("慢速模式")}</h3><span>{formatSlowMode(management?.slowModeDelay ?? 0)}</span></div><select aria-label={translate("慢速模式间隔")} disabled={saving} value={management?.slowModeDelay ?? 0} onChange={async (event) => { setSaving(true); await onSetSlowMode(Number(event.target.value)); setSaving(false); }}><option value={0}>{translate("关闭")}</option><option value={5}>{translate("5 秒")}</option><option value={10}>{translate("10 秒")}</option><option value={30}>{translate("30 秒")}</option><option value={60}>{translate("1 分钟")}</option><option value={300}>{translate("5 分钟")}</option><option value={900}>{translate("15 分钟")}</option><option value={3600}>{translate("1 小时")}</option></select></section>}
-                {capabilities?.canRestrictMembers && members.some((member) => member.status === "restricted") && <section className="management-section"><div className="management-section-heading"><h3>{translate("成员例外权限")}</h3><span>{translate("每位受限成员独立设置")}</span></div>{members.filter((member) => member.status === "restricted").map((member) => <div className="management-exception-editor" key={member.user.id}><div className="management-exception-row"><Avatar avatar={member.user.avatar} size="small" /><span>{member.user.displayName}</span><small>{translate("{{value0}} 项允许", { value0: Object.values(member.permissions ?? {}).filter(Boolean).length })}</small></div><div className="management-permission-grid">{(Object.keys(CHAT_PERMISSION_LABELS) as (keyof ChatPermissions)[]).map((key) => <label key={key}><input type="checkbox" checked={(member.permissions ?? DEFAULT_CHAT_PERMISSIONS)[key]} disabled={saving} onChange={() => void setMemberStatus(member.user.id, { kind: "restricted", permissions: { ...(member.permissions ?? DEFAULT_CHAT_PERMISSIONS), [key]: !(member.permissions ?? DEFAULT_CHAT_PERMISSIONS)[key] } })} /><span>{CHAT_PERMISSION_LABELS[key]}</span></label>)}</div></div>)}</section>}
-                {capabilities?.canPromoteMembers && members.some((member) => member.status === "administrator" && member.canBeEdited !== false) && <section className="management-section"><div className="management-section-heading"><h3>{translate("管理员权限")}</h3><span>{translate("只能授予自身拥有的权限")}</span></div>{members.filter((member) => member.status === "administrator" && member.canBeEdited !== false && member.user.id !== currentUserId).map((member) => <div className="management-exception-editor" key={member.user.id}><div className="management-exception-row"><Avatar avatar={member.user.avatar} size="small" /><span>{member.user.displayName}</span><small>{member.customTitle || translate("管理员")}</small></div><div className="management-permission-grid">{adminRightKeys.map((key) => {
+                {capabilities?.canManagePermissions && <section className="management-section"><div className="management-section-heading"><h3>{translate("Default Permissions")}</h3><span>{translate("Applies to all regular members")}</span></div><div className="management-permission-grid">{(Object.keys(CHAT_PERMISSION_LABELS) as (keyof ChatPermissions)[]).map((key) => <label key={key}><input type="checkbox" checked={localPermissions[key]} disabled={saving} onChange={() => togglePermission(key)} /><span>{CHAT_PERMISSION_LABELS[key]}</span></label>)}</div><button className="dialog-primary" type="button" disabled={saving} onClick={() => void savePermissions()}>{translate("Save Default Permissions")}</button></section>}
+                {capabilities?.canManageSlowMode && <section className="management-section"><div className="management-section-heading"><h3>{translate("Slow Mode")}</h3><span>{formatSlowMode(management?.slowModeDelay ?? 0)}</span></div><select aria-label={translate("Slow mode delay")} disabled={saving} value={management?.slowModeDelay ?? 0} onChange={async (event) => { setSaving(true); await onSetSlowMode(Number(event.target.value)); setSaving(false); }}><option value={0}>{translate("Off")}</option><option value={5}>{translate("5 seconds")}</option><option value={10}>{translate("10 seconds")}</option><option value={30}>{translate("30 seconds")}</option><option value={60}>{translate("1 minute")}</option><option value={300}>{translate("5 minutes")}</option><option value={900}>{translate("15 minutes")}</option><option value={3600}>{translate("1 hour")}</option></select></section>}
+                {capabilities?.canRestrictMembers && members.some((member) => member.status === "restricted") && <section className="management-section"><div className="management-section-heading"><h3>{translate("Exceptions & Restrictions")}</h3><span>{translate("Custom rights per restricted member")}</span></div>{members.filter((member) => member.status === "restricted").map((member) => <div className="management-exception-editor" key={member.user.id}><div className="management-exception-row"><Avatar avatar={member.user.avatar} size="small" /><span>{member.user.displayName}</span><small>{translate("{{value0}} allowed", { value0: Object.values(member.permissions ?? {}).filter(Boolean).length })}</small></div><div className="management-permission-grid">{(Object.keys(CHAT_PERMISSION_LABELS) as (keyof ChatPermissions)[]).map((key) => <label key={key}><input type="checkbox" checked={(member.permissions ?? DEFAULT_CHAT_PERMISSIONS)[key]} disabled={saving} onChange={() => void setMemberStatus(member.user.id, { kind: "restricted", permissions: { ...(member.permissions ?? DEFAULT_CHAT_PERMISSIONS), [key]: !(member.permissions ?? DEFAULT_CHAT_PERMISSIONS)[key] } })} /><span>{CHAT_PERMISSION_LABELS[key]}</span></label>)}</div></div>)}</section>}
+                {capabilities?.canPromoteMembers && members.some((member) => member.status === "administrator" && member.canBeEdited !== false) && <section className="management-section"><div className="management-section-heading"><h3>{translate("Administrator Permissions")}</h3><span>{translate("Can only grant rights you possess")}</span></div>{members.filter((member) => member.status === "administrator" && member.canBeEdited !== false && member.user.id !== currentUserId).map((member) => <div className="management-exception-editor" key={member.user.id}><div className="management-exception-row"><Avatar avatar={member.user.avatar} size="small" /><span>{member.user.displayName}</span><small>{member.customTitle || translate("Administrator")}</small></div><div className="management-permission-grid">{adminRightKeys.map((key) => {
                   const actorCanGrant = capabilities.status === "owner" || capabilities.adminRights?.[key] === true;
                   return <label key={key}><input type="checkbox" checked={(member.adminRights ?? DEFAULT_CHAT_ADMIN_RIGHTS)[key]} disabled={saving || !actorCanGrant} onChange={() => void updateAdministrator(member, { ...(member.adminRights ?? DEFAULT_CHAT_ADMIN_RIGHTS), [key]: !(member.adminRights ?? DEFAULT_CHAT_ADMIN_RIGHTS)[key] })} /><span>{CHAT_ADMIN_RIGHT_LABELS[key]}</span></label>;
                 })}</div></div>)}</section>}
               </>}
               {tab === "invites" && capabilities?.canManageInvites && <>
-                <section className="management-section"><div className="management-section-heading"><h3>{editingInviteLink ? translate("编辑邀请链接") : translate("新建邀请链接")}</h3><span>{translate("可设置有效期、人数或订阅")}</span></div><div className="invite-form-grid"><label><span>{translate("名称")}</span><input aria-label={translate("邀请链接名称")} value={inviteName} onChange={(event) => setInviteName(event.target.value)} maxLength={32} placeholder={translate("例如：发布群")} /></label><label><span>{translate("有效期")}</span><input aria-label={translate("邀请链接有效期")} type="datetime-local" value={inviteExpiry} onChange={(event) => setInviteExpiry(event.target.value)} disabled={subscriptionStars > 0} /></label><label><span>{translate("使用人数")}</span><input aria-label={translate("邀请链接使用人数")} type="number" min={0} max={99999} value={inviteLimit} onChange={(event) => setInviteLimit(Math.max(0, Number(event.target.value)))} disabled={subscriptionStars > 0 || inviteApproval} /></label><label><span>{translate("每月 Stars")}</span><input aria-label={translate("订阅 Stars")} type="number" min={0} max={1000000000} value={subscriptionStars} onChange={(event) => { const value = Math.max(0, Number(event.target.value)); setSubscriptionStars(value); if (value > 0) setInviteApproval(false); }} disabled={Boolean(editingInviteLink && !subscriptionStars) || chat.kind !== "channel"} /></label></div><label className="management-check"><input type="checkbox" checked={inviteApproval} disabled={subscriptionStars > 0} onChange={(event) => { setInviteApproval(event.target.checked); if (event.target.checked) setInviteLimit(0); }} /><span>{translate("新成员需要管理员批准")}</span></label><div className="management-inline-actions"><button className="dialog-primary" type="button" disabled={saving} onClick={() => void saveInvite()}>{editingInviteLink ? translate("保存链接") : translate("创建链接")}</button>{editingInviteLink && <button className="dialog-secondary" type="button" onClick={resetInviteForm}>{translate("取消编辑")}</button>}</div></section>
-                <section className="management-section"><div className="management-section-heading"><h3>{translate("有效链接")}</h3><span>{translate("{{value0}} 条链接", { value0: inviteLinks.length })}</span></div><div className="invite-link-list">{inviteLinks.map((link) => <div className="invite-link-row" key={link.inviteLink}><div className="invite-link-main"><strong>{link.name || translate("邀请链接")}{link.isPrimary ? translate(" · 主链接") : ""}</strong><small>{link.subscriptionStars ? translate("{{value0}} Stars/月", { value0: link.subscriptionStars }) : link.createsJoinRequest ? translate("需要审批") : translate("直接加入")}{link.expiresAt ? translate(" · {{value0}} 到期", { value0: new Date(link.expiresAt).toLocaleDateString(currentLanguage()) }) : ""}</small><code>{link.inviteLink}</code></div><div className="invite-source-stats" aria-label={translate("{{value0}} 成员来源统计", { value0: link.name })}><span><strong>{link.memberCount}</strong><small>{translate("已加入")}</small></span><span><strong>{link.pendingJoinRequestCount}</strong><small>{translate("待审批")}</small></span><span><strong>{link.expiredMemberCount}</strong><small>{translate("已过期")}</small></span></div><div className="management-inline-actions"><button className="icon-button" type="button" aria-label={translate("复制 {{value0}}", { value0: link.name })} title={translate("复制链接")} onClick={() => void navigator.clipboard.writeText(link.inviteLink)}><Copy size={15} /></button><button className="dialog-secondary" type="button" disabled={saving} onClick={() => editInvite(link)}>{translate("编辑")}</button><button className="dialog-danger" type="button" disabled={saving} onClick={() => void revokeInvite(link.inviteLink)}>{translate("撤销")}</button></div></div>)}{inviteLinks.length === 0 && <p className="management-empty">{translate("暂无有效邀请链接")}</p>}</div>{inviteHasMore && <button className="dialog-secondary" type="button" disabled={saving} onClick={() => void loadMoreInvites()}>{translate("加载更多链接")}</button>}</section>
-                <section className="management-section"><div className="management-section-heading"><h3>{translate("入群申请")}</h3><span>{translate("{{value0}} 个待处理", { value0: joinRequests.length })}</span></div>{joinRequests.length > 0 && <div className="management-inline-actions"><button className="dialog-primary" type="button" disabled={saving} onClick={() => void processRequests(true)}><Check size={14} />{translate("全部批准")}</button><button className="dialog-danger" type="button" disabled={saving} onClick={() => void processRequests(false)}>{translate("全部拒绝")}</button></div>}<div className="join-request-list">{joinRequests.map((request) => <div className="join-request-row" key={request.user.id}><Avatar avatar={request.user.avatar} size="small" /><span><strong>{request.user.displayName}</strong><small>{request.bio || new Date(request.date).toLocaleString(currentLanguage())}</small></span><div className="management-inline-actions"><button className="dialog-primary" type="button" aria-label={translate("批准 {{value0}}", { value0: request.user.displayName })} disabled={saving} onClick={() => void processRequest(request.user.id, true)}>{translate("批准")}</button><button className="dialog-secondary" type="button" aria-label={translate("拒绝 {{value0}}", { value0: request.user.displayName })} disabled={saving} onClick={() => void processRequest(request.user.id, false)}>{translate("拒绝")}</button></div></div>)}{joinRequests.length === 0 && <p className="management-empty">{translate("暂无待处理申请")}</p>}</div>{joinRequestBuckets.some((bucket) => bucket.hasMore) && <button className="dialog-secondary" type="button" disabled={saving} onClick={() => void loadMoreRequests()}>{translate("加载更多申请")}</button>}</section>
+                <section className="management-section"><div className="management-section-heading"><h3>{editingInviteLink ? translate("Edit Invite Link") : translate("Create Invite Link")}</h3><span>{translate("Configure expiration, usage limit, or Stars subscription")}</span></div><div className="invite-form-grid"><label><span>{translate("Name")}</span><input aria-label={translate("Invite link name")} value={inviteName} onChange={(event) => setInviteName(event.target.value)} maxLength={32} placeholder={translate("e.g. Announcements")} /></label><label><span>{translate("Expire Date")}</span><input aria-label={translate("Invite link expiration")} type="datetime-local" value={inviteExpiry} onChange={(event) => setInviteExpiry(event.target.value)} disabled={subscriptionStars > 0} /></label><label><span>{translate("Member Limit")}</span><input aria-label={translate("Invite link member limit")} type="number" min={0} max={99999} value={inviteLimit} onChange={(event) => setInviteLimit(Math.max(0, Number(event.target.value)))} disabled={subscriptionStars > 0 || inviteApproval} /></label><label><span>{translate("Monthly Stars")}</span><input aria-label={translate("Subscription Stars")} type="number" min={0} max={1000000000} value={subscriptionStars} onChange={(event) => { const value = Math.max(0, Number(event.target.value)); setSubscriptionStars(value); if (value > 0) setInviteApproval(false); }} disabled={Boolean(editingInviteLink && !subscriptionStars) || chat.kind !== "channel"} /></label></div><label className="management-check"><input type="checkbox" checked={inviteApproval} disabled={subscriptionStars > 0} onChange={(event) => { setInviteApproval(event.target.checked); if (event.target.checked) setInviteLimit(0); }} /><span>{translate("Require admin approval to join")}</span></label><div className="management-inline-actions"><button className="dialog-primary" type="button" disabled={saving} onClick={() => void saveInvite()}>{editingInviteLink ? translate("Save Link") : translate("Create Link")}</button>{editingInviteLink && <button className="dialog-secondary" type="button" onClick={resetInviteForm}>{translate("Cancel")}</button>}</div></section>
+                <section className="management-section"><div className="management-section-heading"><h3>{translate("Active Invite Links")}</h3><span>{translate("{{value0}} links", { value0: inviteLinks.length })}</span></div><div className="invite-link-list">{inviteLinks.map((link) => <div className="invite-link-row" key={link.inviteLink}><div className="invite-link-main"><strong>{link.name || translate("Invite Link")}{link.isPrimary ? translate(" · Primary Link") : ""}</strong><small>{link.subscriptionStars ? translate("{{value0}} Stars/month", { value0: link.subscriptionStars }) : link.createsJoinRequest ? translate("Requires Approval") : translate("Direct Join")}{link.expiresAt ? translate(" · Expires {{value0}}", { value0: new Date(link.expiresAt).toLocaleDateString(currentLanguage()) }) : ""}</small><code>{link.inviteLink}</code></div><div className="invite-source-stats" aria-label={translate("Member source stats for {{value0}}", { value0: link.name })}><span><strong>{link.memberCount}</strong><small>{translate("Joined")}</small></span><span><strong>{link.pendingJoinRequestCount}</strong><small>{translate("Pending")}</small></span><span><strong>{link.expiredMemberCount}</strong><small>{translate("Expired")}</small></span></div><div className="management-inline-actions"><button className="icon-button" type="button" aria-label={translate("Copy {{value0}}", { value0: link.name })} title={translate("Copy link")} onClick={() => void navigator.clipboard.writeText(link.inviteLink)}><Copy size={15} /></button><button className="dialog-secondary" type="button" disabled={saving} onClick={() => editInvite(link)}>{translate("Edit")}</button><button className="dialog-danger" type="button" disabled={saving} onClick={() => void revokeInvite(link.inviteLink)}>{translate("Revoke")}</button></div></div>)}{inviteLinks.length === 0 && <p className="management-empty">{translate("No active invite links")}</p>}</div>{inviteHasMore && <button className="dialog-secondary" type="button" disabled={saving} onClick={() => void loadMoreInvites()}>{translate("Load more links")}</button>}</section>
+                <section className="management-section"><div className="management-section-heading"><h3>{translate("Join Requests")}</h3><span>{translate("{{value0}} pending", { value0: joinRequests.length })}</span></div>{joinRequests.length > 0 && <div className="management-inline-actions"><button className="dialog-primary" type="button" disabled={saving} onClick={() => void processRequests(true)}><Check size={14} />{translate("Approve All")}</button><button className="dialog-danger" type="button" disabled={saving} onClick={() => void processRequests(false)}>{translate("Decline All")}</button></div>}<div className="join-request-list">{joinRequests.map((request) => <div className="join-request-row" key={request.user.id}><Avatar avatar={request.user.avatar} size="small" /><span><strong>{request.user.displayName}</strong><small>{request.bio || new Date(request.date).toLocaleString(currentLanguage())}</small></span><div className="management-inline-actions"><button className="dialog-primary" type="button" aria-label={translate("Approve {{value0}}", { value0: request.user.displayName })} disabled={saving} onClick={() => void processRequest(request.user.id, true)}>{translate("Approve")}</button><button className="dialog-secondary" type="button" aria-label={translate("Decline {{value0}}", { value0: request.user.displayName })} disabled={saving} onClick={() => void processRequest(request.user.id, false)}>{translate("Decline")}</button></div></div>)}{joinRequests.length === 0 && <p className="management-empty">{translate("No pending join requests")}</p>}</div>{joinRequestBuckets.some((bucket) => bucket.hasMore) && <button className="dialog-secondary" type="button" disabled={saving} onClick={() => void loadMoreRequests()}>{translate("Load more requests")}</button>}</section>
               </>}
-              {tab === "audit" && capabilities?.canViewEventLog && <section className="management-section"><div className="management-section-heading"><h3>{translate("管理操作")}</h3><span>{translate("{{value0}} 条记录", { value0: events.length })}</span></div><div className="management-event-list">{events.map((event) => <div className="management-event-row" key={event.id}><div><strong>{event.summary}</strong><small>{event.actor?.displayName ?? translate("未知操作者")} · {new Date(event.date).toLocaleString(currentLanguage())}</small></div></div>)}{events.length === 0 && <p className="management-empty">{translate("暂无管理事件")}</p>}</div>{hasMoreEvents && <button className="dialog-secondary" type="button" onClick={() => void loadMoreEvents()}>{translate("加载更早记录")}</button>}</section>}
+              {tab === "audit" && capabilities?.canViewEventLog && <section className="management-section"><div className="management-section-heading"><h3>{translate("Recent Actions")}</h3><span>{translate("{{value0}} events", { value0: events.length })}</span></div><div className="management-event-list">{events.map((event) => <div className="management-event-row" key={event.id}><div><strong>{event.summary}</strong><small>{event.actor?.displayName ?? translate("Unknown actor")} · {new Date(event.date).toLocaleString(currentLanguage())}</small></div></div>)}{events.length === 0 && <p className="management-empty">{translate("No recent administrative events")}</p>}</div>{hasMoreEvents && <button className="dialog-secondary" type="button" onClick={() => void loadMoreEvents()}>{translate("Load older events")}</button>}</section>}
             </>
           )}
         </div>

@@ -265,6 +265,7 @@ export interface TelegramState {
   editForumTopic: (chatId: string, topicId: string, name: string) => Promise<boolean>;
   setForumTopicClosed: (chatId: string, topicId: string, closed: boolean) => Promise<boolean>;
   setForumTopicPinned: (chatId: string, topicId: string, pinned: boolean) => Promise<boolean>;
+  deleteForumTopic: (chatId: string, topicId: string) => Promise<boolean>;
   resolveTelegramLink: (url: string) => Promise<import("../telegram/types").TelegramLinkTarget | undefined>;
   joinChat: (input: import("../telegram/types").JoinChatInput) => Promise<import("../telegram/types").JoinChatResult | undefined>;
   refreshChatMembership: (chatId: string) => Promise<boolean>;

@@ -201,7 +201,7 @@ export class TauriForumTopicService {
   }
 
   async createForumTopic(input: CreateForumTopicInput): Promise<ForumTopic> {
-    const name = identityTextField(input.name, 128, translate("话题名称"), true);
+    const name = identityTextField(input.name, 128, translate("Topic name"), true);
     const iconColor = input.iconColor ?? 0x6fb9f0;
     const info = await this.context.request({
       "@type": "createForumTopic",
@@ -227,13 +227,13 @@ export class TauriForumTopicService {
       notification_settings: null,
       draft_message: null,
     });
-    if (!topic) throw new Error(translate("TDLib 未返回新话题"));
+    if (!topic) throw new Error(translate("TDLib did not return newly created topic"));
     this.context.emitForumTopicsChanged(input.chatId);
     return topic;
   }
 
   async editForumTopic(chatId: string, topicId: string, name: string) {
-    const normalized = identityTextField(name, 128, translate("话题名称"), true);
+    const normalized = identityTextField(name, 128, translate("Topic name"), true);
     await this.context.request({
       "@type": "editForumTopic",
       chat_id: numericId(chatId),
@@ -262,6 +262,16 @@ export class TauriForumTopicService {
       forum_topic_id: numericId(topicId),
       is_pinned: pinned,
     });
+    this.context.emitForumTopicsChanged(chatId);
+  }
+
+  async deleteForumTopic(chatId: string, topicId: string) {
+    await this.context.request({
+      "@type": "deleteForumTopic",
+      chat_id: numericId(chatId),
+      forum_topic_id: numericId(topicId),
+    });
+    this.topics.delete(this.topicKey(chatId, topicId));
     this.context.emitForumTopicsChanged(chatId);
   }
 }

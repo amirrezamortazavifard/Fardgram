@@ -1200,8 +1200,8 @@ describe("TauriTelegramTransport startup", () => {
 
     await transport.setChatMemberTag("72", "11", "");
     expect(requests.at(-1)).toMatchObject({ "@type": "setChatMemberTag", chat_id: 72, user_id: 11, tag: "" });
-    await expect(transport.setChatMemberTag("72", "11", "x".repeat(17))).rejects.toThrow("0 至 16");
-    await expect(transport.setChatMemberTag("72", "11", "值班🙂")).rejects.toThrow("非表情字符");
+    await expect(transport.setChatMemberTag("72", "11", "x".repeat(17))).rejects.toThrow("0 to 16");
+    await expect(transport.setChatMemberTag("72", "11", "值班🙂")).rejects.toThrow("non-emoji");
     expect(requests).toHaveLength(1);
   });
 

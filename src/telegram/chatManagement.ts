@@ -18,42 +18,42 @@ export const canPostToChannel = (chat?: Pick<Chat, "kind" | "management">) =>
   ));
 
 export const CHAT_PERMISSION_LABELS: Record<ChatPermissionKey, string> = {
-  get canSendBasicMessages() { return translate("发送文字"); },
-  get canSendAudios() { return translate("发送音乐"); },
-  get canSendDocuments() { return translate("发送文件"); },
-  get canSendPhotos() { return translate("发送照片"); },
-  get canSendVideos() { return translate("发送视频"); },
-  get canSendVideoNotes() { return translate("发送视频消息"); },
-  get canSendVoiceNotes() { return translate("发送语音消息"); },
-  get canSendPolls() { return translate("发送投票"); },
-  get canSendOtherMessages() { return translate("发送贴纸和 GIF"); },
-  get canAddLinkPreviews() { return translate("添加链接预览"); },
-  get canReactToMessages() { return translate("添加消息回应"); },
-  get canEditTag() { return translate("编辑成员标签"); },
-  get canChangeInfo() { return translate("修改群资料"); },
-  get canInviteUsers() { return translate("邀请成员"); },
-  get canPinMessages() { return translate("置顶消息"); },
-  get canCreateTopics() { return translate("创建话题"); },
+  get canSendBasicMessages() { return translate("Send text messages"); },
+  get canSendAudios() { return translate("Send music"); },
+  get canSendDocuments() { return translate("Send files"); },
+  get canSendPhotos() { return translate("Send photos"); },
+  get canSendVideos() { return translate("Send videos"); },
+  get canSendVideoNotes() { return translate("Send video messages"); },
+  get canSendVoiceNotes() { return translate("Send voice messages"); },
+  get canSendPolls() { return translate("Send polls"); },
+  get canSendOtherMessages() { return translate("Send stickers & GIFs"); },
+  get canAddLinkPreviews() { return translate("Embed links"); },
+  get canReactToMessages() { return translate("Add reactions"); },
+  get canEditTag() { return translate("Edit member tags"); },
+  get canChangeInfo() { return translate("Change chat info"); },
+  get canInviteUsers() { return translate("Add members"); },
+  get canPinMessages() { return translate("Pin messages"); },
+  get canCreateTopics() { return translate("Create topics"); },
 };
 
 export const CHAT_ADMIN_RIGHT_LABELS: Record<ChatAdminRightKey, string> = {
-  get canManageChat() { return translate("管理群组"); },
-  get canChangeInfo() { return translate("修改资料"); },
-  get canPostMessages() { return translate("发布消息"); },
-  get canEditMessages() { return translate("编辑消息"); },
-  get canDeleteMessages() { return translate("删除消息"); },
-  get canInviteUsers() { return translate("邀请成员"); },
-  get canRestrictMembers() { return translate("限制成员"); },
-  get canPinMessages() { return translate("置顶消息"); },
-  get canManageTopics() { return translate("管理话题"); },
-  get canPromoteMembers() { return translate("添加管理员"); },
-  get canManageVideoChats() { return translate("管理视频聊天"); },
-  get canPostStories() { return translate("发布故事"); },
-  get canEditStories() { return translate("编辑故事"); },
-  get canDeleteStories() { return translate("删除故事"); },
-  get canManageDirectMessages() { return translate("管理私信"); },
-  get canManageTags() { return translate("管理标签"); },
-  get isAnonymous() { return translate("匿名管理员"); },
+  get canManageChat() { return translate("Manage chat"); },
+  get canChangeInfo() { return translate("Change info"); },
+  get canPostMessages() { return translate("Post messages"); },
+  get canEditMessages() { return translate("Edit messages"); },
+  get canDeleteMessages() { return translate("Delete messages"); },
+  get canInviteUsers() { return translate("Invite users"); },
+  get canRestrictMembers() { return translate("Ban & restrict members"); },
+  get canPinMessages() { return translate("Pin messages"); },
+  get canManageTopics() { return translate("Manage topics"); },
+  get canPromoteMembers() { return translate("Add new admins"); },
+  get canManageVideoChats() { return translate("Manage video chats"); },
+  get canPostStories() { return translate("Post stories"); },
+  get canEditStories() { return translate("Edit stories"); },
+  get canDeleteStories() { return translate("Delete stories"); },
+  get canManageDirectMessages() { return translate("Manage direct messages"); },
+  get canManageTags() { return translate("Manage tags"); },
+  get isAnonymous() { return translate("Remain anonymous"); },
 };
 
 export const DEFAULT_CHAT_PERMISSIONS: ChatPermissions = {
@@ -160,12 +160,12 @@ const CHAT_MEMBER_TAG_EMOJI = /(?:\p{Extended_Pictographic}|\p{Regional_Indicato
 export const chatMemberTagError = (value: string) => {
   const tag = value.trim();
   if (Array.from(tag).length > 16 || /[\r\n]/.test(value) || CHAT_MEMBER_TAG_EMOJI.test(tag)) {
-    return translate("成员标签需要包含 0 至 16 个非表情字符且不能换行");
+    return translate("Member tags must contain 0 to 16 non-emoji characters without line breaks");
   }
   try {
-    identityTextField(value, 16, translate("成员标签"));
+    identityTextField(value, 16, translate("Member tag"));
   } catch {
-    return translate("成员标签需要包含 0 至 16 个非表情字符且不能换行");
+    return translate("Member tags must contain 0 to 16 non-emoji characters without line breaks");
   }
   return undefined;
 };

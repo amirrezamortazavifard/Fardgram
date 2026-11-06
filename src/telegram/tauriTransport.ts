@@ -2252,6 +2252,10 @@ export class TauriTelegramTransport implements TelegramTransport {
     return this.forumTopicService.setForumTopicPinned(chatId, topicId, pinned);
   }
 
+  async deleteForumTopic(chatId: string, topicId: string) {
+    return this.forumTopicService.deleteForumTopic(chatId, topicId);
+  }
+
   async getMessageContext(chatId: string, messageId: string, limit = 31) {
     return this.messageMediaService.getMessageContext(chatId, messageId, limit);
   }

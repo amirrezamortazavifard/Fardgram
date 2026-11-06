@@ -153,7 +153,7 @@ The order below is the recommended delivery sequence. It can be changed only whe
 - [x] **FG-014 — Rich Messages editor and advanced rich-message rendering**
 - [x] **FG-015 — Advanced polls and quiz parity**
 - [x] **FG-016 — Advanced search tabs and discovery**
-- [ ] **FG-017 — Advanced group, channel and community administration**
+- [x] **FG-017 — Advanced group, channel and community administration**
 
 ### P2 — Ecosystem, content creation and completeness
 

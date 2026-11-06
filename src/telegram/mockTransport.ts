@@ -2108,6 +2108,12 @@ export class MockTelegramTransport implements TelegramTransport {
     this.listener?.({ type: "forumTopics.changed", chatId });
   }
 
+  async deleteForumTopic(chatId: string, topicId: string) {
+    const topics = this.ensureForumTopics(chatId);
+    this.forumTopics.set(chatId, topics.filter((candidate) => candidate.id !== topicId));
+    this.listener?.({ type: "forumTopics.changed", chatId });
+  }
+
   async getMessageContext(chatId: string, messageId: string, limit = 31) {
     const history = this.snapshot.messages
       .filter((message) => message.chatId === chatId)

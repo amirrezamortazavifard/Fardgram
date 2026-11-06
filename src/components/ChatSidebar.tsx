@@ -263,235 +263,235 @@ export function ChatSidebar({
 
   return (
     <>
-    <aside
-      ref={sidebarRef}
-      className={`chat-sidebar ${scopedSearch ? "has-scoped-search" : ""} ${resizing ? "is-resizing" : ""}`}
-      aria-label={translate("会话列表")}
-      aria-hidden={mobileViewport && mobileChatOpen ? true : undefined}
-      inert={mobileViewport && mobileChatOpen ? true : undefined}
-    >
-      <div className="sidebar-heading">
-        <div>
-          <h1>{folderTitle}</h1>
-          {connectionStatus && connectionStatus !== "online" && (
-            <span className="sidebar-heading-conn-status">
-              {connectionPresentation(connectionStatus).compactLabel}
-            </span>
-          )}
-        </div>
-        <button className="icon-button" type="button" aria-label={translate("新建群组或频道")} title={translate("新建群组或频道")} onClick={onCreateChat}>
-          <Plus size={20} strokeWidth={1.9} />
-        </button>
-      </div>
-
-      <div className={`sidebar-search-row ${inSearchMode && !scopedChat ? "is-search-active" : ""}`}>
-        {inSearchMode && !scopedChat && (
-          <button
-            type="button"
-            className="search-back-btn icon-button"
-            aria-label="Back to chats"
-            title="Back to chats"
-            onClick={() => {
-              setIsSearchFocused(false);
-              onSearchChange("");
-              searchInputRef.current?.blur();
-            }}
-          >
-            <ArrowLeft size={18} strokeWidth={2} />
+      <aside
+        ref={sidebarRef}
+        className={`chat-sidebar ${scopedSearch ? "has-scoped-search" : ""} ${resizing ? "is-resizing" : ""}`}
+        aria-label={translate("Chat list")}
+        aria-hidden={mobileViewport && mobileChatOpen ? true : undefined}
+        inert={mobileViewport && mobileChatOpen ? true : undefined}
+      >
+        <div className="sidebar-heading">
+          <div>
+            <h1>{folderTitle}</h1>
+            {connectionStatus && connectionStatus !== "online" && (
+              <span className="sidebar-heading-conn-status">
+                {connectionPresentation(connectionStatus).compactLabel}
+              </span>
+            )}
+          </div>
+          <button className="icon-button" type="button" aria-label={translate("New group or channel")} title={translate("New group or channel")} onClick={onCreateChat}>
+            <Plus size={20} strokeWidth={1.9} />
           </button>
-        )}
-        <label className="search-field">
-          {(!inSearchMode || scopedChat) && <Search size={17} strokeWidth={1.8} />}
-          <span className="sr-only">{translate("搜索会话和消息")}</span>
-          <input
-            ref={searchInputRef}
-            value={searchQuery}
-            onFocus={() => setIsSearchFocused(true)}
-            onClick={() => setIsSearchFocused(true)}
-            onChange={(event) => {
-              setIsSearchFocused(true);
-              onSearchChange(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape") return;
-              if (scopedSearch) onExitSearchScope(false);
-              else {
+        </div>
+
+        <div className={`sidebar-search-row ${inSearchMode && !scopedChat ? "is-search-active" : ""}`}>
+          {inSearchMode && !scopedChat && (
+            <button
+              type="button"
+              className="search-back-btn icon-button"
+              aria-label="Back to chats"
+              title="Back to chats"
+              onClick={() => {
                 setIsSearchFocused(false);
                 onSearchChange("");
                 searchInputRef.current?.blur();
-              }
-            }}
-            placeholder={translate("Search chats and messages")}
-            type="search"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              className="clear-search"
-              aria-label={translate("Clear search")}
-              title={translate("Clear search")}
-              onClick={() => onSearchChange("")}
+              }}
             >
-              ×
+              <ArrowLeft size={18} strokeWidth={2} />
             </button>
           )}
-        </label>
-      </div>
-
-      {scopedChat && (
-        <div className="sidebar-search-scope" role="group" aria-label={translate("Search scope: {{value0}}", { value0: scopedChat.title })}>
-          <Avatar avatar={scopedChat.avatar} size="small" />
-          <span>{translate("This chat: ")}{scopedChat.title}</span>
-          <button type="button" className="icon-button" aria-label={translate("Remove chat search scope")} title={translate("Remove chat search scope")} onClick={() => onExitSearchScope(true)}>
-            <X size={16} strokeWidth={1.9} />
-          </button>
-        </div>
-      )}
-
-      {connectionStatus && connectionStatus !== "online" && onOpenConnect && (
-        <div className={`sidebar-connection-banner is-${connectionStatus}`} role="status">
-          <div className="sidebar-connection-info">
-            {connectionPresentation(connectionStatus).busy ? (
-              <LoaderCircle className="spin" size={13} />
-            ) : (
-              <Radio size={13} />
+          <label className="search-field">
+            {(!inSearchMode || scopedChat) && <Search size={17} strokeWidth={1.8} />}
+            <span className="sr-only">{translate("搜索会话和消息")}</span>
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onClick={() => setIsSearchFocused(true)}
+              onChange={(event) => {
+                setIsSearchFocused(true);
+                onSearchChange(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                if (scopedSearch) onExitSearchScope(false);
+                else {
+                  setIsSearchFocused(false);
+                  onSearchChange("");
+                  searchInputRef.current?.blur();
+                }
+              }}
+              placeholder={translate("Search chats and messages")}
+              type="search"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="clear-search"
+                aria-label={translate("Clear search")}
+                title={translate("Clear search")}
+                onClick={() => onSearchChange("")}
+              >
+                ×
+              </button>
             )}
-            <span>{connectionPresentation(connectionStatus).label}</span>
-          </div>
-          <button
-            type="button"
-            className="sidebar-connection-btn"
-            onClick={onOpenConnect}
-            title="Configure Proxy & Network Settings"
-          >
-            <Globe size={12} />
-            <span>Connect</span>
-          </button>
+          </label>
         </div>
-      )}
 
-      <div className="sidebar-list-stack">
-      {scopedChat ? (
-        <ChatSearchResults
-          chat={scopedChat}
-          query={searchQuery}
-          senderId={chatSearchSenderId}
-          senderOptions={chatSearchSenderOptions}
-          dateRange={chatSearchDateRange}
-          knownChats={allChats}
-          knownUsers={users}
-          state={chatMessageSearch}
-          stateMatchesInput={chatSearchStateMatchesInput}
-          onSenderChange={onChatSearchSenderChange}
-          onDateRangeChange={onChatSearchDateRangeChange}
-          onLoadMore={onLoadMoreChatSearch}
-          onOpenMessage={onOpenSearchMessage}
+        {scopedChat && (
+          <div className="sidebar-search-scope" role="group" aria-label={translate("Search scope: {{value0}}", { value0: scopedChat.title })}>
+            <Avatar avatar={scopedChat.avatar} size="small" />
+            <span>{translate("This chat: ")}{scopedChat.title}</span>
+            <button type="button" className="icon-button" aria-label={translate("Remove chat search scope")} title={translate("Remove chat search scope")} onClick={() => onExitSearchScope(true)}>
+              <X size={16} strokeWidth={1.9} />
+            </button>
+          </div>
+        )}
+
+        {connectionStatus && connectionStatus !== "online" && onOpenConnect && (
+          <div className={`sidebar-connection-banner is-${connectionStatus}`} role="status">
+            <div className="sidebar-connection-info">
+              {connectionPresentation(connectionStatus).busy ? (
+                <LoaderCircle className="spin" size={13} />
+              ) : (
+                <Radio size={13} />
+              )}
+              <span>{connectionPresentation(connectionStatus).label}</span>
+            </div>
+            <button
+              type="button"
+              className="sidebar-connection-btn"
+              onClick={onOpenConnect}
+              title="Configure Proxy & Network Settings"
+            >
+              <Globe size={12} />
+              <span>Connect</span>
+            </button>
+          </div>
+        )}
+
+        <div className="sidebar-list-stack">
+          {scopedChat ? (
+            <ChatSearchResults
+              chat={scopedChat}
+              query={searchQuery}
+              senderId={chatSearchSenderId}
+              senderOptions={chatSearchSenderOptions}
+              dateRange={chatSearchDateRange}
+              knownChats={allChats}
+              knownUsers={users}
+              state={chatMessageSearch}
+              stateMatchesInput={chatSearchStateMatchesInput}
+              onSenderChange={onChatSearchSenderChange}
+              onDateRangeChange={onChatSearchDateRangeChange}
+              onLoadMore={onLoadMoreChatSearch}
+              onOpenMessage={onOpenSearchMessage}
+            />
+          ) : inSearchMode ? (
+            <GlobalSearchResults
+              query={searchQuery}
+              state={globalSearch}
+              knownChats={allChats}
+              knownUsers={users}
+              onSearch={onSearchMessages}
+              onLoadMore={onLoadMoreSearchMessages}
+              onCancel={onCancelMessageSearch}
+              onOpenChat={(chatId) => {
+                onSelect(chatId);
+              }}
+              onOpenMessage={onOpenSearchMessage}
+              onSelectQuery={(q) => {
+                setIsSearchFocused(true);
+                onSearchChange(q);
+                searchInputRef.current?.focus();
+              }}
+              onClose={() => {
+                setIsSearchFocused(false);
+                onSearchChange("");
+              }}
+            />
+          ) : null}
+          {folders.filter((folder) => folder.id !== "main" || (folderId === "main" && !scopedSearch && !inSearchMode)).map((folder) => (
+            <ChatFolderList
+              key={folder.id}
+              chats={chatsByFolder.get(folder.id)!}
+              allChats={allChats}
+              users={users}
+              folderId={folder.id}
+              active={folder.id === folderId && !scopedSearch && !inSearchMode && !(mobileViewport && mobileChatOpen)}
+              activeChatId={activeChatId}
+              unreadBadgePosition={unreadBadgePosition}
+              localBlockedUserIds={localBlockedUserIds}
+              localHiddenUserIds={localHiddenUserIds}
+              initialScrollTop={chatListScrollTopByFolderRef.current.get(folder.id)}
+              onScrollPosition={saveScrollPosition}
+              onSelect={onSelect}
+              onOpenLatest={onOpenLatest}
+              onOpenContextMenu={openContextMenu}
+              onLoadMore={onLoadMore}
+              onReorderPinned={onReorderPinned}
+              onPeekChat={setPeekChat}
+            />
+          ))}
+        </div>
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          aria-label={translate("Resize chat list width")}
+          aria-orientation="vertical"
+          aria-valuemin={MIN_SIDEBAR_WIDTH}
+          aria-valuemax={maximumWidth()}
+          aria-valuenow={Math.round(Math.min(maximumWidth(), Math.max(
+            MIN_SIDEBAR_WIDTH,
+            sidebarRef.current?.getBoundingClientRect().width ?? width,
+          )))}
+          tabIndex={0}
+          title={translate("Drag to resize chat list width")}
+          onDoubleClick={() => commitWidth(344)}
+          onKeyDown={handleResizeKey}
+          onPointerDown={beginResize}
+          onPointerMove={continueResize}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+          onLostPointerCapture={endResize}
         />
-      ) : inSearchMode ? (
-        <GlobalSearchResults
-          query={searchQuery}
-          state={globalSearch}
-          knownChats={allChats}
-          knownUsers={users}
-          onSearch={onSearchMessages}
-          onLoadMore={onLoadMoreSearchMessages}
-          onCancel={onCancelMessageSearch}
+      </aside>
+      {contextMenu && contextMenu.folderId === folderId && contextChat && contextChat.folderIds.includes(folderId) && !searchQuery.trim() && !scopedSearch && !(mobileViewport && mobileChatOpen) && (
+        <ChatContextMenu
+          chat={contextChat}
+          peer={contextChat.peerId ? users.get(contextChat.peerId) : undefined}
+          chatListId={folderId}
+          folders={folders}
+          point={contextMenu.point}
+          keyboardNavigation={contextMenu.keyboardNavigation}
+          chatPending={chatManagementPending.has(contextChat.id)}
+          folderPending={folderManagementPending}
+          restoreFocus={() => {
+            if (contextMenu.anchor.closest('.chat-list[data-active="true"]')) contextMenu.anchor.focus({ preventScroll: true });
+          }}
+          onSetPinned={(pinned) => onSetPinned(folderId, contextChat.id, pinned)}
+          onSetMuted={(muted) => onSetMuted(contextChat.id, muted)}
+          onRequestDelete={() => onRequestDeleteChat(contextChat)}
+          onRequestStopBot={() => onRequestStopBot(contextChat)}
+          onSetFolderMembership={(targetFolderId, included) =>
+            onSetFolderMembership(targetFolderId, contextChat.id, included)}
+          onRequestLeave={() => onRequestLeaveGroup(contextChat)}
+          onClose={closeContextMenu}
+        />
+      )}
+      {peekChat && (
+        <ChatPeekModal
+          chat={peekChat}
+          onClose={() => setPeekChat(undefined)}
           onOpenChat={(chatId) => {
+            setPeekChat(undefined);
             onSelect(chatId);
           }}
-          onOpenMessage={onOpenSearchMessage}
-          onSelectQuery={(q) => {
-            setIsSearchFocused(true);
-            onSearchChange(q);
-            searchInputRef.current?.focus();
-          }}
-          onClose={() => {
-            setIsSearchFocused(false);
-            onSearchChange("");
+          onToggleMute={(chatId, muted) => {
+            void onSetMuted(chatId, muted);
           }}
         />
-      ) : null}
-      {folders.filter((folder) => folder.id !== "main" || (folderId === "main" && !scopedSearch && !inSearchMode)).map((folder) => (
-        <ChatFolderList
-          key={folder.id}
-          chats={chatsByFolder.get(folder.id)!}
-          allChats={allChats}
-          users={users}
-          folderId={folder.id}
-          active={folder.id === folderId && !scopedSearch && !inSearchMode && !(mobileViewport && mobileChatOpen)}
-          activeChatId={activeChatId}
-          unreadBadgePosition={unreadBadgePosition}
-          localBlockedUserIds={localBlockedUserIds}
-          localHiddenUserIds={localHiddenUserIds}
-          initialScrollTop={chatListScrollTopByFolderRef.current.get(folder.id)}
-          onScrollPosition={saveScrollPosition}
-          onSelect={onSelect}
-          onOpenLatest={onOpenLatest}
-          onOpenContextMenu={openContextMenu}
-          onLoadMore={onLoadMore}
-          onReorderPinned={onReorderPinned}
-          onPeekChat={setPeekChat}
-        />
-      ))}
-      </div>
-      <div
-        className="sidebar-resizer"
-        role="separator"
-        aria-label={translate("调整会话列表宽度")}
-        aria-orientation="vertical"
-        aria-valuemin={MIN_SIDEBAR_WIDTH}
-        aria-valuemax={maximumWidth()}
-        aria-valuenow={Math.round(Math.min(maximumWidth(), Math.max(
-          MIN_SIDEBAR_WIDTH,
-          sidebarRef.current?.getBoundingClientRect().width ?? width,
-        )))}
-        tabIndex={0}
-        title={translate("拖动调整会话列表宽度")}
-        onDoubleClick={() => commitWidth(344)}
-        onKeyDown={handleResizeKey}
-        onPointerDown={beginResize}
-        onPointerMove={continueResize}
-        onPointerUp={endResize}
-        onPointerCancel={endResize}
-        onLostPointerCapture={endResize}
-      />
-    </aside>
-    {contextMenu && contextMenu.folderId === folderId && contextChat && contextChat.folderIds.includes(folderId) && !searchQuery.trim() && !scopedSearch && !(mobileViewport && mobileChatOpen) && (
-      <ChatContextMenu
-        chat={contextChat}
-        peer={contextChat.peerId ? users.get(contextChat.peerId) : undefined}
-        chatListId={folderId}
-        folders={folders}
-        point={contextMenu.point}
-        keyboardNavigation={contextMenu.keyboardNavigation}
-        chatPending={chatManagementPending.has(contextChat.id)}
-        folderPending={folderManagementPending}
-        restoreFocus={() => {
-          if (contextMenu.anchor.closest('.chat-list[data-active="true"]')) contextMenu.anchor.focus({ preventScroll: true });
-        }}
-        onSetPinned={(pinned) => onSetPinned(folderId, contextChat.id, pinned)}
-        onSetMuted={(muted) => onSetMuted(contextChat.id, muted)}
-        onRequestDelete={() => onRequestDeleteChat(contextChat)}
-        onRequestStopBot={() => onRequestStopBot(contextChat)}
-        onSetFolderMembership={(targetFolderId, included) =>
-          onSetFolderMembership(targetFolderId, contextChat.id, included)}
-        onRequestLeave={() => onRequestLeaveGroup(contextChat)}
-        onClose={closeContextMenu}
-      />
-    )}
-    {peekChat && (
-      <ChatPeekModal
-        chat={peekChat}
-        onClose={() => setPeekChat(undefined)}
-        onOpenChat={(chatId) => {
-          setPeekChat(undefined);
-          onSelect(chatId);
-        }}
-        onToggleMute={(chatId, muted) => {
-          void onSetMuted(chatId, muted);
-        }}
-      />
-    )}
+      )}
     </>
   );
 }

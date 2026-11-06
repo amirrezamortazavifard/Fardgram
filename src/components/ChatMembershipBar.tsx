@@ -34,27 +34,27 @@ export function ChatMembershipBar({ chat }: { chat: Chat }) {
 
   if (chat.isMember === true && chat.kind === "channel") return (
     <div className="chat-membership-bar">
-      <button type="button" role="switch" aria-label={translate("静音")}
+      <button type="button" role="switch" aria-label={translate("Mute")}
         aria-checked={chat.muted} disabled={pendingMute || !online}
         onClick={() => void setMuted(chat.id, !chat.muted)}>
         {pendingMute ? <LoaderCircle className="spin" size={18} /> : chat.muted ? <BellOff size={18} /> : <Bell size={18} />}
-        <span>{chat.muted ? translate("取消静音") : translate("静音")}</span>
+        <span>{chat.muted ? translate("Unmute") : translate("Mute")}</span>
       </button>
     </div>
   );
   if (chat.isBanned || (chat.isMember === true && chat.canSendMessages === false)) return (
     <div className="chat-membership-bar" role="status">
-      <span>{chat.isBanned ? translate("当前账号无法加入此会话") : translate("当前会话不允许发送消息")}</span>
+      <span>{chat.isBanned ? translate("You cannot join this chat") : translate("Sending messages is not allowed in this chat")}</span>
     </div>
   );
   const waitingForMetadata = chat.isMember === undefined || status === "joined";
   const requested = status === "requested";
   const joining = status === "joining";
-  const label = waitingForMetadata ? translate("刷新会话状态")
-    : requested ? translate("已申请，等待管理员批准")
-      : joining ? translate("正在加入")
-        : chat.joinByRequest ? translate("申请加入")
-          : chat.kind === "channel" ? translate("加入频道") : translate("加入群组");
+  const label = waitingForMetadata ? translate("Refresh chat status")
+    : requested ? translate("Request sent, awaiting admin approval")
+      : joining ? translate("Joining...")
+        : chat.joinByRequest ? translate("Apply to join")
+          : chat.kind === "channel" ? translate("Join Channel") : translate("Join Group");
   return (
     <div className="chat-membership-bar" aria-busy={joining || refreshing}>
       <button type="button" disabled={!online || joining || requested || refreshing}

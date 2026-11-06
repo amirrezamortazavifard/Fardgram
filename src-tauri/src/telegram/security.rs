@@ -35,6 +35,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "createPrivateChat",
     "deleteChatFolder",
     "deleteChatHistory",
+    "deleteForumTopic",
     "deleteMessages",
     "downloadFile",
     "editChatFolder",
@@ -833,6 +834,16 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
             };
             if topic_id <= 0 || request.get(state_field).and_then(Value::as_bool).is_none() {
                 return Err("Invalid forum topic state".to_string());
+            }
+        }
+        "deleteForumTopic" => {
+            validate_nonzero_identifier(request, "chat_id")?;
+            let topic_id = request
+                .get("forum_topic_id")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| "Forum topic identifier is missing".to_string())?;
+            if topic_id <= 0 {
+                return Err("Invalid forum topic identifier".to_string());
             }
         }
         "getInlineQueryResults" => {
@@ -4302,5 +4313,32 @@ mod tests {
         let mut invalid_date = valid_search.clone();
         invalid_date["min_date"] = json!(-5);
         assert!(validate_webview_tdlib_request(&invalid_date).is_err());
+    }
+
+    #[test]
+    fn validates_delete_forum_topic_requests() {
+        let valid_delete = json!({
+            "@type": "deleteForumTopic",
+            "chat_id": 123456,
+            "forum_topic_id": 42,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_delete).is_ok());
+
+        let invalid_chat = json!({
+            "@type": "deleteForumTopic",
+            "chat_id": 0,
+            "forum_topic_id": 42,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_chat).is_err());
+
+        let invalid_topic = json!({
+            "@type": "deleteForumTopic",
+            "chat_id": 123456,
+            "forum_topic_id": -1,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&invalid_topic).is_err());
     }
 }

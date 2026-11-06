@@ -256,6 +256,7 @@ export function App() {
   const editForumTopic = useTelegramStore((state) => state.editForumTopic);
   const setForumTopicClosed = useTelegramStore((state) => state.setForumTopicClosed);
   const setForumTopicPinned = useTelegramStore((state) => state.setForumTopicPinned);
+  const deleteForumTopic = useTelegramStore((state) => state.deleteForumTopic);
   const loadMessage = useTelegramStore((state) => state.loadMessage);
   const loadChatProfile = useTelegramStore((state) => state.loadChatProfile);
   const loadMoreChatProfileMembers = useTelegramStore((state) => state.loadMoreChatProfileMembers);
@@ -2126,6 +2127,7 @@ export function App() {
             onEditTopic={(topicId, name) => activeChatId ? editForumTopic(activeChatId, topicId, name) : Promise.resolve(false)}
             onSetTopicClosed={(topicId, closed) => activeChatId ? setForumTopicClosed(activeChatId, topicId, closed) : Promise.resolve(false)}
             onSetTopicPinned={(topicId, pinned) => activeChatId ? setForumTopicPinned(activeChatId, topicId, pinned) : Promise.resolve(false)}
+            onDeleteTopic={(topicId) => activeChatId ? deleteForumTopic(activeChatId, topicId) : Promise.resolve(false)}
           />
         ) : (
           <ConversationSurface><Profiler

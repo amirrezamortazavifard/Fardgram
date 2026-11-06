@@ -22,8 +22,8 @@ describe("chat management", () => {
     expect(canPostToChannel({ kind: "channel" })).toBe(false);
   });
   it("rejects combining marks and decorative characters in member tags", () => {
-    expect(chatMemberTagError("值\u0334\u035f班")).toContain("非表情字符");
-    expect(chatMemberTagError("值班🔥")).toContain("非表情字符");
+    expect(chatMemberTagError("值\u0334\u035f班")).toContain("non-emoji");
+    expect(chatMemberTagError("值班🔥")).toContain("non-emoji");
     expect(chatMemberTagError("值班")).toBeUndefined();
   });
 
