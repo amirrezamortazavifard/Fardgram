@@ -129,6 +129,7 @@ import { motionLifecycleTiming } from "../utils/motionTokens";
 import { recentMentionUserIdsFor } from "../utils/mentionSuggestions";
 import { ForumTopicStrip } from "./ForumTopicStrip";
 import { SavedMessagesOrganizer } from "./SavedMessagesOrganizer";
+import { ChatExportDialog } from "./Export/ChatExportDialog";
 import { copyMessageContent, writeClipboardText } from "../utils/clipboard";
 import { formatSelectedMessages } from "../utils/messageClipboard";
 import {
@@ -643,6 +644,7 @@ export function Conversation({
   const [osintTarget, setOsintTarget] = useState<Message>();
   const [editHistoryTarget, setEditHistoryTarget] = useState<Message>();
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [reportTarget, setReportTarget] = useState<Message>();
   const [pinTarget, setPinTarget] = useState<Message>();
   const [pinPending, setPinPending] = useState(false);
@@ -2506,6 +2508,10 @@ export function Conversation({
                       forwarding.clearSelection();
                       onOpenMessageSearch();
                     }}
+                    onOpenExport={() => {
+                      setChatMenuOpen(false);
+                      setExportDialogOpen(true);
+                    }}
                     onStartSelection={() => forwarding.startSelection()}
                     onOpenAutoDelete={() => {
                       setChatMenuOpen(false);
@@ -2602,6 +2608,10 @@ export function Conversation({
                     onSetArchived={onSetChatArchived}
                     onOpenPinned={() => openPinnedMessages()}
                     onOpenMessageSearch={() => onOpenMessageSearch()}
+                    onOpenExport={() => {
+                      setChatMenuOpen(false);
+                      setExportDialogOpen(true);
+                    }}
                     onStartSelection={() => forwarding.startSelection()}
                     onOpenAutoDelete={() => {
                       setChatMenuOpen(false);
@@ -3499,6 +3509,13 @@ export function Conversation({
         <MessageEditHistoryDialog
           message={editHistoryTarget}
           onClose={() => setEditHistoryTarget(undefined)}
+        />
+      )}
+
+      {exportDialogOpen && (
+        <ChatExportDialog
+          chat={chat}
+          onClose={() => setExportDialogOpen(false)}
         />
       )}
     </section>

@@ -1,4 +1,5 @@
 mod agent;
+mod chat_export;
 mod context_menu_window;
 mod desktop_lifecycle;
 mod desktop_notification;
@@ -105,6 +106,10 @@ pub fn run() {
             diagnostics::fardgram_diagnostics_settings,
             diagnostics::fardgram_export_diagnostics,
             diagnostics::fardgram_set_crash_reporting_enabled,
+            chat_export::fardgram_pick_export_folder,
+            chat_export::fardgram_open_export_folder,
+            chat_export::fardgram_write_chat_export_file,
+            chat_export::fardgram_copy_chat_export_media,
             display_metrics::fardgram_display_timing,
             distribution::fardgram_distribution_kind,
             desktop_lifecycle::fardgram_desktop_settings,

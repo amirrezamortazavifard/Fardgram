@@ -511,6 +511,12 @@ export interface TelegramState {
   toggleSavedMessagesTopicPinned: (topicId: number) => Promise<boolean>;
   setSavedMessagesTagLabel: (reaction: string, isCustomEmoji: boolean, label: string) => Promise<boolean>;
   searchSavedMessages: (query: string) => Promise<import("../telegram/types").Message[]>;
+  exportChatHistory: (options: import("../export/types").ChatExportOptions, onProgress?: (p: import("../export/types").ChatExportProgress) => void) => Promise<import("../export/types").ChatExportSummary>;
+  cancelChatExport: () => void;
+  pauseChatExport: () => void;
+  resumeChatExport: () => void;
+  pickExportFolder: () => Promise<string | null>;
+  openExportFolder: (path: string) => Promise<void>;
   clearError: () => void;
   clearOperationError: () => void;
 }

@@ -6,6 +6,12 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Full Chat/History Export (FG-011)**: Native Telegram Desktop chat history export suite separate from diagnostic packages:
+  - **Comprehensive Export Formats**: Dual output modes supporting human-readable HTML (`messages.html` with responsive styles and bubble layouts) and developer-friendly JSON (`result.json` strictly matching Telegram Desktop export schema).
+  - **Granular Filter Controls**: Date range filtering (From/To date boundaries), service messages toggle (join events, pin notifications, photo updates), and category-level media selection (Photos, Videos, Voice messages, Audio, Documents, and Stickers) with configurable maximum file-size caps.
+  - **Native Tauri File & Dialog Backend**: Tauri command interface (`fardgram_pick_export_folder`, `fardgram_open_export_folder`, `fardgram_write_chat_export_file`, `fardgram_copy_chat_export_media`) with strict directory traversal prevention (`..` components and root injections fail closed) and OS file-manager folder opener.
+  - **Interactive Export Dialog & Lifecycle**: Three-phase modal (`ChatExportDialog`) providing interactive configuration, live progress counters (messages, media files, bytes transferred), pause/resume/cancel controls, and final completion statistics.
+  - **Dual-Theme Design Parity**: 100% professional English UI copy with strict light and dark theme parity and zero hardcoded background styles.
 - **Saved Messages 2.0 & Organization (FG-010)**: Modern Telegram-native Saved Messages experience with dual view modes, chat topics, reaction tags, and scoped search:
   - **Dual View Modes**: Switch effortlessly between a linear reverse-chronological message feed ("All Messages") and an organized source-grouped topic browser ("By Chats").
   - **Saved Messages Topics**: Display topic cards with source context and avatars for personal notes (`myNotes`), forwarded chat sources (`savedFromChat`), and hidden authors (`authorHidden`), complete with topic pinning and unpinning (`toggleSavedMessagesTopicIsPinned`, `setPinnedSavedMessagesTopics`).

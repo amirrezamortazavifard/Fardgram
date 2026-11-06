@@ -138,7 +138,7 @@ pub fn telegram_open_download_directory(app: AppHandle) -> Result<(), String> {
     open_path(&download_directory(&app)?)
 }
 
-pub(super) fn trusted_local_file(app: &AppHandle, source_path: &str) -> Result<PathBuf, String> {
+pub(crate) fn trusted_local_file(app: &AppHandle, source_path: &str) -> Result<PathBuf, String> {
     let roots = [
         trusted_tdlib_files_directory(app)?,
         download_directory(app)?
@@ -165,7 +165,7 @@ pub(super) fn canonical_file_within_roots(
 }
 
 #[cfg(target_os = "windows")]
-pub(super) fn open_path(path: &Path) -> Result<(), String> {
+pub(crate) fn open_path(path: &Path) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
 
@@ -192,12 +192,12 @@ pub(super) fn open_path(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-pub(super) fn open_path(path: &Path) -> Result<(), String> {
+pub(crate) fn open_path(path: &Path) -> Result<(), String> {
     open_with_command("open", path)
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub(super) fn open_path(path: &Path) -> Result<(), String> {
+pub(crate) fn open_path(path: &Path) -> Result<(), String> {
     open_with_command("xdg-open", path)
 }
 

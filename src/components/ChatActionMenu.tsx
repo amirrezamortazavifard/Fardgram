@@ -5,6 +5,7 @@ import {
   Bell,
   BellOff,
   Clock3,
+  Download,
   LoaderCircle,
   ListChecks,
   Pin,
@@ -25,6 +26,7 @@ interface ChatActionMenuProps {
   onSetArchived: (archived: boolean) => Promise<boolean>;
   onOpenPinned: () => void;
   onOpenMessageSearch: () => void;
+  onOpenExport?: () => void;
   onStartSelection: () => void;
   onOpenAutoDelete: () => void;
   onClose: () => void;
@@ -42,6 +44,7 @@ export function ChatActionMenu({
   onSetArchived,
   onOpenPinned,
   onOpenMessageSearch,
+  onOpenExport,
   onStartSelection,
   onOpenAutoDelete,
   onClose,
@@ -106,6 +109,18 @@ export function ChatActionMenu({
       >
         <Search size={16} strokeWidth={1.9} />
         <span>{translate("搜索消息")}</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        disabled={busy}
+        onClick={() => {
+          onClose();
+          onOpenExport?.();
+        }}
+      >
+        <Download size={16} strokeWidth={1.9} />
+        <span>Export chat history</span>
       </button>
       <button
         type="button"

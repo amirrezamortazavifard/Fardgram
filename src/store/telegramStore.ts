@@ -17,7 +17,7 @@ import { SyncRetryQueue } from "../telegram/syncRetryQueue";
 import { ConversationHistory } from "./conversationHistory";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
-import { isTauri } from "@tauri-apps/api/core";
+import { isTauri, invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { createTelegramTransport } from "../telegram/createTransport";
 import { openNativeMiniApp, closeNativeMiniApp } from "../windows/miniAppBridge";
@@ -259,6 +259,7 @@ export const createTelegramStore = (
       serverOrders: Map<string, string | undefined>;
       optimisticOrders: Map<string, string>;
     }>();
+    let activeChatExportEngine: any = null;
     const withListOrder = (chat: Chat, listId: string, order: string | undefined): Chat => {
       const listOrderByFolder = { ...chat.listOrderByFolder };
       if (order === undefined) delete listOrderByFolder[listId];
@@ -6196,6 +6197,50 @@ export const createTelegramStore = (
           tag: activeTag,
           topicId: activeTopicId,
         })) ?? [];
+      },
+
+      exportChatHistory: async (options, onProgress) => {
+        const chat = get().chats.get(options.chatId);
+        if (!chat) throw new Error("Chat not found");
+        const { ChatExportEngine } = await import("../export/chatExportEngine");
+        const engine = new ChatExportEngine(transport, chat, options, onProgress);
+        activeChatExportEngine = engine;
+        try {
+          return await engine.run();
+        } finally {
+          activeChatExportEngine = null;
+        }
+      },
+
+      cancelChatExport: () => {
+        activeChatExportEngine?.cancel();
+      },
+
+      pauseChatExport: () => {
+        activeChatExportEngine?.pause();
+      },
+
+      resumeChatExport: () => {
+        activeChatExportEngine?.resume();
+      },
+
+      pickExportFolder: async () => {
+        if (!isTauri()) return null;
+        try {
+          const res = await invoke<string | null>("fardgram_pick_export_folder");
+          return res;
+        } catch {
+          return null;
+        }
+      },
+
+      openExportFolder: async (path: string) => {
+        if (!isTauri()) return;
+        try {
+          await invoke("fardgram_open_export_folder", { folderPath: path });
+        } catch (error) {
+          console.error("Failed to open export folder:", error);
+        }
       },
 
       clearError: () => set({ error: undefined }),
