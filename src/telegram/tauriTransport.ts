@@ -22,6 +22,8 @@ import {
   mapTdQuickReplyShortcut,
   mapTdBusinessChatLink,
   mapTdPasskey,
+  mapTdSavedMessagesTag,
+  mapTdSavedMessagesTopic,
   messageSenderId,
   mapTdUser,
   tdId,
@@ -152,6 +154,8 @@ import type {
   StickerSetSummary,
   StreamFileInput,
   TelegramPasskey,
+  SavedMessagesTag,
+  SavedMessagesTopic,
   TelegramSnapshot,
   TelegramAccount,
   TelegramAccountState,
@@ -2654,6 +2658,64 @@ export class TauriTelegramTransport implements TelegramTransport {
       "@type": "removeLoginPasskey",
       passkey_id: passkeyId,
     });
+  }
+
+  async getSavedMessagesTopics(): Promise<SavedMessagesTopic[]> {
+    try {
+      await this.request({ "@type": "loadSavedMessagesTopics", limit: 50 });
+    } catch {
+      // Topics may be fully loaded or not available
+    }
+    return [];
+  }
+
+  async getSavedMessagesTags(topicId = 0): Promise<SavedMessagesTag[]> {
+    try {
+      const res = await this.request({
+        "@type": "getSavedMessagesTags",
+        saved_messages_topic_id: topicId,
+      });
+      const list = Array.isArray(res?.tags) ? res.tags : [];
+      return list.map(mapTdSavedMessagesTag).filter((t): t is SavedMessagesTag => Boolean(t));
+    } catch {
+      return [];
+    }
+  }
+
+  async toggleSavedMessagesTopicPinned(topicId: number, isPinned: boolean): Promise<void> {
+    await this.request({
+      "@type": "toggleSavedMessagesTopicIsPinned",
+      saved_messages_topic_id: topicId,
+      is_pinned: isPinned,
+    });
+  }
+
+  async setSavedMessagesTagLabel(reaction: string, isCustomEmoji: boolean, label: string): Promise<void> {
+    await this.request({
+      "@type": "setSavedMessagesTagLabel",
+      tag: isCustomEmoji
+        ? { "@type": "reactionTypeCustomEmoji", custom_emoji_id: reaction }
+        : { "@type": "reactionTypeEmoji", emoji: reaction },
+      label,
+    });
+  }
+
+  async searchSavedMessages(input: { query?: string; tag?: string; topicId?: number; limit?: number }): Promise<Message[]> {
+    try {
+      const res = await this.request({
+        "@type": "searchSavedMessages",
+        saved_messages_topic_id: input.topicId ?? 0,
+        tag: input.tag ? { "@type": "reactionTypeEmoji", emoji: input.tag } : null,
+        query: input.query ?? "",
+        from_message_id: 0,
+        offset: 0,
+        limit: input.limit ?? 50,
+      });
+      const list = Array.isArray(res?.messages) ? res.messages : [];
+      return list.map((m) => mapTdMessage(m)).filter((m): m is Message => Boolean(m));
+    } catch {
+      return [];
+    }
   }
 
   async forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult> {

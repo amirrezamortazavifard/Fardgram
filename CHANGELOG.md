@@ -6,6 +6,13 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Saved Messages 2.0 & Organization (FG-010)**: Modern Telegram-native Saved Messages experience with dual view modes, chat topics, reaction tags, and scoped search:
+  - **Dual View Modes**: Switch effortlessly between a linear reverse-chronological message feed ("All Messages") and an organized source-grouped topic browser ("By Chats").
+  - **Saved Messages Topics**: Display topic cards with source context and avatars for personal notes (`myNotes`), forwarded chat sources (`savedFromChat`), and hidden authors (`authorHidden`), complete with topic pinning and unpinning (`toggleSavedMessagesTopicIsPinned`, `setPinnedSavedMessagesTopics`).
+  - **Emoji Reaction Tags**: Horizontal reaction filter bar featuring reaction counts, emoji tags (`savedMessagesTag`, `getSavedMessagesTags`), and customizable inline tag text labels (`setSavedMessagesTagLabel`) up to 12 characters.
+  - **Scoped Saved Search**: Query- and tag-filtered saved messages search (`searchSavedMessages`) filtering by keyword and active tag filter across topics.
+  - **Native Rust Security**: Validated request whitelist in `src-tauri/src/telegram/security.rs` covering all 7 TDLib saved messages requests (`loadSavedMessagesTopics`, `getSavedMessagesTopicHistory`, `getSavedMessagesTags`, `searchSavedMessages`, `setPinnedSavedMessagesTopics`, `toggleSavedMessagesTopicIsPinned`, `setSavedMessagesTagLabel`) with topic ID bounds, query bounds, and tag label length checks.
+  - **Dual-Theme Organizer UI**: Dedicated `SavedMessagesOrganizer` bar mounted below the conversation header in Saved Messages chats, styled with strict dark and light theme parity.
 - **Passkey Login & Passkey Management (FG-009)**: Official WebAuthn passkey authentication and device credential enrollment:
   - **Passkey Authorization Flow**: Seamless sign-in with passkey challenge resolution (`getAuthenticationPasskeyParameters`, `checkAuthenticationPasskey`) on the authorization screen, integrating platform authenticators (Windows Hello, Touch ID, security keys) with instant fallback to QR and phone login.
   - **Passkey Management Panel**: Dedicated `PasskeysSettingsPanel` in Privacy & Security settings allowing users to inspect enrolled passkeys, review last-used and addition timestamps, and delete obsolete keys (`getLoginPasskeys`, `removeLoginPasskey`).

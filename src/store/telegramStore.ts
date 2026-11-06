@@ -1177,6 +1177,13 @@ export const createTelegramStore = (
         passkeysLoading: false,
         passkeyAuthAvailable: false,
         passkeyError: undefined,
+        savedMessagesTopics: [],
+        savedMessagesTags: [],
+        savedMessagesActiveTopicId: undefined,
+        savedMessagesActiveTag: undefined,
+        savedMessagesViewMode: "all",
+        savedMessagesLoading: false,
+        savedMessagesError: undefined,
         folderManagementPending: false,
         chatCreationPending: false,
         chatFilter: "main",
@@ -2760,6 +2767,13 @@ export const createTelegramStore = (
       passkeysLoading: false,
       passkeyAuthAvailable: false,
       passkeyError: undefined,
+      savedMessagesTopics: [],
+      savedMessagesTags: [],
+      savedMessagesActiveTopicId: undefined,
+      savedMessagesActiveTag: undefined,
+      savedMessagesViewMode: "all",
+      savedMessagesLoading: false,
+      savedMessagesError: undefined,
       folderManagementPending: false,
       chatCreationPending: false,
 
@@ -6097,6 +6111,91 @@ export const createTelegramStore = (
           set({ authorizationPending: false, authorizationError: message });
           return false;
         }
+      },
+
+      loadSavedMessagesTopics: async () => {
+        set({ savedMessagesLoading: true, savedMessagesError: undefined });
+        try {
+          const topics = (await transport.getSavedMessagesTopics?.()) ?? [];
+          set({
+            savedMessagesTopics: topics,
+            savedMessagesLoading: false,
+            savedMessagesError: undefined,
+          });
+        } catch (error) {
+          set({
+            savedMessagesLoading: false,
+            savedMessagesError: errorMessage(error, translate("Failed to load Saved Messages topics")),
+          });
+        }
+      },
+
+      loadSavedMessagesTags: async (topicId) => {
+        try {
+          const tags = (await transport.getSavedMessagesTags?.(topicId)) ?? [];
+          set({ savedMessagesTags: tags });
+        } catch {
+          // Non-critical, ignore
+        }
+      },
+
+      setSavedMessagesViewMode: (mode) => {
+        set({ savedMessagesViewMode: mode });
+        if (mode === "byChats") {
+          void get().loadSavedMessagesTopics();
+        }
+      },
+
+      selectSavedMessagesTopic: (topicId) => {
+        set({ savedMessagesActiveTopicId: topicId });
+        void get().loadSavedMessagesTags(topicId);
+      },
+
+      selectSavedMessagesTag: (tag) => {
+        set({ savedMessagesActiveTag: tag });
+      },
+
+      toggleSavedMessagesTopicPinned: async (topicId) => {
+        const topic = get().savedMessagesTopics.find((t) => t.id === topicId);
+        if (!topic) return false;
+        const nextPinned = !topic.isPinned;
+        try {
+          await transport.toggleSavedMessagesTopicPinned?.(topicId, nextPinned);
+          set((state) => ({
+            savedMessagesTopics: state.savedMessagesTopics.map((t) =>
+              t.id === topicId ? { ...t, isPinned: nextPinned } : t
+            ),
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("Failed to update pinned topic")) });
+          return false;
+        }
+      },
+
+      setSavedMessagesTagLabel: async (reaction, isCustomEmoji, label) => {
+        try {
+          await transport.setSavedMessagesTagLabel?.(reaction, isCustomEmoji, label);
+          set((state) => ({
+            savedMessagesTags: state.savedMessagesTags.map((t) =>
+              t.reaction === reaction ? { ...t, label } : t
+            ),
+          }));
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("Failed to label tag")) });
+          return false;
+        }
+      },
+
+      searchSavedMessages: async (query) => {
+        const activeTag = get().savedMessagesActiveTag;
+        const activeTopicId = get().savedMessagesActiveTopicId;
+        return (await transport.searchSavedMessages?.({
+          query,
+          tag: activeTag,
+          topicId: activeTopicId,
+        })) ?? [];
       },
 
       clearError: () => set({ error: undefined }),

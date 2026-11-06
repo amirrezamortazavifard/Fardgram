@@ -146,7 +146,7 @@ The order below is the recommended delivery sequence. It can be changed only whe
 
 - [x] **FG-008 — Telegram Business features**
 - [x] **FG-009 — Passkey login and passkey management**
-- [ ] **FG-010 — Saved Messages 2.0 and saved-message organization**
+- [x] **FG-010 — Saved Messages 2.0 and saved-message organization**
 - [ ] **FG-011 — Full chat/history export**
 - [ ] **FG-012 — Voice/video transcription and transcript UX**
 - [ ] **FG-013 — Native message and conversation translation**

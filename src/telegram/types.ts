@@ -1642,6 +1642,30 @@ export interface TelegramPasskey {
   softwareIconCustomEmojiId?: string;
 }
 
+export type SavedMessagesTopicTypeKind = "myNotes" | "authorHidden" | "savedFromChat";
+
+export interface SavedMessagesTopicType {
+  kind: SavedMessagesTopicTypeKind;
+  chatId?: string;
+}
+
+export interface SavedMessagesTopic {
+  id: number;
+  type: SavedMessagesTopicType;
+  title: string;
+  isPinned: boolean;
+  order: string;
+  lastMessage?: Message;
+  draftMessage?: ChatDraft;
+}
+
+export interface SavedMessagesTag {
+  reaction: string;
+  isCustomEmoji: boolean;
+  label: string;
+  count: number;
+}
+
 export type AuthorizationAction =
   | { kind: "qr" }
   | { kind: "phone"; phoneNumber: string }

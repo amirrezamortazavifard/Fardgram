@@ -176,6 +176,13 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "addLoginPasskey",
     "getLoginPasskeys",
     "removeLoginPasskey",
+    "loadSavedMessagesTopics",
+    "getSavedMessagesTopicHistory",
+    "getSavedMessagesTags",
+    "searchSavedMessages",
+    "setPinnedSavedMessagesTopics",
+    "toggleSavedMessagesTopicIsPinned",
+    "setSavedMessagesTagLabel",
 ];
 
 pub(super) fn request_type_from_extra(extra: &str) -> Option<&str> {
@@ -331,6 +338,66 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                 .ok_or_else(|| "Missing passkey_id".to_string())?;
             if passkey_id.is_empty() || passkey_id.len() > 256 {
                 return Err("Invalid passkey_id length".to_string());
+            }
+        }
+        "loadSavedMessagesTopics" => {
+            if let Some(limit) = request.get("limit").and_then(Value::as_i64) {
+                if !(1..=100).contains(&limit) {
+                    return Err("Invalid loadSavedMessagesTopics limit".to_string());
+                }
+            }
+        }
+        "getSavedMessagesTopicHistory" => {
+            let topic_id = request
+                .get("saved_messages_topic_id")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| "Missing saved_messages_topic_id".to_string())?;
+            if topic_id < 0 {
+                return Err("Invalid saved_messages_topic_id".to_string());
+            }
+        }
+        "getSavedMessagesTags" => {
+            let topic_id = request
+                .get("saved_messages_topic_id")
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            if topic_id < 0 {
+                return Err("Invalid saved_messages_topic_id".to_string());
+            }
+        }
+        "searchSavedMessages" => {
+            if let Some(query) = request.get("query").and_then(Value::as_str) {
+                if query.len() > 255 {
+                    return Err("Saved messages search query too long".to_string());
+                }
+            }
+        }
+        "toggleSavedMessagesTopicIsPinned" => {
+            let topic_id = request
+                .get("saved_messages_topic_id")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| "Missing saved_messages_topic_id".to_string())?;
+            if topic_id < 0 {
+                return Err("Invalid saved_messages_topic_id".to_string());
+            }
+            if request.get("is_pinned").and_then(Value::as_bool).is_none() {
+                return Err("Missing is_pinned bool".to_string());
+            }
+        }
+        "setPinnedSavedMessagesTopics" => {
+            let topics = request
+                .get("saved_messages_topic_ids")
+                .and_then(Value::as_array)
+                .ok_or_else(|| "Missing saved_messages_topic_ids".to_string())?;
+            if topics.len() > 100 {
+                return Err("Too many pinned saved messages topics".to_string());
+            }
+        }
+        "setSavedMessagesTagLabel" => {
+            if let Some(label) = request.get("label").and_then(Value::as_str) {
+                if label.chars().count() > 12 {
+                    return Err("Saved messages tag label cannot exceed 12 characters".to_string());
+                }
             }
         }
         "joinChat" | "openChat" | "closeChat" => {
@@ -3866,5 +3933,42 @@ mod tests {
         let mut invalid_remove = remove_passkey.clone();
         invalid_remove["passkey_id"] = json!("");
         assert!(validate_webview_tdlib_request(&invalid_remove).is_err());
+    }
+
+    #[test]
+    fn validates_saved_messages_requests() {
+        let load_topics = json!({
+            "@type": "loadSavedMessagesTopics",
+            "limit": 50,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&load_topics).is_ok());
+
+        let mut invalid_load = load_topics.clone();
+        invalid_load["limit"] = json!(500);
+        assert!(validate_webview_tdlib_request(&invalid_load).is_err());
+
+        let toggle_pin = json!({
+            "@type": "toggleSavedMessagesTopicIsPinned",
+            "saved_messages_topic_id": 12345,
+            "is_pinned": true,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&toggle_pin).is_ok());
+
+        let set_tag_label = json!({
+            "@type": "setSavedMessagesTagLabel",
+            "tag": {
+                "@type": "reactionTypeEmoji",
+                "emoji": "⭐"
+            },
+            "label": "Favorites",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&set_tag_label).is_ok());
+
+        let mut invalid_label = set_tag_label.clone();
+        invalid_label["label"] = json!("this label is way too long to be allowed");
+        assert!(validate_webview_tdlib_request(&invalid_label).is_err());
     }
 }

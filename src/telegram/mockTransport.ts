@@ -89,6 +89,8 @@ import type {
   TelegramAccount,
   TelegramAccountState,
   TelegramPasskey,
+  SavedMessagesTag,
+  SavedMessagesTopic,
   TelegramSnapshot,
   UpdateCurrentUserProfileInput,
   ChatHistoryPage,
@@ -508,6 +510,37 @@ export class MockTelegramTransport implements TelegramTransport {
       additionDate: Math.floor(Date.now() / 1000) - 86400 * 30,
       lastUsageDate: Math.floor(Date.now() / 1000) - 86400 * 5,
     },
+  ];
+
+  private mockSavedMessagesTopics: SavedMessagesTopic[] = [
+    {
+      id: 1,
+      type: { kind: "myNotes" },
+      title: "My Notes",
+      isPinned: true,
+      order: "1000",
+    },
+    {
+      id: 2,
+      type: { kind: "savedFromChat", chatId: "chat-product" },
+      title: "Product Channel",
+      isPinned: false,
+      order: "900",
+    },
+    {
+      id: 3,
+      type: { kind: "savedFromChat", chatId: "chat-team" },
+      title: "Engineering Team",
+      isPinned: false,
+      order: "800",
+    },
+  ];
+
+  private mockSavedMessagesTags: SavedMessagesTag[] = [
+    { reaction: "⭐", isCustomEmoji: false, label: "Favorites", count: 12 },
+    { reaction: "📌", isCustomEmoji: false, label: "To-Do", count: 5 },
+    { reaction: "💼", isCustomEmoji: false, label: "Work", count: 8 },
+    { reaction: "💡", isCustomEmoji: false, label: "Ideas", count: 3 },
   ];
 
   private folderTitle(title: string) {
@@ -2775,6 +2808,50 @@ export class MockTelegramTransport implements TelegramTransport {
 
   async removeLoginPasskey(passkeyId: string): Promise<void> {
     this.mockPasskeys = this.mockPasskeys.filter((p) => p.id !== passkeyId);
+  }
+
+  async getSavedMessagesTopics(): Promise<SavedMessagesTopic[]> {
+    return clone(this.mockSavedMessagesTopics);
+  }
+
+  async getSavedMessagesTags(topicId = 0): Promise<SavedMessagesTag[]> {
+    return clone(this.mockSavedMessagesTags);
+  }
+
+  async toggleSavedMessagesTopicPinned(topicId: number, isPinned: boolean): Promise<void> {
+    const topic = this.mockSavedMessagesTopics.find((t) => t.id === topicId);
+    if (topic) {
+      topic.isPinned = isPinned;
+    }
+  }
+
+  async setSavedMessagesTagLabel(reaction: string, isCustomEmoji: boolean, label: string): Promise<void> {
+    const tag = this.mockSavedMessagesTags.find((t) => t.reaction === reaction);
+    if (tag) {
+      tag.label = label;
+    }
+  }
+
+  async searchSavedMessages(input: { query?: string; tag?: string; topicId?: number; limit?: number }): Promise<Message[]> {
+    const savedChat = this.snapshot.chats.find((c) => c.kind === "saved") ?? this.snapshot.chats[0];
+    const messages = this.snapshot.messages.filter((m) => m.chatId === savedChat.id);
+    if (!input.query && !input.tag) return clone(messages);
+    return clone(
+      messages.filter((m) => {
+        const text = m.content.kind === "text" ? m.content.text : "";
+        const matchesQuery = !input.query || text.toLowerCase().includes(input.query.toLowerCase());
+        const matchesTag =
+          !input.tag ||
+          Boolean(
+            m.interaction?.reactions?.some(
+              (r) =>
+                (r.type.kind === "emoji" && r.type.emoji === input.tag) ||
+                (r.type.kind === "customEmoji" && r.type.customEmojiId === input.tag),
+            ),
+          );
+        return matchesQuery && matchesTag;
+      }),
+    );
   }
 
   async forwardMessages({ fromChatId, toChatId, toTopicId, messageIds }: ForwardMessagesInput): Promise<ForwardMessagesResult> {

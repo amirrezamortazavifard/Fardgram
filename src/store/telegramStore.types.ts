@@ -204,6 +204,13 @@ export interface TelegramState {
   passkeysLoading: boolean;
   passkeyAuthAvailable: boolean;
   passkeyError?: string;
+  savedMessagesTopics: import("../telegram/types").SavedMessagesTopic[];
+  savedMessagesTags: import("../telegram/types").SavedMessagesTag[];
+  savedMessagesActiveTopicId?: number;
+  savedMessagesActiveTag?: string;
+  savedMessagesViewMode: "all" | "byChats";
+  savedMessagesLoading: boolean;
+  savedMessagesError?: string;
   initialize: (options?: {
     settingsOnly?: boolean;
     preserveAccountPending?: boolean;
@@ -496,6 +503,14 @@ export interface TelegramState {
   registerPasskey: (name?: string) => Promise<import("../telegram/types").TelegramPasskey | null>;
   removePasskey: (passkeyId: string) => Promise<boolean>;
   loginWithPasskey: () => Promise<boolean>;
+  loadSavedMessagesTopics: () => Promise<void>;
+  loadSavedMessagesTags: (topicId?: number) => Promise<void>;
+  setSavedMessagesViewMode: (mode: "all" | "byChats") => void;
+  selectSavedMessagesTopic: (topicId?: number) => void;
+  selectSavedMessagesTag: (tag?: string) => void;
+  toggleSavedMessagesTopicPinned: (topicId: number) => Promise<boolean>;
+  setSavedMessagesTagLabel: (reaction: string, isCustomEmoji: boolean, label: string) => Promise<boolean>;
+  searchSavedMessages: (query: string) => Promise<import("../telegram/types").Message[]>;
   clearError: () => void;
   clearOperationError: () => void;
 }

@@ -262,6 +262,11 @@ export interface TelegramTransport {
   addLoginPasskey?(clientData: string, attestationObject: string): Promise<import("./types").TelegramPasskey>;
   getLoginPasskeys?(): Promise<import("./types").TelegramPasskey[]>;
   removeLoginPasskey?(passkeyId: string): Promise<void>;
+  getSavedMessagesTopics?(): Promise<import("./types").SavedMessagesTopic[]>;
+  getSavedMessagesTags?(topicId?: number): Promise<import("./types").SavedMessagesTag[]>;
+  toggleSavedMessagesTopicPinned?(topicId: number, isPinned: boolean): Promise<void>;
+  setSavedMessagesTagLabel?(reaction: string, isCustomEmoji: boolean, label: string): Promise<void>;
+  searchSavedMessages?(input: { query?: string; tag?: string; topicId?: number; limit?: number }): Promise<Message[]>;
   forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult>;
   sendMediaCopy(input: SendMediaCopyInput): Promise<void>;
   setChatDraft(input: SetChatDraftInput): Promise<void>;

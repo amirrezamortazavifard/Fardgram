@@ -38,6 +38,9 @@ import type {
   BusinessStartPage,
   QuickReplyShortcut,
   TelegramPasskey,
+  SavedMessagesTag,
+  SavedMessagesTopic,
+  SavedMessagesTopicTypeKind,
 } from "./types";
 import { messagePreviewText } from "./messageContent";
 import { deriveChatManagementCapabilitiesFromTd } from "./chatManagement";
@@ -2174,5 +2177,52 @@ export const mapTdPasskey = (value: unknown): TelegramPasskey | undefined => {
     additionDate: tdNumber(obj.addition_date) ?? 0,
     lastUsageDate: tdNumber(obj.last_usage_date) ?? 0,
     softwareIconCustomEmojiId: obj.software_icon_custom_emoji_id ? String(obj.software_icon_custom_emoji_id) : undefined,
+  };
+};
+
+export const mapTdSavedMessagesTag = (value: unknown): SavedMessagesTag | undefined => {
+  const obj = asTdObject(value);
+  if (!obj) return undefined;
+  const tagObj = asTdObject(obj.tag);
+  const isCustomEmoji = tagObj?.["@type"] === "reactionTypeCustomEmoji";
+  const reaction = isCustomEmoji
+    ? String(tagObj?.custom_emoji_id ?? "")
+    : typeof tagObj?.emoji === "string"
+      ? tagObj.emoji
+      : "";
+  if (!reaction) return undefined;
+  return {
+    reaction,
+    isCustomEmoji,
+    label: typeof obj.label === "string" ? obj.label : "",
+    count: tdNumber(obj.count) ?? 0,
+  };
+};
+
+export const mapTdSavedMessagesTopic = (value: unknown): SavedMessagesTopic | undefined => {
+  const obj = asTdObject(value);
+  if (!obj || obj.id === undefined) return undefined;
+  const typeObj = asTdObject(obj.type);
+  let kind: SavedMessagesTopicTypeKind = "myNotes";
+  let chatId: string | undefined;
+  let title = "My Notes";
+
+  if (typeObj?.["@type"] === "savedMessagesTopicTypeSavedFromChat") {
+    kind = "savedFromChat";
+    chatId = tdId(typeObj.chat_id);
+    title = `Chat ${chatId}`;
+  } else if (typeObj?.["@type"] === "savedMessagesTopicTypeAuthorHidden") {
+    kind = "authorHidden";
+    title = "Hidden Author";
+  }
+
+  const lastMessageRaw = asTdObject(obj.last_message);
+  return {
+    id: tdNumber(obj.id) ?? 0,
+    type: { kind, chatId },
+    title,
+    isPinned: obj.is_pinned === true,
+    order: typeof obj.order === "string" ? obj.order : String(obj.order ?? "0"),
+    lastMessage: lastMessageRaw ? mapTdMessage(lastMessageRaw) : undefined,
   };
 };

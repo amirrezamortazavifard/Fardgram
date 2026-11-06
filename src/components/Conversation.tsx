@@ -128,6 +128,7 @@ import { ChannelDiscussionPanel } from "./ChannelDiscussionPanel";
 import { motionLifecycleTiming } from "../utils/motionTokens";
 import { recentMentionUserIdsFor } from "../utils/mentionSuggestions";
 import { ForumTopicStrip } from "./ForumTopicStrip";
+import { SavedMessagesOrganizer } from "./SavedMessagesOrganizer";
 import { copyMessageContent, writeClipboardText } from "../utils/clipboard";
 import { formatSelectedMessages } from "../utils/messageClipboard";
 import {
@@ -2621,6 +2622,10 @@ export function Conversation({
           activeTopicId={topic.id}
           onSelectTopic={onSelectTopic}
         />
+      )}
+
+      {chat.kind === "saved" && !selectionMode && !pinnedViewOpen && (
+        <SavedMessagesOrganizer chat={chat} />
       )}
 
       <div inert={presentationBlocked || Boolean(discussionPost)} className={`message-list-shell ${positioning ? "is-positioning" : ""} ${pinnedViewOpen ? "pinned-message-view" : ""} ${pinnedBannerVisible ? "has-pinned-message-banner" : ""}`}>
