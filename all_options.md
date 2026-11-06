@@ -160,7 +160,7 @@ The order below is the recommended delivery sequence. It can be changed only whe
 - [x] **FG-018 — Telegram Stars, gifts, paid media, payments and Money/Wallet integrations**
 - [x] **FG-019 — Stickers, custom emoji, emoji status and profile media parity**
 - [x] **FG-020 — Localization, Persian/RTL completeness and accessibility**
-- [ ] **FG-021 — Drag-and-drop folders and file-set archive sending**
+- [x] **FG-021 — Drag-and-drop folders and file-set archive sending**
 - [ ] **FG-022 — Location sharing and live location**
 - [ ] **FG-023 — Advanced notification, focus and desktop integration parity**
 - [ ] **FG-024 — Chat quality-of-life, message effects and interaction parity**

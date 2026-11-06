@@ -8,6 +8,7 @@ mod diagnostics;
 mod display_metrics;
 mod distribution;
 mod external_links;
+mod file_archive;
 mod media_viewer_window;
 mod mini_app_window;
 mod proxy;
@@ -110,6 +111,8 @@ pub fn run() {
             chat_export::fardgram_open_export_folder,
             chat_export::fardgram_write_chat_export_file,
             chat_export::fardgram_copy_chat_export_media,
+            file_archive::fardgram_create_zip_from_folder,
+            file_archive::fardgram_cleanup_temp_archive,
             display_metrics::fardgram_display_timing,
             distribution::fardgram_distribution_kind,
             desktop_lifecycle::fardgram_desktop_settings,

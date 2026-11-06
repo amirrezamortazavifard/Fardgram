@@ -9502,6 +9502,10 @@ button.message-forward-heading-icon { border: 0; cursor: pointer; }
   background: linear-gradient(135deg, #d97706, #fbbf24);
 }
 
+.attachment-picker-icon-wrapper.is-archive {
+  background: linear-gradient(135deg, #ea580c, #fb923c);
+}
+
 .attachment-picker-item-details {
   display: flex;
   flex-direction: column;

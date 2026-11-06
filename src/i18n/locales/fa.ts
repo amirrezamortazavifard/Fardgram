@@ -198,3 +198,4 @@ export const fa: Record<string, string> = {
   "用户 ID": "شناسه کاربر",
   "数据中心": "مرکز داده",
 };
+

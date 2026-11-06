@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Image, FileText, Music, BarChart2 } from "lucide-react";
+import { Image, FileText, Music, BarChart2, FolderArchive } from "lucide-react";
 
 export interface AttachmentPickerMenuProps {
   isOpen: boolean;
@@ -8,6 +8,7 @@ export interface AttachmentPickerMenuProps {
   onPickDocument: () => void;
   onPickAudio: () => void;
   onPickPoll?: () => void;
+  onPickFolder?: () => void;
 }
 
 export const AttachmentPickerMenu: React.FC<AttachmentPickerMenuProps> = ({
@@ -17,6 +18,7 @@ export const AttachmentPickerMenu: React.FC<AttachmentPickerMenuProps> = ({
   onPickDocument,
   onPickAudio,
   onPickPoll,
+  onPickFolder,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -110,6 +112,26 @@ export const AttachmentPickerMenu: React.FC<AttachmentPickerMenuProps> = ({
             <span className="attachment-picker-item-desc">Send music tracks and audio files</span>
           </div>
         </button>
+
+        {onPickFolder && (
+          <button
+            type="button"
+            role="menuitem"
+            className="attachment-picker-item"
+            onClick={() => {
+              onClose();
+              onPickFolder();
+            }}
+          >
+            <div className="attachment-picker-icon-wrapper is-archive">
+              <FolderArchive size={18} strokeWidth={2} />
+            </div>
+            <div className="attachment-picker-item-details">
+              <span className="attachment-picker-item-title">Folder or Archive</span>
+              <span className="attachment-picker-item-desc">Compress folder into .zip document</span>
+            </div>
+          </button>
+        )}
 
         {onPickPoll && (
           <button

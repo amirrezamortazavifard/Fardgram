@@ -6,6 +6,24 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Drag-and-Drop Folders & File-Set Archive Sending Parity (FG-021)**: Comprehensive folder drop and structured archive creation parity with strict security controls, dual-theme support, and lossless compression:
+  - **Archive Drop & Send Dialog (`ArchiveDropModal.tsx`)**:
+    - Automatic detection when folders or multiple files are dropped into the conversation or composer.
+    - Displays uncompressed file count, total size, archive file name input, compression format selection (`ZIP Deflate` or `ZIP Store`), and file hierarchy tree preview.
+    - Option to safely include or exclude hidden/system files (`.git`, `.DS_Store`, `Thumbs.db`, `.env`, `desktop.ini`, `__MACOSX`) with safe defaults.
+    - Live compression progress bar showing current file, percentage, and stage with safe `AbortSignal` cancellation.
+    - Choice between "Compress & Send Archive" and "Send Separately" as individual files.
+    - Full dual-theme parity (dark and light modes) and 100% professional English UI strings.
+  - **Fast In-Memory ZIP Engine (`src/utils/archiveBuilder.ts`)**:
+    - Standards-compliant PKZIP file generator with DEFLATE compression powered by `pako.deflateRaw` and standard IEEE 802.3 CRC32 verification.
+    - Recursive directory traversal via Chromium `FileSystemEntry` handling 100-item pagination batches.
+    - Strict defense against path traversal attacks (rejecting `..`, absolute paths, and root drives) and zip-bomb / size limit safeguards (enforcing Telegram's 2 GB document upload limit).
+  - **Native Tauri Backend Commands (`src-tauri/src/file_archive.rs`)**:
+    - Added `fardgram_create_zip_from_folder` and `fardgram_cleanup_temp_archive` Tauri commands.
+    - Safe local directory scanning with symlink escape prevention, path canonicalization, and temp archive cleanup.
+  - **Attachment Picker Integration**:
+    - Added "Folder or Archive" option with dedicated icon and styling to `AttachmentPickerMenu.tsx`.
+    - Integrated drag & drop overlay into composer with accessible status.
 - **Localization, Persian/RTL Completeness & Accessibility (FG-020)**: Comprehensive localization architecture parity with Persian (Farsi) language support, full RTL layout integration, resilient search normalization, and Jalali (Solar Hijri) calendar formatting:
   - **Persian Localization Catalog (`src/i18n/locales/fa.ts`)**:
     - Complete Persian translation catalog covering navigation, chat headers, dialogs, media actions, settings, notifications, errors, and stickers.

@@ -26,6 +26,12 @@ import {
 import { ScheduleMessageDialog } from "./ScheduleMessageDialog";
 import { MediaEditorModal, type MediaEditorResult } from "./MediaEditorModal";
 import { AttachmentPickerMenu } from "./AttachmentPickerMenu";
+import { ArchiveDropModal } from "./ArchiveDropModal";
+import {
+  scanDataTransfer,
+  sanitizeRelativePath,
+  type ScannedArchiveFile,
+} from "../utils/archiveBuilder";
 import { CreatePollDialog } from "./CreatePollDialog";
 import { VoiceVideoRecorder, type RecordingKind } from "./VoiceVideoRecorder";
 import { useAgentStore } from "../agent/agentStore";
@@ -289,6 +295,11 @@ export const ConversationComposer = memo(function ConversationComposer({
   const [recordingMode, setRecordingMode] = useState<RecordingKind>("voice");
   const [activeRecording, setActiveRecording] = useState<RecordingKind | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
+  const [archiveDropFiles, setArchiveDropFiles] = useState<ScannedArchiveFile[]>([]);
+  const [archiveDropDefaultName, setArchiveDropDefaultName] = useState("archive.zip");
+  const [archiveDropHasDirectory, setArchiveDropHasDirectory] = useState(false);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const paperclipAnchorRef = useRef<HTMLDivElement>(null);
@@ -1327,12 +1338,30 @@ export const ConversationComposer = memo(function ConversationComposer({
     if (fileDragDepthRef.current === 0) setDraggingFiles(false);
   }, []);
 
-  const handleFileDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+  const handleFileDrop = useCallback(async (event: DragEvent<HTMLDivElement>) => {
     if (editingMessage || !event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     fileDragDepthRef.current = 0;
     setDraggingFiles(false);
-    addPendingAttachments(Array.from(event.dataTransfer.files));
+
+    try {
+      const scanResult = await scanDataTransfer(event.dataTransfer);
+      if (scanResult.files.length === 0) {
+        focusComposer();
+        return;
+      }
+
+      if (scanResult.hasDirectory || scanResult.files.length > 1) {
+        setArchiveDropFiles(scanResult.files);
+        setArchiveDropDefaultName(scanResult.suggestedArchiveName);
+        setArchiveDropHasDirectory(scanResult.hasDirectory);
+        setArchiveModalOpen(true);
+      } else {
+        addPendingAttachments(scanResult.files.map((f) => f.file));
+      }
+    } catch {
+      addPendingAttachments(Array.from(event.dataTransfer.files));
+    }
     focusComposer();
   }, [addPendingAttachments, editingMessage, focusComposer]);
 
@@ -1439,6 +1468,36 @@ export const ConversationComposer = memo(function ConversationComposer({
         onChange={async (event) => {
           const files = Array.from(event.target.files ?? []);
           if (files.length > 0) addPendingAttachments(files);
+          event.target.value = "";
+          focusComposer();
+        }}
+      />
+      <input
+        ref={folderInputRef}
+        className="sr-only"
+        type="file"
+        multiple
+        {...({ webkitdirectory: "", directory: "" } as any)}
+        onChange={async (event) => {
+          const rawFiles = Array.from(event.target.files ?? []);
+          if (rawFiles.length > 0) {
+            const scanned: ScannedArchiveFile[] = rawFiles.map((file) => {
+              const rel = (file as any).webkitRelativePath || file.name;
+              return {
+                file,
+                relativePath: sanitizeRelativePath(rel),
+                size: file.size,
+                lastModified: file.lastModified || Date.now(),
+              };
+            });
+            const firstDir = rawFiles[0] && (rawFiles[0] as any).webkitRelativePath
+              ? (rawFiles[0] as any).webkitRelativePath.split("/")[0]
+              : undefined;
+            setArchiveDropFiles(scanned);
+            setArchiveDropDefaultName(firstDir ? `${firstDir}.zip` : "archive.zip");
+            setArchiveDropHasDirectory(true);
+            setArchiveModalOpen(true);
+          }
           event.target.value = "";
           focusComposer();
         }}
@@ -1755,6 +1814,7 @@ export const ConversationComposer = memo(function ConversationComposer({
             }}
             onPickAudio={() => audioInputRef.current?.click()}
             onPickPoll={() => setShowPollDialog(true)}
+            onPickFolder={() => folderInputRef.current?.click()}
           />
         </div>
         {previewOpen && draft.trim() && (
@@ -2210,10 +2270,26 @@ export const ConversationComposer = memo(function ConversationComposer({
           }}
         />
       )}
+      {archiveModalOpen && (
+        <ArchiveDropModal
+          isOpen={archiveModalOpen}
+          files={archiveDropFiles}
+          defaultArchiveName={archiveDropDefaultName}
+          hasDirectory={archiveDropHasDirectory}
+          onClose={() => setArchiveModalOpen(false)}
+          onSendArchive={(archiveFile) => {
+            updateAttachmentOptions({ mode: "file" });
+            addPendingAttachments([archiveFile]);
+          }}
+          onSendSeparateFiles={(rawFiles) => {
+            addPendingAttachments(rawFiles);
+          }}
+        />
+      )}
       {draggingFiles && (
         <div className="composer-file-drop-overlay" role="status">
           <Paperclip size={24} />
-          <strong>{translate("添加到待发送附件")}</strong>
+          <strong>Drop files or folders to send</strong>
         </div>
       )}
     </div>
