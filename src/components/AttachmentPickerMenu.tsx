@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Image, FileText, Music, BarChart2, FolderArchive, MapPin } from "lucide-react";
+import { Image, FileText, Music, BarChart2, FolderArchive, MapPin, User } from "lucide-react";
 
 export interface AttachmentPickerMenuProps {
   isOpen: boolean;
@@ -10,6 +10,7 @@ export interface AttachmentPickerMenuProps {
   onPickPoll?: () => void;
   onPickFolder?: () => void;
   onPickLocation?: () => void;
+  onPickContact?: () => void;
 }
 
 export const AttachmentPickerMenu: React.FC<AttachmentPickerMenuProps> = ({
@@ -21,6 +22,7 @@ export const AttachmentPickerMenu: React.FC<AttachmentPickerMenuProps> = ({
   onPickPoll,
   onPickFolder,
   onPickLocation,
+  onPickContact,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -171,6 +173,26 @@ export const AttachmentPickerMenu: React.FC<AttachmentPickerMenuProps> = ({
             <div className="attachment-picker-item-details">
               <span className="attachment-picker-item-title">Location</span>
               <span className="attachment-picker-item-desc">Share point on map or live location</span>
+            </div>
+          </button>
+        )}
+
+        {onPickContact && (
+          <button
+            type="button"
+            role="menuitem"
+            className="attachment-picker-item"
+            onClick={() => {
+              onClose();
+              onPickContact();
+            }}
+          >
+            <div className="attachment-picker-icon-wrapper is-contact">
+              <User size={18} strokeWidth={2} />
+            </div>
+            <div className="attachment-picker-item-details">
+              <span className="attachment-picker-item-title">Contact</span>
+              <span className="attachment-picker-item-desc">Share contact card</span>
             </div>
           </button>
         )}

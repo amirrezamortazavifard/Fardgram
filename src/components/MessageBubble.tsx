@@ -74,6 +74,7 @@ import { replyQuoteFromSelection } from "../utils/messageTextSelection";
 import { MediaProgressRing } from "./MediaProgressRing";
 import { PollMessage } from "./PollMessage";
 import { LocationMessage } from "./LocationMessage";
+import { ContactMessage } from "./ContactMessage";
 import { PaidMediaMessage } from "./PaidMediaMessage";
 import { InvoiceMessage } from "./InvoiceMessage";
 import { GiftMessage } from "./GiftMessage";
@@ -1213,6 +1214,12 @@ function MessageBubbleComponent({
               content={content}
               isOutgoing={message.outgoing}
               onStopLiveLocation={onStopLiveLocation}
+            />
+          ) : content.kind === "contact" ? (
+            <ContactMessage
+              content={content}
+              chatId={message.chatId}
+              isOutgoing={message.outgoing}
             />
           ) : content.kind === "media" && ["audio", "voice"].includes(content.mediaType) ? (
             <div className="attachment-message">

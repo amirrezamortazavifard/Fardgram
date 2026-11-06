@@ -95,6 +95,24 @@ export const inputMessageVenue = (
   },
 });
 
+export const inputMessageContact = (
+  firstName: string,
+  lastName = "",
+  phoneNumber: string,
+  vcard = "",
+  userId?: string,
+): TdObject => ({
+  "@type": "inputMessageContact",
+  contact: {
+    "@type": "contact",
+    phone_number: phoneNumber,
+    first_name: firstName,
+    last_name: lastName,
+    vcard,
+    user_id: userId ? numericId(userId) : 0,
+  },
+});
+
 export const messageSchedulingStateObject = (state?: MessageSchedulingState): TdObject | null => {
   if (!state) return null;
   if (state.kind === "atDate") {

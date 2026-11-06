@@ -26,6 +26,7 @@ import {
 import {
   formattedTextObject,
   forumTopicObject,
+  inputMessageContact,
   inputMessageLocation,
   inputMessageText,
   inputMessageVenue,
@@ -57,6 +58,7 @@ import type {
   SendEmojiAssetInput,
   SendFileInput,
   SendFilesInput,
+  SendContactInput,
   SendLocationInput,
   SendMessageInput,
   SendMediaCopyInput,
@@ -440,6 +442,28 @@ export class TauriMessageMediaService {
         close_date: 0,
         is_closed: false,
       },
+    };
+
+    await this.context.request(request);
+    return true;
+  }
+
+  async sendContact(input: SendContactInput): Promise<boolean> {
+    const inputMessageContent = inputMessageContact(
+      input.firstName,
+      input.lastName,
+      input.phoneNumber,
+      input.vcard,
+      input.userId,
+    );
+
+    const request = {
+      "@type": "sendMessage",
+      chat_id: numericId(input.chatId),
+      message_thread_id: input.topicId ? numericId(input.topicId) : undefined,
+      reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
+      options: messageSendOptions(input.disableNotification, input.schedulingState, input.effectId),
+      input_message_content: inputMessageContent,
     };
 
     await this.context.request(request);

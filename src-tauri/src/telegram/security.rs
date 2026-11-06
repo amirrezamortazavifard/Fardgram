@@ -15,6 +15,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "joinChatByInviteLink",
     "addChatToList",
     "addChatMembers",
+    "addContact",
     "canTransferOwnership",
     "cancelDownloadFile",
     "buyPaidMedia",
@@ -117,10 +118,12 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "registerUser",
     "requestQrCodeAuthentication",
     "removeMessageReaction",
+    "removeContacts",
     "revokeChatInviteLink",
     "resendMessages",
     "searchChatMessages",
     "searchChatMembers",
+    "searchContacts",
     "getChatMember",
     "searchChatsOnServer",
     "searchMessages",
@@ -1444,6 +1447,7 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
             Some("inputMessagePoll") => None,
             Some("inputMessageLocation") => None,
             Some("inputMessageVenue") => None,
+            Some("inputMessageContact") => None,
             Some("inputMessageSticker") => Some("/sticker/sticker"),
             Some("inputMessageAnimation") => Some("/animation/animation"),
             Some("inputMessagePhoto") => Some("/photo/photo"),
@@ -1548,6 +1552,26 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                 .ok_or_else(|| "Venue longitude is missing or not a number".to_string())?;
             if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
                 return Err("Venue coordinates out of bounds".to_string());
+            }
+        }
+        if content_type == Some("inputMessageContact") {
+            let contact = content
+                .get("contact")
+                .and_then(Value::as_object)
+                .ok_or_else(|| "Contact object is missing".to_string())?;
+            let phone = contact
+                .get("phone_number")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Contact phone number is missing".to_string())?;
+            if phone.trim().is_empty() {
+                return Err("Contact phone number cannot be empty".to_string());
+            }
+            let first_name = contact
+                .get("first_name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Contact first name is missing".to_string())?;
+            if first_name.trim().is_empty() {
+                return Err("Contact first name cannot be empty".to_string());
             }
         }
         if let Some(pointer) = file_pointer {
@@ -2975,6 +2999,7 @@ mod tests {
             "getSupergroupFullInfo",
             "getSupergroupMembers",
             "searchChatMembers",
+            "searchContacts",
             "getChatMember",
             "getContacts",
             "getSecretChat",
@@ -4436,6 +4461,63 @@ mod tests {
         let mut invalid_period = send_live_location.clone();
         invalid_period["input_message_content"]["live_period"] = json!(-100);
         assert!(validate_webview_tdlib_request(&invalid_period).is_err());
+    }
+
+    #[test]
+    fn validates_contact_sharing_requests() {
+        let valid_contact_message = json!({
+            "@type": "sendMessage",
+            "chat_id": 12345678,
+            "input_message_content": {
+                "@type": "inputMessageContact",
+                "contact": {
+                    "@type": "contact",
+                    "phone_number": "+1234567890",
+                    "first_name": "Alice",
+                    "last_name": "Smith",
+                    "vcard": "",
+                    "user_id": 12345
+                }
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&valid_contact_message).is_ok());
+
+        let empty_phone = json!({
+            "@type": "sendMessage",
+            "chat_id": 12345678,
+            "input_message_content": {
+                "@type": "inputMessageContact",
+                "contact": {
+                    "@type": "contact",
+                    "phone_number": "   ",
+                    "first_name": "Alice",
+                    "last_name": "Smith",
+                    "vcard": "",
+                    "user_id": 12345
+                }
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&empty_phone).is_err());
+
+        let empty_name = json!({
+            "@type": "sendMessage",
+            "chat_id": 12345678,
+            "input_message_content": {
+                "@type": "inputMessageContact",
+                "contact": {
+                    "@type": "contact",
+                    "phone_number": "+1234567890",
+                    "first_name": "",
+                    "last_name": "Smith",
+                    "vcard": "",
+                    "user_id": 12345
+                }
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&empty_name).is_err());
     }
 
     #[test]

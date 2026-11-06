@@ -34,6 +34,7 @@ import {
 } from "../utils/archiveBuilder";
 import { CreatePollDialog } from "./CreatePollDialog";
 import { SendLocationDialog } from "./SendLocationDialog";
+import { ShareContactDialog } from "./ShareContactDialog";
 import { MessageEffectPicker } from "./MessageEffectPicker";
 import type { TelegramMessageEffect } from "../telegram/messageEffects";
 import { VoiceVideoRecorder, type RecordingKind } from "./VoiceVideoRecorder";
@@ -251,6 +252,7 @@ export const ConversationComposer = memo(function ConversationComposer({
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [showPollDialog, setShowPollDialog] = useState(false);
   const [showLocationDialog, setShowLocationDialog] = useState(false);
+  const [showContactDialog, setShowContactDialog] = useState(false);
   const [showSendMenu, setShowSendMenu] = useState(false);
   const [selectedEffect, setSelectedEffect] = useState<TelegramMessageEffect | undefined>(undefined);
   const [showEffectPicker, setShowEffectPicker] = useState(false);
@@ -258,6 +260,7 @@ export const ConversationComposer = memo(function ConversationComposer({
   useTranslation();
   const sendPoll = useTelegramStore((state) => state.sendPoll);
   const sendLocation = useTelegramStore((state) => state.sendLocation);
+  const sendContact = useTelegramStore((state) => state.sendContact);
   const chatDraft = useTelegramStore((state) => state.drafts.get(draftKey));
   const getChatMentionSuggestions = useTelegramStore((state) => state.getChatMentionSuggestions);
   const activeAccountId = useTelegramStore((state) => state.activeAccountId);
@@ -1828,6 +1831,7 @@ export const ConversationComposer = memo(function ConversationComposer({
             onPickPoll={() => setShowPollDialog(true)}
             onPickFolder={() => folderInputRef.current?.click()}
             onPickLocation={() => setShowLocationDialog(true)}
+            onPickContact={() => setShowContactDialog(true)}
           />
         </div>
         {previewOpen && draft.trim() && (
@@ -2341,6 +2345,18 @@ export const ConversationComposer = memo(function ConversationComposer({
             return success;
           }}
           onClose={() => setShowLocationDialog(false)}
+        />
+      )}
+      {showContactDialog && (
+        <ShareContactDialog
+          isOpen={showContactDialog}
+          chatId={chatId}
+          replyToMessageId={replyingTo?.id ?? chatDraft?.replyToMessageId}
+          onSend={async (input) => {
+            const success = await sendContact(input);
+            return success;
+          }}
+          onClose={() => setShowContactDialog(false)}
         />
       )}
       {activeRecording && (

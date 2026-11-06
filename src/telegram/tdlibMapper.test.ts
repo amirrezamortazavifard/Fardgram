@@ -1177,7 +1177,14 @@ describe("TDLib mapper", () => {
     expect(mapTdMessageContent({
       "@type": "messageContact",
       contact: { first_name: "Mia", last_name: "Chen", phone_number: "+123" },
-    })).toEqual({ kind: "text", text: "联系人 · Mia Chen · +123" });
+    })).toEqual({
+      kind: "contact",
+      firstName: "Mia",
+      lastName: "Chen",
+      phoneNumber: "+123",
+      userId: undefined,
+      vcard: undefined,
+    });
     expect(mapTdMessageContent({
       "@type": "messagePoll",
       poll: { question: { "@type": "formattedText", text: "午餐吃什么？" } },

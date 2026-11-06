@@ -222,6 +222,7 @@ export interface TelegramTransport {
   sendPoll(input: SendPollInput): Promise<boolean>;
   stopPoll(input: StopPollInput): Promise<boolean>;
   sendLocation?(input: import("./types").SendLocationInput): Promise<boolean>;
+  sendContact?(input: import("./types").SendContactInput): Promise<boolean>;
   stopLiveLocation?(chatId: string, messageId: string): Promise<boolean>;
   getPinnedMessages(chatId: string): Promise<Message[]>;
   pinMessage(input: PinMessageInput): Promise<void>;

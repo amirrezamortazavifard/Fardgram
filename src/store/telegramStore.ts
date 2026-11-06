@@ -4781,6 +4781,20 @@ export const createTelegramStore = (
         }
       },
 
+      sendContact: async (input) => {
+        try {
+          const sent = await (transport.sendContact?.(input) ?? Promise.resolve(false));
+          if (get().operationError) set({ operationError: undefined });
+          scheduleCacheWrite();
+          return sent;
+        } catch (error) {
+          set({
+            operationError: error instanceof Error ? error.message : "Failed to share contact",
+          });
+          return false;
+        }
+      },
+
       stopLiveLocation: async (messageId, preferredChatId) => {
         const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
         if (!location) return false;

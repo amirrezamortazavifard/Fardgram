@@ -29,6 +29,10 @@ export const messageContentText = (content: MessageContent) => {
     if (content.livePeriod && content.livePeriod > 0) return "Live Location";
     return `Location (${content.latitude.toFixed(4)}, ${content.longitude.toFixed(4)})`;
   }
+  if (content.kind === "contact") {
+    const name = [content.firstName, content.lastName].filter(Boolean).join(" ");
+    return `Contact: ${name} (${content.phoneNumber})`;
+  }
   return content.caption || content.fileName;
 };
 
@@ -50,6 +54,10 @@ export const messagePreviewText = (content: MessageContent) => {
     if (content.title) return `📍 ${content.title}`;
     if (content.livePeriod && content.livePeriod > 0) return "📍 Live Location";
     return "📍 Location";
+  }
+  if (content.kind === "contact") {
+    const name = [content.firstName, content.lastName].filter(Boolean).join(" ");
+    return `👤 ${name || content.phoneNumber}`;
   }
   if (content.kind !== "media") return messageContentText(content);
   if (content.caption) return content.caption;

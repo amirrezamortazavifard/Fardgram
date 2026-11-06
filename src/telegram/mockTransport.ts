@@ -82,6 +82,7 @@ import type {
   SetChatMessageAutoDeleteTimeInput,
   SetMessageReactionInput,
   SetPollAnswerInput,
+  SendContactInput,
   SendLocationInput,
   SendPollInput,
   StopPollInput,
@@ -2451,6 +2452,40 @@ export class MockTelegramTransport implements TelegramTransport {
 
     this.snapshot.messages.push(locationMessage);
     this.listener?.({ type: "message.upsert", message: clone(locationMessage) });
+    return true;
+  }
+
+  async sendContact(input: SendContactInput): Promise<boolean> {
+    if (!input.firstName.trim() || !input.phoneNumber.trim()) {
+      throw new Error("Contact name and phone are required");
+    }
+    const messageId = `mock_contact_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const contactMessage: Message = {
+      id: messageId,
+      chatId: input.chatId,
+      senderId: this.snapshot.currentUserId ?? "user_self",
+      sentAt: new Date().toISOString(),
+      delivery: "read",
+      outgoing: true,
+      permissions: {
+        canReply: true,
+        canEdit: false,
+        canDeleteOnlyForSelf: true,
+        canDeleteForAllUsers: true,
+        canForward: true,
+      },
+      content: {
+        kind: "contact",
+        firstName: input.firstName,
+        lastName: input.lastName,
+        phoneNumber: input.phoneNumber,
+        vcard: input.vcard,
+        userId: input.userId,
+      },
+    };
+
+    this.snapshot.messages.push(contactMessage);
+    this.listener?.({ type: "message.upsert", message: clone(contactMessage) });
     return true;
   }
 

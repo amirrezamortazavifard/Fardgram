@@ -1241,11 +1241,14 @@ export const mapTdMessageContent = (value: unknown, includePendingUpload = false
     }
     case "messageContact": {
       const contact = asTdObject(content.contact);
-      const name = [contact?.first_name, contact?.last_name]
-        .filter((part): part is string => typeof part === "string" && Boolean(part.trim()))
-        .join(" ");
-      const phone = typeof contact?.phone_number === "string" ? contact.phone_number : "";
-      return { kind: "text", text: [translate("联系人"), name, phone].filter(Boolean).join(" · ") };
+      return {
+        kind: "contact",
+        firstName: typeof contact?.first_name === "string" ? contact.first_name : "",
+        lastName: typeof contact?.last_name === "string" ? contact.last_name : undefined,
+        phoneNumber: typeof contact?.phone_number === "string" ? contact.phone_number : "",
+        vcard: typeof contact?.vcard === "string" ? contact.vcard : undefined,
+        userId: tdId(contact?.user_id) || undefined,
+      };
     }
     case "messageLocation": {
       const location = asTdObject(content.location);

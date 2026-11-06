@@ -1002,6 +1002,15 @@ export interface MessageLocationContent {
   address?: string;
 }
 
+export interface MessageContactContent {
+  kind: "contact";
+  firstName: string;
+  lastName?: string;
+  phoneNumber: string;
+  vcard?: string;
+  userId?: string;
+}
+
 export type MessageContent =
   | { kind: "text"; text: string; entities?: MessageTextEntity[] }
   | {
@@ -1017,6 +1026,7 @@ export type MessageContent =
   | MessageInvoiceContent
   | MessageGiftContent
   | MessageLocationContent
+  | MessageContactContent
   | { kind: "unsupported"; type: string; text: string }
   | ({ kind: "file" } & TransferableMessageContent)
   | ({
@@ -1412,10 +1422,40 @@ export interface SendLocationInput {
   effectId?: string;
 }
 
+export interface SendContactInput {
+  chatId: string;
+  topicId?: string;
+  firstName: string;
+  lastName?: string;
+  phoneNumber: string;
+  vcard?: string;
+  userId?: string;
+  replyToMessageId?: string;
+  replyQuote?: MessageReplyQuote;
+  disableNotification?: boolean;
+  schedulingState?: MessageSchedulingState;
+  effectId?: string;
+}
+
 export interface SendEmojiAssetInput {
   chatId: string;
   topicId?: string;
   asset: EmojiPickerAsset;
+  replyToMessageId?: string;
+  replyQuote?: MessageReplyQuote;
+  disableNotification?: boolean;
+  schedulingState?: MessageSchedulingState;
+  effectId?: string;
+}
+
+export interface SendContactInput {
+  chatId: string;
+  topicId?: string;
+  firstName: string;
+  lastName?: string;
+  phoneNumber: string;
+  vcard?: string;
+  userId?: string;
   replyToMessageId?: string;
   replyQuote?: MessageReplyQuote;
   disableNotification?: boolean;

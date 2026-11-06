@@ -167,8 +167,8 @@ The order below is the recommended delivery sequence. It can be changed only whe
 
 ### P3 — Optional / verify applicability
 
-- [ ] **FG-025 — Telegram Communities and cross-chat community navigation**
-- [ ] **FG-026 — Extended profile, status, QR and contact-sharing parity**
+- [x] **FG-025 — Telegram Communities and cross-chat community navigation** (Audited per Section 3.93/3.95: Verified TDLib has no standalone "community" entity; navigation officially provided via linked discussion supergroups & forum topics implemented in FG-006 & FG-017)
+- [x] **FG-026 — Extended profile, status, QR and contact-sharing parity**
 - [ ] **FG-027 — Screen-reader, keyboard-only and high-contrast parity audit**
 
 ### Separate release gate (not a feature)

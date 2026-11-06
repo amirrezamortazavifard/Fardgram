@@ -154,6 +154,7 @@ import type {
   SetMessageReactionInput,
   GetMessageReactionSendersInput,
   SetPollAnswerInput,
+  SendContactInput,
   SendLocationInput,
   SendPollInput,
   StopPollInput,
@@ -2307,6 +2308,10 @@ export class TauriTelegramTransport implements TelegramTransport {
 
   async sendLocation(input: SendLocationInput) {
     return this.messageMediaService.sendLocation(input);
+  }
+
+  async sendContact(input: SendContactInput) {
+    return this.messageMediaService.sendContact(input);
   }
 
   async stopLiveLocation(chatId: string, messageId: string) {

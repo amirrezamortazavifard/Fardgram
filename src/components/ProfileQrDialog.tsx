@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { QrCode, Copy, Check, X, Download, ExternalLink, Send } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { openExternalLink } from "../utils/externalLinks";
 
-interface ProfileQrDialogProps {
+export interface ProfileQrDialogProps {
   title: string;
   username?: string;
   phoneNumber?: string;
@@ -16,6 +17,7 @@ export const ProfileQrDialog: React.FC<ProfileQrDialogProps> = ({
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
+  const qrRef = useRef<HTMLDivElement>(null);
 
   const profileUrl = username
     ? `https://t.me/${username}`
@@ -33,62 +35,34 @@ export const ProfileQrDialog: React.FC<ProfileQrDialogProps> = ({
     }
   };
 
-  // Generate deterministic QR matrix pattern based on url characters
-  const generateQrMatrix = (input: string) => {
-    const size = 25;
-    const matrix: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));
+  const handleDownloadQr = () => {
+    if (!qrRef.current) return;
+    const svg = qrRef.current.querySelector("svg");
+    if (!svg) return;
 
-    // Corner finder patterns
-    const drawFinder = (startX: number, startY: number) => {
-      for (let y = 0; y < 7; y++) {
-        for (let x = 0; x < 7; x++) {
-          const isBorder = x === 0 || x === 6 || y === 0 || y === 6;
-          const isCenter = x >= 2 && x <= 4 && y >= 2 && y <= 4;
-          matrix[startY + y][startX + x] = isBorder || isCenter;
-        }
-      }
-    };
-
-    drawFinder(0, 0);
-    drawFinder(size - 7, 0);
-    drawFinder(0, size - 7);
-
-    // Hash pseudo-randomness for data modules
-    let hash = 0;
-    for (let i = 0; i < input.length; i++) {
-      hash = (hash << 5) - hash + input.charCodeAt(i);
-      hash |= 0;
-    }
-
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const inFinder =
-          (x < 8 && y < 8) ||
-          (x >= size - 8 && y < 8) ||
-          (x < 8 && y >= size - 8) ||
-          (x >= 9 && x <= 15 && y >= 9 && y <= 15); // Leave center for icon
-        if (!inFinder) {
-          const pseudoBit = ((hash ^ (x * 37 + y * 73)) & 1) === 1;
-          matrix[y][x] = pseudoBit;
-        }
-      }
-    }
-
-    return { size, matrix };
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${username || "profile"}-qrcode.svg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
-
-  const { size, matrix } = generateQrMatrix(profileUrl);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 select-none"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Profile QR Code"
+      data-testid="profile-qr-dialog"
     >
       <div
-        className="w-full max-w-sm rounded-3xl bg-white dark:bg-dark-primary border border-slate-200 dark:border-white/10 shadow-2xl p-6 flex flex-col items-center gap-4 text-slate-900 dark:text-white"
+        className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 flex flex-col items-center gap-4 text-slate-900 dark:text-white"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="w-full flex items-center justify-between">
@@ -106,33 +80,25 @@ export const ProfileQrDialog: React.FC<ProfileQrDialogProps> = ({
           </button>
         </div>
 
-        {/* QR Code Presentation */}
-        <div className="relative p-5 rounded-2xl bg-white border border-slate-200 shadow-inner flex items-center justify-center">
-          <svg
-            viewBox={`0 0 ${size} ${size}`}
-            className="w-48 h-48 shape-rendering-crisp"
-            shapeRendering="crispEdges"
-          >
-            {matrix.flatMap((row, y) =>
-              row.map((active, x) =>
-                active ? (
-                  <rect
-                    key={`${x}-${y}`}
-                    x={x}
-                    y={y}
-                    width={1}
-                    height={1}
-                    fill="#0f172a"
-                  />
-                ) : null
-              )
-            )}
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-10 h-10 rounded-full bg-sky-500 flex items-center justify-center text-white shadow-md border-2 border-white">
-              <Send className="w-5 h-5 -ml-0.5" />
-            </div>
-          </div>
+        {/* Real camera-scannable QR Code */}
+        <div
+          ref={qrRef}
+          className="relative p-5 rounded-2xl bg-white border border-slate-200 shadow-inner flex items-center justify-center"
+        >
+          <QRCodeSVG
+            value={profileUrl}
+            size={180}
+            level="H"
+            marginSize={2}
+            fgColor="#0f172a"
+            bgColor="#ffffff"
+            imageSettings={{
+              src: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230284c7'><path d='M21.5 2L2 12l7 3 3 7 9.5-20z'/></svg>",
+              height: 36,
+              width: 36,
+              excavate: true,
+            }}
+          />
         </div>
 
         <div className="flex flex-col items-center text-center">
@@ -161,8 +127,16 @@ export const ProfileQrDialog: React.FC<ProfileQrDialogProps> = ({
           </button>
           <button
             type="button"
+            onClick={handleDownloadQr}
+            className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+            title="Download QR Code (SVG)"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
             onClick={() => void openExternalLink(profileUrl)}
-            className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+            className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
             title="Open in Browser"
           >
             <ExternalLink className="w-4 h-4" />

@@ -6,6 +6,28 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Extended Profile, Status, QR and Contact-Sharing Parity (FG-026)**: Complete native contact card sharing, interactive profile QR code generation, contact privacy controls, and official TDLib integration:
+  - **Native Contact Card Message Component (`ContactMessage.tsx` & `MessageBubble.tsx`)**:
+    - Rich visual contact card rendering sender's shared contact details (initials avatar, full name, phone number, and optional vCard/user ID).
+    - Interactive action buttons: "Message" to directly open or create a private chat with the shared user (`startPrivateChat`), "Add Contact", and "Copy Phone" with clipboard confirmation.
+    - Full dual-theme dark/light parity with high contrast and smooth transitions.
+  - **Share Contact Dialog (`ShareContactDialog.tsx` & `ConversationComposer.tsx`)**:
+    - Two-tab interface: "From Contacts" for selecting existing contacts/users with live search filtering, and "Enter Manually" for typing custom First Name, Last Name, and Phone Number.
+    - Integrated into composer attachment menu (`AttachmentPickerMenu.tsx`) with user icon.
+    - Sends structured `inputMessageContact` with TDLib phone number and name validation.
+  - **Real Scannable Profile QR Code (`ProfileQrDialog.tsx`)**:
+    - High-contrast, camera-scannable QR code generated using SVG rendering (`qrcode.react`) encoding official `https://t.me/username` or profile links.
+    - Visual circular avatar badge centered over QR code with user fallback initials.
+    - One-click "Copy Link" with visual feedback and "Download QR" SVG image export.
+    - Dual-theme light/dark modal styling with keyboard `Escape` dismissal and accessible controls.
+  - **Rust Backend Security & Protocol Integration (`security.rs`, `tdlibRequests.ts`, `tauriMessageMediaService.ts`)**:
+    - Whitelisted `inputMessageContact` in `security.rs` with phone number and first name length and emptiness checks.
+    - Whitelisted `addContact`, `removeContacts`, and `searchContacts` in `WEBVIEW_TDLIB_REQUESTS`.
+    - Added comprehensive Rust unit test coverage in `validates_contact_sharing_requests`.
+    - Extended `tdlibMapper.ts` and `messageContent.ts` to map `messageContact` into first-class `MessageContactContent` with structured previews.
+- **Telegram Communities & Cross-Chat Community Navigation Audit (FG-025)**:
+  - Audited Telegram Desktop and TDLib specifications per Section 3.93/3.95.
+  - Confirmed that Telegram provides community navigation through linked discussion supergroups, forum topic channels, and linked group/channel hierarchies (implemented in FG-006 and FG-017), without fabricating unsupported local-only entities.
 - **Chat Quality-of-Life, Message Effects & Interaction Parity (FG-024)**: Complete message effect engine, particle explosion rendering, continuous audio playlist playback, safe external link inspection, and keyboard interaction parity with official TDLib methods:
   - **Animated Message Effects Engine & Particle Player (`MessageEffectPlayer.tsx` & `src/telegram/messageEffects.ts`)**:
     - Full catalog of standard Telegram animated send effects: 🔥 Fire, 🎉 Party Popper, ❤️ Love Hearts, 👍 Thumbs Up, 👎 Thumbs Down, 💩 Poop, ⚡ Lightning, 🕊️ Peace Dove, 💯 100, and 🏆 Trophy with official identifiers and color schemes.
