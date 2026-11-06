@@ -148,6 +148,7 @@ export interface MessageBubbleProps {
     chatId?: string,
   ) => Promise<MessageReactionSenderPage>;
   onPollAnswer: (messageId: string, optionPositions: number[], chatId?: string) => Promise<boolean>;
+  onStopPoll?: (messageId: string, chatId?: string) => Promise<boolean>;
   onBotCallback: (messageId: string, data: string, chatId?: string) => Promise<CallbackQueryAnswer | undefined>;
   onOpenWebApp?: (url: string, title?: string) => void | Promise<void>;
   onCollapseQuote: (
@@ -223,6 +224,7 @@ function MessageBubbleComponent({
   onReaction,
   onLoadReactionSenders,
   onPollAnswer,
+  onStopPoll,
   onBotCallback,
   onOpenWebApp,
   onCollapseQuote,
@@ -1166,8 +1168,10 @@ function MessageBubbleComponent({
               poll={content}
               messageId={message.id}
               chatId={message.chatId}
+              isOutgoing={message.outgoing}
               highlightQuery={searchQuery}
               onAnswer={onPollAnswer}
+              onStopPoll={onStopPoll}
               onSearchHashtag={onSearchHashtag}
             />
           ) : content.kind === "media" && ["audio", "voice"].includes(content.mediaType) ? (
@@ -1399,6 +1403,7 @@ export interface MessageBubblePreviewProps {
   onReaction?: MessageBubbleProps["onReaction"];
   onLoadReactionSenders?: MessageBubbleProps["onLoadReactionSenders"];
   onPollAnswer?: MessageBubbleProps["onPollAnswer"];
+  onStopPoll?: MessageBubbleProps["onStopPoll"];
   onBotCallback?: MessageBubbleProps["onBotCallback"];
   onOpenWebApp?: MessageBubbleProps["onOpenWebApp"];
   onOpenMedia?: MessageBubbleProps["onOpenMedia"];
@@ -1456,6 +1461,7 @@ export function MessageBubblePreview({
   onReaction = previewNoop,
   onLoadReactionSenders = previewReactionSenders,
   onPollAnswer = previewFalse,
+  onStopPoll,
   onBotCallback = previewCallback,
   onOpenWebApp,
   onOpenMedia,
@@ -1506,6 +1512,7 @@ export function MessageBubblePreview({
       onReaction={onReaction}
       onLoadReactionSenders={onLoadReactionSenders}
       onPollAnswer={onPollAnswer}
+      onStopPoll={onStopPoll}
       onBotCallback={onBotCallback}
       onOpenWebApp={onOpenWebApp}
       onCollapseQuote={previewCollapseQuote}

@@ -61,6 +61,8 @@ import type {
   SetChatMessageAutoDeleteTimeInput,
   SetMessageReactionInput,
   SetPollAnswerInput,
+  SendPollInput,
+  StopPollInput,
   StickerSet,
   StickerSetSummary,
   StreamFileInput,
@@ -394,6 +396,60 @@ export class TauriMessageMediaService {
     if (tdId(refreshed.chat_id) === input.chatId && tdId(refreshed.id) === input.messageId) {
       this.context.emitMessage(refreshed);
     }
+  }
+
+  async sendPoll(input: SendPollInput): Promise<boolean> {
+    const question = input.question.trim();
+    if (!question || question.length > 255) throw new Error("Poll question must be between 1 and 255 characters");
+    if (input.options.length < 2 || input.options.length > 10) throw new Error("Poll must have between 2 and 10 options");
+    const formattedOptions = input.options.map((opt) => {
+      const text = opt.trim();
+      if (!text || text.length > 100) throw new Error("Poll option must be between 1 and 100 characters");
+      return formattedTextObject(text);
+    });
+
+    const isQuiz = input.type === "quiz";
+    const pollType = isQuiz
+      ? {
+          "@type": "pollTypeQuiz",
+          correct_option_id: input.correctOptionId ?? 0,
+          explanation: formattedTextObject(input.explanation ?? ""),
+        }
+      : {
+          "@type": "pollTypeRegular",
+          allows_multiple_answers: input.allowsMultipleAnswers === true,
+        };
+
+    const request = {
+      "@type": "sendMessage",
+      chat_id: numericId(input.chatId),
+      reply_to: input.replyToMessageId ? {
+        "@type": "inputMessageReplyToMessage",
+        message_id: numericId(input.replyToMessageId),
+      } : null,
+      input_message_content: {
+        "@type": "inputMessagePoll",
+        question: formattedTextObject(question),
+        options: formattedOptions,
+        is_anonymous: input.isAnonymous !== false,
+        type: pollType,
+        open_period: 0,
+        close_date: 0,
+        is_closed: false,
+      },
+    };
+
+    await this.context.request(request);
+    return true;
+  }
+
+  async stopPoll(input: StopPollInput): Promise<boolean> {
+    await this.context.request({
+      "@type": "stopPoll",
+      chat_id: numericId(input.chatId),
+      message_id: numericId(input.messageId),
+    });
+    return true;
   }
 
   async getPinnedMessages(chatId: string) {

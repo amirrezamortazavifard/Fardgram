@@ -4724,6 +4724,36 @@ export const createTelegramStore = (
         }
       },
 
+      sendPoll: async (input) => {
+        try {
+          const sent = await transport.sendPoll(input);
+          if (get().operationError) set({ operationError: undefined });
+          scheduleCacheWrite();
+          return sent;
+        } catch (error) {
+          set({
+            operationError: error instanceof Error ? error.message : "Failed to create poll",
+          });
+          return false;
+        }
+      },
+
+      stopPoll: async (messageId, preferredChatId) => {
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        if (!location) return false;
+        try {
+          const stopped = await transport.stopPoll({ chatId: location.chatId, messageId });
+          if (get().operationError) set({ operationError: undefined });
+          scheduleCacheWrite();
+          return stopped;
+        } catch (error) {
+          set({
+            operationError: error instanceof Error ? error.message : "Failed to close poll",
+          });
+          return false;
+        }
+      },
+
       loadPinnedMessages: async (chatId) => {
         if (!get().chats.has(chatId)) return [];
         try {

@@ -26,6 +26,7 @@ import {
 import { ScheduleMessageDialog } from "./ScheduleMessageDialog";
 import { MediaEditorModal, type MediaEditorResult } from "./MediaEditorModal";
 import { AttachmentPickerMenu } from "./AttachmentPickerMenu";
+import { CreatePollDialog } from "./CreatePollDialog";
 import { VoiceVideoRecorder, type RecordingKind } from "./VoiceVideoRecorder";
 import { useAgentStore } from "../agent/agentStore";
 import {
@@ -237,9 +238,11 @@ export const ConversationComposer = memo(function ConversationComposer({
   onOpenScheduledMessages,
 }: ConversationComposerProps) {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [showPollDialog, setShowPollDialog] = useState(false);
   const [showSendMenu, setShowSendMenu] = useState(false);
   const focusComposer = focus.request;
   useTranslation();
+  const sendPoll = useTelegramStore((state) => state.sendPoll);
   const chatDraft = useTelegramStore((state) => state.drafts.get(draftKey));
   const getChatMentionSuggestions = useTelegramStore((state) => state.getChatMentionSuggestions);
   const activeAccountId = useTelegramStore((state) => state.activeAccountId);
@@ -1751,6 +1754,7 @@ export const ConversationComposer = memo(function ConversationComposer({
               fileInputRef.current?.click();
             }}
             onPickAudio={() => audioInputRef.current?.click()}
+            onPickPoll={() => setShowPollDialog(true)}
           />
         </div>
         {previewOpen && draft.trim() && (
@@ -2158,6 +2162,18 @@ export const ConversationComposer = memo(function ConversationComposer({
             void submitMessage(state);
           }}
           onClose={() => setShowScheduleDialog(false)}
+        />
+      )}
+      {showPollDialog && (
+        <CreatePollDialog
+          isOpen={showPollDialog}
+          chatId={chatId}
+          replyToMessageId={replyingTo?.id ?? chatDraft?.replyToMessageId}
+          onSend={async (input) => {
+            const success = await sendPoll(input);
+            return success;
+          }}
+          onClose={() => setShowPollDialog(false)}
         />
       )}
       {activeRecording && (

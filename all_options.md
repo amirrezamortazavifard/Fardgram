@@ -151,7 +151,7 @@ The order below is the recommended delivery sequence. It can be changed only whe
 - [x] **FG-012 — Voice/video transcription and transcript UX**
 - [x] **FG-013 — Native message and conversation translation**
 - [x] **FG-014 — Rich Messages editor and advanced rich-message rendering**
-- [ ] **FG-015 — Advanced polls and quiz parity**
+- [x] **FG-015 — Advanced polls and quiz parity**
 - [ ] **FG-016 — Advanced search tabs and discovery**
 - [ ] **FG-017 — Advanced group, channel and community administration**
 

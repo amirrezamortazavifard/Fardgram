@@ -6,6 +6,28 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Advanced Polls & Quiz Parity (FG-015)**: Full TDLib-backed poll and quiz authoring, live voting, revoting, quiz answer validation, explanation feedback, and creator lifecycle management:
+  - **Comprehensive Poll & Quiz Creator (`CreatePollDialog`)**:
+    - Question input with dynamic character limit counter (1–255 characters).
+    - Dynamic 2–10 poll options list with addition, per-row deletion, and character counters (1–100 characters per option).
+    - Anonymous voting toggle ("Anonymous Voting").
+    - Multiple answers toggle ("Multiple Answers").
+    - Interactive Quiz mode toggle ("Quiz Mode") with radio selector for single correct answer and optional explanation field (1–200 characters) displayed with hint icon.
+    - Full keyboard navigation and validation disabling creation when criteria are not met.
+  - **Composer & Attachment Integration**:
+    - Added "Poll" option with `BarChart2` icon in `AttachmentPickerMenu`.
+    - Integrated `CreatePollDialog` modal into `ConversationComposer` with reply threading support.
+  - **TDLib IPC & Rust Security Whitelisting**:
+    - Added `stopPoll` to `WEBVIEW_TDLIB_REQUESTS` in `src-tauri/src/telegram/security.rs`.
+    - Implemented deep payload bounds checking for `inputMessagePoll` within `sendMessage` (question length, option counts and lengths, quiz correct answer bounds, and explanation limits).
+    - Validated `stopPoll` parameters requiring non-empty `chat_id` and positive `message_id`.
+  - **Poll Lifecycle & UX in Message Bubbles (`PollMessage`)**:
+    - Creator & Administrator "Close Poll" action button with confirmation state and TDLib `stopPoll` dispatch.
+    - Dynamic voter count formatting with proper English pluralization ("1 vote" vs. "{n} votes").
+    - Retract vote / Revote button ("Retract Vote") for polls allowing vote retraction.
+    - Instant quiz feedback showing checkmarks (`Check`) and crosses (`X`) on answered choices.
+    - Final results indicators and closed status badges for completed polls.
+    - 100% professional English UI copy and strict light/dark theme parity across all dialogs and bubbles.
 - **Rich Messages Editor & Advanced Rich-Message Rendering (FG-014)**: Comprehensive WYSIWYG and Markdown formatting authoring suite, responsive code blocks with copy affordance, link dialog, and live message preview:
   - **Full-Spectrum WYSIWYG & Shortcut Formatting Toolbar (`ComposerFormattingBar`)**: Expanded formatting toolbar supporting Bold (`Ctrl+B`), Italic (`Ctrl+I`), Underline (`Ctrl+U`), Strikethrough (`Ctrl+Shift+X`), Monospace Inline Code (`Ctrl+Shift+M`), Preformatted Code Block (`Ctrl+Shift+C`), Spoiler Mask (`Ctrl+Shift+P`), Collapsible Quote Block (`Ctrl+Shift+Q`), and Hyperlinks (`Ctrl+K`).
   - **Interactive Link Dialog (`ComposerLinkDialog`)**: Modal dialog for adding or editing rich text hyperlinks (`textUrl`) with display text and URL fields, keyboard accessibility (`Enter` to submit, `Escape` to cancel), automatic protocol formatting, and clean mark insertion.

@@ -144,6 +144,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "setName",
     "setPinnedChats",
     "setPollAnswer",
+    "stopPoll",
     "setSupergroupUsername",
     "setUsername",
     "toggleChatIsMarkedAsUnread",
@@ -1076,6 +1077,9 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                 return Err("Poll option identifiers must be unique".to_string());
             }
         }
+        "stopPoll" => {
+            validate_message_target(request)?;
+        }
         "getMessageAddedReactions" => {
             validate_message_target(request)?;
             let offset = request
@@ -1289,6 +1293,7 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
         let content_type = content.get("@type").and_then(Value::as_str);
         let file_pointer = match content_type {
             Some("inputMessageText") => None,
+            Some("inputMessagePoll") => None,
             Some("inputMessageSticker") => Some("/sticker/sticker"),
             Some("inputMessageAnimation") => Some("/animation/animation"),
             Some("inputMessagePhoto") => Some("/photo/photo"),
@@ -1299,6 +1304,59 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
             Some("inputMessageDocument") => Some("/document/document"),
             _ => return Err("Unsupported generic message content".to_string()),
         };
+        if content_type == Some("inputMessagePoll") {
+            let question = content
+                .get("question")
+                .and_then(|q| q.get("text").and_then(Value::as_str).or_else(|| q.as_str()))
+                .ok_or_else(|| "Poll question is missing".to_string())?;
+            if question.trim().is_empty() || question.chars().count() > 255 {
+                return Err("Poll question must be between 1 and 255 characters".to_string());
+            }
+
+            let options = content
+                .get("options")
+                .and_then(Value::as_array)
+                .ok_or_else(|| "Poll options must be an array".to_string())?;
+            if options.len() < 2 || options.len() > 10 {
+                return Err("Poll must have between 2 and 10 options".to_string());
+            }
+
+            for option in options {
+                let text = option
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .or_else(|| option.as_str())
+                    .ok_or_else(|| "Poll option text is missing".to_string())?;
+                if text.trim().is_empty() || text.chars().count() > 100 {
+                    return Err("Poll option must be between 1 and 100 characters".to_string());
+                }
+            }
+
+            let poll_type = content
+                .get("type")
+                .and_then(|t| t.get("@type").and_then(Value::as_str))
+                .ok_or_else(|| "Poll type is missing".to_string())?;
+
+            if poll_type != "pollTypeRegular" && poll_type != "pollTypeQuiz" {
+                return Err("Invalid poll type".to_string());
+            }
+
+            if poll_type == "pollTypeQuiz" {
+                let quiz_type = content.get("type").unwrap();
+                let correct_option_id = quiz_type
+                    .get("correct_option_id")
+                    .and_then(Value::as_i64)
+                    .ok_or_else(|| "Quiz must specify correct_option_id".to_string())?;
+                if correct_option_id < 0 || correct_option_id >= options.len() as i64 {
+                    return Err("Quiz correct_option_id is out of bounds".to_string());
+                }
+                if let Some(explanation) = quiz_type.get("explanation").and_then(|e| e.get("text").and_then(Value::as_str).or_else(|| e.as_str())) {
+                    if explanation.chars().count() > 200 {
+                        return Err("Quiz explanation cannot exceed 200 characters".to_string());
+                    }
+                }
+            }
+        }
         if let Some(pointer) = file_pointer {
             let file = content
                 .pointer(pointer)
@@ -4096,5 +4154,84 @@ mod tests {
         let mut invalid_txt = translate_txt.clone();
         invalid_txt["to_language_code"] = json!("this-language-code-is-way-too-long");
         assert!(validate_webview_tdlib_request(&invalid_txt).is_err());
+    }
+
+    #[test]
+    fn validates_poll_creation_and_stop_requests() {
+        let stop_poll = json!({
+            "@type": "stopPoll",
+            "chat_id": 12345678,
+            "message_id": 987654321,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&stop_poll).is_ok());
+
+        let mut invalid_stop = stop_poll.clone();
+        invalid_stop["message_id"] = json!(-1);
+        assert!(validate_webview_tdlib_request(&invalid_stop).is_err());
+
+        let send_poll = json!({
+            "@type": "sendMessage",
+            "chat_id": 12345678,
+            "input_message_content": {
+                "@type": "inputMessagePoll",
+                "question": {
+                    "@type": "formattedText",
+                    "text": "What is your favorite language?",
+                    "entities": []
+                },
+                "options": [
+                    { "@type": "formattedText", "text": "Rust", "entities": [] },
+                    { "@type": "formattedText", "text": "TypeScript", "entities": [] },
+                    { "@type": "formattedText", "text": "Go", "entities": [] }
+                ],
+                "is_anonymous": true,
+                "type": {
+                    "@type": "pollTypeRegular",
+                    "allows_multiple_answers": true
+                }
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&send_poll).is_ok());
+
+        let send_quiz = json!({
+            "@type": "sendMessage",
+            "chat_id": 12345678,
+            "input_message_content": {
+                "@type": "inputMessagePoll",
+                "question": {
+                    "@type": "formattedText",
+                    "text": "What is the speed of light?",
+                    "entities": []
+                },
+                "options": [
+                    { "@type": "formattedText", "text": "300,000 km/s", "entities": [] },
+                    { "@type": "formattedText", "text": "150,000 km/s", "entities": [] }
+                ],
+                "is_anonymous": false,
+                "type": {
+                    "@type": "pollTypeQuiz",
+                    "correct_option_id": 0,
+                    "explanation": {
+                        "@type": "formattedText",
+                        "text": "Light travels at roughly 299,792 km/s in vacuum.",
+                        "entities": []
+                    }
+                }
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&send_quiz).is_ok());
+
+        let mut invalid_options = send_poll.clone();
+        invalid_options["input_message_content"]["options"] = json!([
+            { "@type": "formattedText", "text": "Only one option", "entities": [] }
+        ]);
+        assert!(validate_webview_tdlib_request(&invalid_options).is_err());
+
+        let mut invalid_quiz_id = send_quiz.clone();
+        invalid_quiz_id["input_message_content"]["type"]["correct_option_id"] = json!(99);
+        assert!(validate_webview_tdlib_request(&invalid_quiz_id).is_err());
     }
 }

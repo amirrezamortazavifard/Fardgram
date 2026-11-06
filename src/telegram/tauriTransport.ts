@@ -150,6 +150,8 @@ import type {
   SetMessageReactionInput,
   GetMessageReactionSendersInput,
   SetPollAnswerInput,
+  SendPollInput,
+  StopPollInput,
   StorageSettings,
   StorageLayer,
   StickerSet,
@@ -2283,6 +2285,14 @@ export class TauriTelegramTransport implements TelegramTransport {
 
   async setPollAnswer(input: SetPollAnswerInput) {
     return this.messageMediaService.setPollAnswer(input);
+  }
+
+  async sendPoll(input: SendPollInput) {
+    return this.messageMediaService.sendPoll(input);
+  }
+
+  async stopPoll(input: StopPollInput) {
+    return this.messageMediaService.stopPoll(input);
   }
 
   async getPinnedMessages(chatId: string) {

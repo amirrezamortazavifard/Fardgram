@@ -61,6 +61,7 @@ import type {
   MessagePermissions,
   MessageReactionSenderPage,
   MessageReactionType,
+  SendPollInput,
   MessageReplyQuote,
   MessageTextEntity,
   ProxySettings,
@@ -384,6 +385,8 @@ export interface TelegramState {
     chatId?: string,
   ) => Promise<MessageReactionSenderPage>;
   setPollAnswer: (messageId: string, optionPositions: number[], chatId?: string) => Promise<boolean>;
+  sendPoll: (input: SendPollInput) => Promise<boolean>;
+  stopPoll: (messageId: string, chatId?: string) => Promise<boolean>;
   loadPinnedMessages: (chatId: string) => Promise<Message[]>;
   pinMessage: (
     messageId: string,

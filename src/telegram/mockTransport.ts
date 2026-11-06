@@ -82,6 +82,9 @@ import type {
   SetChatMessageAutoDeleteTimeInput,
   SetMessageReactionInput,
   SetPollAnswerInput,
+  SendPollInput,
+  StopPollInput,
+  MessagePollOption,
   SharedMediaSearchInput,
   StorageLayer,
   StorageSettings,
@@ -2268,6 +2271,67 @@ export class MockTelegramTransport implements TelegramTransport {
     poll.totalVoterCount = nextTotal;
     poll.canSeeResults = true;
     this.listener?.({ type: "message.upsert", message: clone(message) });
+  }
+
+  async sendPoll(input: SendPollInput): Promise<boolean> {
+    const question = input.question.trim();
+    if (!question || question.length > 255) throw new Error("Poll question must be between 1 and 255 characters");
+    if (input.options.length < 2 || input.options.length > 10) throw new Error("Poll must have between 2 and 10 options");
+    const options: MessagePollOption[] = input.options.map((text, position) => ({
+      id: `option-${position}`,
+      position,
+      text: text.trim(),
+      voterCount: 0,
+      votePercentage: 0,
+      chosen: false,
+      beingChosen: false,
+      correct: input.type === "quiz" && input.correctOptionId === position,
+    }));
+
+    const messageId = `mock_poll_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const pollMessage: Message = {
+      id: messageId,
+      chatId: input.chatId,
+      senderId: this.snapshot.currentUserId ?? "user_self",
+      sentAt: new Date().toISOString(),
+      delivery: "read",
+      outgoing: true,
+      permissions: {
+        canReply: true,
+        canEdit: false,
+        canDeleteOnlyForSelf: true,
+        canDeleteForAllUsers: true,
+        canForward: true,
+      },
+      content: {
+        kind: "poll",
+        pollId: `poll_${messageId}`,
+        question,
+        options,
+        totalVoterCount: 0,
+        type: input.type === "quiz" ? "quiz" : "regular",
+        allowsMultipleAnswers: input.allowsMultipleAnswers === true,
+        allowsRevoting: input.type !== "quiz",
+        isAnonymous: input.isAnonymous !== false,
+        isClosed: false,
+        canSeeResults: false,
+        explanation: input.explanation?.trim() || undefined,
+      },
+    };
+
+    this.snapshot.messages.push(pollMessage);
+    this.listener?.({ type: "message.upsert", message: clone(pollMessage) });
+    return true;
+  }
+
+  async stopPoll(input: StopPollInput): Promise<boolean> {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === input.chatId && item.id === input.messageId,
+    );
+    if (!message || message.content.kind !== "poll") throw new Error("Poll does not exist");
+    message.content.isClosed = true;
+    this.listener?.({ type: "message.upsert", message: clone(message) });
+    return true;
   }
 
   async getPinnedMessages(chatId: string) {

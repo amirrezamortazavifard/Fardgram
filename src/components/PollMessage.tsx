@@ -1,23 +1,35 @@
 import { translate } from "../i18n";
-import { Check, LoaderCircle, RotateCcw, X } from "lucide-react";
+import { Check, LoaderCircle, Lock, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { MessagePollContent } from "../telegram/types";
 import { MessageRichText } from "./MessageRichText";
+import { telegramStore } from "../store/telegramStore";
 
-interface PollMessageProps {
+export interface PollMessageProps {
   poll: MessagePollContent;
   messageId: string;
   chatId?: string;
+  isOutgoing?: boolean;
   highlightQuery?: string;
   onSearchHashtag?: (hashtag: string) => void;
   onAnswer: (messageId: string, optionPositions: number[], chatId?: string) => Promise<boolean>;
+  onStopPoll?: (messageId: string, chatId?: string) => Promise<boolean>;
 }
 
 const chosenPositions = (poll: MessagePollContent) => poll.options
   .filter((option) => option.chosen)
   .map((option) => option.position);
 
-export function PollMessage({ poll, messageId, chatId, highlightQuery, onSearchHashtag, onAnswer }: PollMessageProps) {
+export function PollMessage({
+  poll,
+  messageId,
+  chatId,
+  isOutgoing,
+  highlightQuery,
+  onSearchHashtag,
+  onAnswer,
+  onStopPoll,
+}: PollMessageProps) {
   const serverSelection = useMemo(() => chosenPositions(poll), [poll]);
   const [selection, setSelection] = useState(serverSelection);
   const [pending, setPending] = useState(false);
@@ -36,8 +48,25 @@ export function PollMessage({ poll, messageId, chatId, highlightQuery, onSearchH
     setPending(false);
   };
 
+  const handleStopPoll = async () => {
+    if (pending || poll.isClosed) return;
+    setPending(true);
+    if (onStopPoll) {
+      await onStopPoll(messageId, chatId);
+    } else {
+      await telegramStore.getState().stopPoll(messageId, chatId ?? "");
+    }
+    setPending(false);
+  };
+
+  const voterCountText = useMemo(() => {
+    const count = poll.totalVoterCount;
+    const label = count === 1 ? translate("1 vote") : translate("{{count}} votes", { count: String(count) });
+    return poll.isClosed ? `${label} · ${translate("Final Results")}` : label;
+  }, [poll.totalVoterCount, poll.isClosed]);
+
   return (
-    <section className="poll-message" aria-label={poll.type === "quiz" ? translate("测验") : translate("投票")}>
+    <section className="poll-message" aria-label={poll.type === "quiz" ? translate("Quiz") : translate("Poll")}>
       <header>
         <MessageRichText
           text={poll.question}
@@ -45,7 +74,13 @@ export function PollMessage({ poll, messageId, chatId, highlightQuery, onSearchH
           highlightQuery={highlightQuery}
           onSearchHashtag={onSearchHashtag}
         />
-        <small>{poll.type === "quiz" ? translate("测验") : poll.isAnonymous ? translate("匿名投票") : translate("公开投票")}</small>
+        <small>
+          {poll.type === "quiz"
+            ? translate("Quiz")
+            : poll.isAnonymous
+              ? translate("Anonymous Poll")
+              : translate("Public Poll")}
+        </small>
       </header>
       <div className="poll-options">
         {poll.options.map((option) => {
@@ -67,7 +102,7 @@ export function PollMessage({ poll, messageId, chatId, highlightQuery, onSearchH
               type="button"
               key={option.id}
               aria-pressed={selected}
-              aria-label={`${option.text}${showResults ? `，${option.votePercentage}%` : ""}`}
+              aria-label={`${option.text}${showResults ? `, ${option.votePercentage}%` : ""}`}
               disabled={!canVote || optionPending}
               onClick={choose}
               style={{ "--poll-percentage": `${option.votePercentage}%` } as CSSProperties}
@@ -100,7 +135,7 @@ export function PollMessage({ poll, messageId, chatId, highlightQuery, onSearchH
           )}
           onClick={() => void submit(selection)}
         >
-          {pending && <LoaderCircle className="spin" size={14} />}{translate("提交投票")}</button>
+          {pending && <LoaderCircle className="spin" size={14} />}{translate("Vote")}</button>
       )}
       {poll.explanation && (
         <div className="poll-explanation">
@@ -113,11 +148,24 @@ export function PollMessage({ poll, messageId, chatId, highlightQuery, onSearchH
         </div>
       )}
       <footer>
-        <span>{translate("{{value0}} 票", { value0: poll.totalVoterCount })}{poll.isClosed ? translate(" · 已结束") : ""}</span>
+        <span>{voterCountText}</span>
         {poll.restrictionReason && <span>{poll.restrictionReason}</span>}
         {alreadyVoted && poll.allowsRevoting && !poll.isClosed && (
           <button type="button" disabled={pending} onClick={() => void submit([])}>
-            <RotateCcw size={13} />{translate("撤回投票")}</button>
+            <RotateCcw size={13} />{translate("Retract Vote")}</button>
+        )}
+        {isOutgoing && !poll.isClosed && (
+          <button
+            type="button"
+            className="poll-close-btn"
+            disabled={pending}
+            onClick={() => void handleStopPoll()}
+            title="Close poll and stop accepting answers"
+            aria-label="Close Poll"
+          >
+            <Lock size={12} />
+            {translate("Close Poll")}
+          </button>
         )}
       </footer>
     </section>

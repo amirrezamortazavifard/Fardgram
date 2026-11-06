@@ -1352,6 +1352,23 @@ export interface SetPollAnswerInput {
   optionPositions: number[];
 }
 
+export interface SendPollInput {
+  chatId: string;
+  question: string;
+  options: string[];
+  isAnonymous?: boolean;
+  type?: "regular" | "quiz";
+  allowsMultipleAnswers?: boolean;
+  correctOptionId?: number;
+  explanation?: string;
+  replyToMessageId?: string;
+}
+
+export interface StopPollInput {
+  chatId: string;
+  messageId: string;
+}
+
 export interface PinMessageInput {
   chatId: string;
   messageId: string;
