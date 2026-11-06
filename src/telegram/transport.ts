@@ -269,6 +269,8 @@ export interface TelegramTransport {
   searchSavedMessages?(input: { query?: string; tag?: string; topicId?: number; limit?: number }): Promise<Message[]>;
   recognizeSpeech?(chatId: string, messageId: string): Promise<import("./types").SpeechRecognitionResult>;
   rateSpeechRecognition?(chatId: string, messageId: string, isGood: boolean): Promise<void>;
+  translateMessageText?(chatId: string, messageId: string, toLanguageCode: string): Promise<import("./types").TranslatedText>;
+  translateText?(text: string, entities: import("./types").MessageTextEntity[] | undefined, toLanguageCode: string): Promise<import("./types").TranslatedText>;
   forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult>;
   sendMediaCopy(input: SendMediaCopyInput): Promise<void>;
   setChatDraft(input: SetChatDraftInput): Promise<void>;

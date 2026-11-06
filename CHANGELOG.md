@@ -6,6 +6,23 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Native Message & Conversation Translation (FG-013)**: Official Telegram TDLib translation integration with formatted entity preservation, bidirectional RTL/LTR support, and interactive toggle UI:
+  - **Telegram-Native TDLib Translation**: Integrated `translateText` and `translateMessageText` methods with strict parameter bounds verification in `src-tauri/src/telegram/security.rs` (`chat_id`, `message_id`, non-empty target language codes up to 16 characters, formatted text up to 8192 characters).
+  - **Formatted Entity Preservation**: Preserved markdown entities, bold, italic, code blocks, spoilers, and hyperlinks across translated text through `mapTdFormattedText`.
+  - **Reversible Toggle & Attribution UX in Message Bubble**:
+    - Contextual translation banner (`message-translation-banner`) displaying language attribution (`Translated to {Language}`).
+    - Reversible toggle button ("Show original" / "Show translation") allowing instant switching between translated and original text.
+    - Full bidirectional text direction support (`dir="auto"`) ensuring seamless rendering of RTL languages (Persian, Arabic, Hebrew, Urdu) and LTR languages (English, German, French, etc.).
+    - Active translation indicator spinner (`Translating message...`) when a message is actively undergoing translation.
+  - **Message Context Menu Integration**: Added "Translate" action to `MessageActionMenu` enabling direct translation of any individual message.
+  - **Conversation Translation Bar (`ConversationTranslationBar`)**:
+    - Responsive top conversation header banner with target language dropdown supporting 18 international languages.
+    - "Translate Chat" trigger button to translate visible conversation messages.
+    - Auto-translate chat toggle with persistence in user preferences and store state.
+    - Close button with dismissal persistence.
+    - Quick-toggle translation button in conversation header actions and chat context menu ("Translate Chat").
+  - **Dual-Theme Design Parity**: 100% professional English UI copy with strict light and dark mode styling parity, high-contrast borders, and zero hardcoded background styles.
+  - **Privacy & Security**: Zero unconsented third-party cloud audio or text streaming; translation flows strictly through official TDLib channels.
 - **Voice & Video Note Transcription & Transcript UX (FG-012)**: Telegram-native speech-to-text recognition with interactive transcript UI for voice messages and video notes:
   - **Telegram-Native TDLib Speech Recognition**: Integrated `recognizeSpeech` and `rateSpeechRecognition` TDLib methods with security request whitelist validation in `src-tauri/src/telegram/security.rs`.
   - **Asynchronous Lifecycle & States**: Reactive mapping of TDLib's `speechRecognitionResultPending` (with live partial text streaming), `speechRecognitionResultText` (completed full transcript), and `speechRecognitionResultError` (with contextual retry actions) across voice and video note message media.

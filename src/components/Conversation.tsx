@@ -34,6 +34,7 @@ import {
   Pin,
   Play,
   MessageCircle,
+  Languages,
   Sparkles,
   X,
 } from "lucide-react";
@@ -129,6 +130,7 @@ import { motionLifecycleTiming } from "../utils/motionTokens";
 import { recentMentionUserIdsFor } from "../utils/mentionSuggestions";
 import { ForumTopicStrip } from "./ForumTopicStrip";
 import { SavedMessagesOrganizer } from "./SavedMessagesOrganizer";
+import { ConversationTranslationBar } from "./ConversationTranslationBar";
 import { ChatExportDialog } from "./Export/ChatExportDialog";
 import { copyMessageContent, writeClipboardText } from "../utils/clipboard";
 import { formatSelectedMessages } from "../utils/messageClipboard";
@@ -610,6 +612,9 @@ export function Conversation({
   const rescheduleMessage = useTelegramStore(state => state.rescheduleMessage);
   const deleteScheduledMessage = useTelegramStore(state => state.deleteScheduledMessage);
   const openMessageContent = useTelegramStore(state => state.openMessageContent);
+  const translateMessage = useTelegramStore((state) => state.translateMessage);
+  const chatAutoTranslate = useTelegramStore((state) => state.chatAutoTranslate);
+  const [showTranslationBar, setShowTranslationBar] = useState(false);
   const [showScheduledModal, setShowScheduledModal] = useState(false);
   const allowSendWhenOnline = Boolean(chat && chat.kind === "direct" && chat.peerId && !users.get(chat.peerId)?.isBot && chat.peerId !== currentUserId);
   const attentionNavigationRef = useRef(0);
@@ -2512,6 +2517,10 @@ export function Conversation({
                       setChatMenuOpen(false);
                       setExportDialogOpen(true);
                     }}
+                    onToggleTranslation={() => {
+                      setChatMenuOpen(false);
+                      setShowTranslationBar((prev) => !prev);
+                    }}
                     onStartSelection={() => forwarding.startSelection()}
                     onOpenAutoDelete={() => {
                       setChatMenuOpen(false);
@@ -2584,6 +2593,15 @@ export function Conversation({
                 </button>
               )}
               <button
+                className={`icon-button ${showTranslationBar || chatAutoTranslate.get(chat.id) ? "is-active text-blue-500" : ""}`}
+                type="button"
+                aria-label={translate("Translate Chat")}
+                title={translate("Translate Chat")}
+                onClick={() => setShowTranslationBar((prev) => !prev)}
+              >
+                <Languages size={19} strokeWidth={1.8} />
+              </button>
+              <button
                 ref={chatMenuButtonRef}
                 className={`icon-button ${chatMenuOpen ? "is-active" : ""}`}
                 type="button"
@@ -2612,6 +2630,10 @@ export function Conversation({
                       setChatMenuOpen(false);
                       setExportDialogOpen(true);
                     }}
+                    onToggleTranslation={() => {
+                      setChatMenuOpen(false);
+                      setShowTranslationBar((prev) => !prev);
+                    }}
                     onStartSelection={() => forwarding.startSelection()}
                     onOpenAutoDelete={() => {
                       setChatMenuOpen(false);
@@ -2636,6 +2658,13 @@ export function Conversation({
 
       {chat.kind === "saved" && !selectionMode && !pinnedViewOpen && (
         <SavedMessagesOrganizer chat={chat} />
+      )}
+
+      {(showTranslationBar || chatAutoTranslate.get(chat.id)) && !selectionMode && !pinnedViewOpen && (
+        <ConversationTranslationBar
+          chatId={chat.id}
+          onClose={() => setShowTranslationBar(false)}
+        />
       )}
 
       <div inert={presentationBlocked || Boolean(discussionPost)} className={`message-list-shell ${positioning ? "is-positioning" : ""} ${pinnedViewOpen ? "pinned-message-view" : ""} ${pinnedBannerVisible ? "has-pinned-message-banner" : ""}`}>
@@ -3237,6 +3266,10 @@ export function Conversation({
           onLoadPermissions={onLoadMessageProperties}
           keyboardNavigation={actionMenu.keyboardNavigation}
           onReply={() => startReply(actionMessageForMenu, actionMenu.replyQuote)}
+          onTranslate={() => {
+            closeActionMenu(false);
+            void translateMessage(actionMessageForMenu.chatId, actionMessageForMenu.id);
+          }}
           onEdit={() => startEditing(actionMessageForMenu)}
           onForward={() => openForwardDialog(actionAlbumMessageIds.length > 1 ? actionAlbumMessageIds : [actionMessageForMenu.id])}
           forwardTargets={actionForwardTargets}
@@ -3280,16 +3313,6 @@ export function Conversation({
               }
             : undefined}
           onCopy={() => void copyMessage(actionMessageForMenu)}
-          onTranslate={
-            (actionMessageForMenu.content.kind === "text" && actionMessageForMenu.content.text)
-              ? () => {
-                  const text = (actionMessageForMenu.content as { kind: "text"; text: string }).text;
-                  closeActionMenu(false);
-                  // Open translate overlay via custom event
-                  document.dispatchEvent(new CustomEvent("fardgram:translate", { detail: { text } }));
-                }
-              : undefined
-          }
           onReaction={onSetMessageReaction
             ? (emoji) => {
                 const isChosen = actionMessageForMenu.interaction?.reactions.find(

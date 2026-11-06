@@ -12,6 +12,7 @@ import {
   Flame,
   FolderOpen,
   Forward,
+  Globe,
   Image as ImageIcon,
   LoaderCircle,
   Save,
@@ -56,6 +57,8 @@ import { highlightedText } from "../utils/textHighlight";
 import { isRtlText } from "../utils/textDirection";
 import { AudioPlayer } from "./AudioPlayer";
 import { AudioTranscriptView } from "./AudioTranscriptView";
+import { useTelegramStore } from "../store/telegramStore";
+import { getLanguageName } from "../telegram/translationLanguages";
 import {
   nextVisibleMediaFileId,
   shouldAutoDownload,
@@ -175,6 +178,7 @@ export interface MessageBubbleProps {
   localBlockGroupId?: string;
   onRevealLocallyBlocked?: () => void;
   blockedReactionSenderIds?: ReadonlySet<string>;
+  isTranslating?: boolean;
 }
 
 function MessageBubbleComponent({
@@ -244,6 +248,7 @@ function MessageBubbleComponent({
   localBlockGroupId,
   onRevealLocallyBlocked,
   blockedReactionSenderIds = new Set(),
+  isTranslating: propTranslating,
 }: MessageBubbleProps) {
   useTranslation();
   const entranceKindRef = useRef<MessageEntrance | undefined>(undefined);
@@ -326,6 +331,11 @@ function MessageBubbleComponent({
   const showSender = !albumItem && !message.outgoing && !forwardLabel && (
     channelPost || (!isSticker && isGroupFirst(groupPosition))
   );
+  const toggleTranslation = useTelegramStore((state) => state.toggleMessageTranslation);
+  const storeTranslating = useTelegramStore((state) => state.translatingMessageIds.has(message.id));
+  const isTranslating = propTranslating !== undefined ? propTranslating : storeTranslating;
+  const hasTranslation = Boolean(message.translation);
+  const showingTranslation = Boolean(message.translation && message.showTranslation !== false);
   const fullMediaSource = content.kind === "media" ? localMediaSource(content.localPath) : undefined;
   const localPreviewSource = content.kind === "media"
     ? localMediaSource(content.thumbnailPath)
@@ -691,27 +701,68 @@ function MessageBubbleComponent({
       channelAuthor={channelAuthor} onOpenAuthor={!forwardLabel ? onOpenForwardSource : undefined} onRetry={onRetry} />
   );
 
-  const visualCaption = content.kind === "media" && hasCaption && content.caption ? (
-    <MessageTextFlow
-      className="photo-caption-flow"
-      dir={isRtlText(content.caption) ? "rtl" : "ltr"}
-      forceWrapped={channelPost}
-      layoutSource={content}
-      layoutVersion={textLayoutVersion}
+  const captionText = showingTranslation && message.translation
+    ? message.translation.text
+    : content.kind === "media" ? content.caption ?? "" : "";
+  const captionEntities = showingTranslation && message.translation
+    ? message.translation.entities
+    : content.kind === "media" ? content.captionEntities : undefined;
+
+  const translationBanner = hasTranslation ? (
+    <div
+      className={`message-translation-banner flex items-center justify-between gap-2 px-2.5 py-1 mb-1.5 rounded-lg text-xs font-medium ${
+        showingTranslation
+          ? "bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-900/40 text-blue-700 dark:text-blue-300"
+          : "bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 text-slate-500 dark:text-slate-400"
+      }`}
     >
-      <MessageRichText
-        chatId={message.chatId}
-        className="photo-caption"
-        text={content.caption}
-        entities={content.captionEntities}
-        highlightQuery={searchQuery}
-        onOpenMention={onOpenMention}
-        onSearchHashtag={onSearchHashtag}
-        onCollapseQuote={collapseQuote}
-        onExpandQuote={onExpandQuote}
-      />
-      {!showReactionFooter && messageMeta}
-    </MessageTextFlow>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <Globe className="w-3.5 h-3.5 flex-shrink-0 text-blue-500" />
+        <span className="truncate">
+          {showingTranslation
+            ? `${translate("Translated to")} ${getLanguageName(message.translation!.toLanguageCode)}`
+            : translate("Original text")}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => toggleTranslation(message.id, message.chatId)}
+        className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline flex-shrink-0"
+      >
+        {showingTranslation ? translate("Show original") : translate("Show translation")}
+      </button>
+    </div>
+  ) : isTranslating ? (
+    <div className="flex items-center gap-1.5 px-2.5 py-1 mb-1.5 rounded-lg bg-blue-50/60 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 text-xs font-medium animate-pulse">
+      <LoaderCircle className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+      <span>{translate("Translating message...")}</span>
+    </div>
+  ) : null;
+
+  const visualCaption = content.kind === "media" && (hasCaption || hasTranslation) && (captionText || content.caption) ? (
+    <div className="visual-caption-container">
+      {translationBanner}
+      <MessageTextFlow
+        className="photo-caption-flow"
+        dir={isRtlText(captionText) ? "rtl" : "ltr"}
+        forceWrapped={channelPost}
+        layoutSource={content}
+        layoutVersion={textLayoutVersion}
+      >
+        <MessageRichText
+          chatId={message.chatId}
+          className="photo-caption"
+          text={captionText}
+          entities={captionEntities}
+          highlightQuery={searchQuery}
+          onOpenMention={onOpenMention}
+          onSearchHashtag={onSearchHashtag}
+          onCollapseQuote={collapseQuote}
+          onExpandQuote={onExpandQuote}
+        />
+        {!showReactionFooter && messageMeta}
+      </MessageTextFlow>
+    </div>
   ) : null;
 
   return (
@@ -830,23 +881,25 @@ function MessageBubbleComponent({
             </button>
           )}
           {content.kind === "text" ? (
-            <MessageTextFlow
-              dir={isRtlText(content.text) ? "rtl" : "ltr"}
-              largeEmoji={isLargeEmojiText(content.text)}
-              forceWrapped={channelPost}
-              layoutSource={content}
-              layoutVersion={textLayoutVersion}
-            >
-              <MessageRichText
-                chatId={message.chatId}
-                text={content.text}
-                entities={content.entities}
-                highlightQuery={searchQuery}
-                onOpenMention={onOpenMention}
-                onSearchHashtag={onSearchHashtag}
-                onCollapseQuote={collapseQuote}
-                onExpandQuote={onExpandQuote}
-              />
+            <>
+              {translationBanner}
+              <MessageTextFlow
+                dir={isRtlText(showingTranslation && message.translation ? message.translation.text : content.text) ? "rtl" : "ltr"}
+                largeEmoji={!showingTranslation && isLargeEmojiText(content.text)}
+                forceWrapped={channelPost}
+                layoutSource={content}
+                layoutVersion={textLayoutVersion}
+              >
+                <MessageRichText
+                  chatId={message.chatId}
+                  text={showingTranslation && message.translation ? message.translation.text : content.text}
+                  entities={showingTranslation && message.translation ? message.translation.entities : content.entities}
+                  highlightQuery={searchQuery}
+                  onOpenMention={onOpenMention}
+                  onSearchHashtag={onSearchHashtag}
+                  onCollapseQuote={collapseQuote}
+                  onExpandQuote={onExpandQuote}
+                />
               {message.isPending && (
                 content.text ? (
                   <span className="pending-message-caret" aria-label={translate("机器人仍在生成")}><span /></span>
@@ -857,6 +910,7 @@ function MessageBubbleComponent({
               )}
               {!showReactionFooter && messageMeta}
             </MessageTextFlow>
+            </>
           ) : content.kind === "rich" ? (
             <RichMessageContent
               blocks={content.blocks}
@@ -1147,12 +1201,13 @@ function MessageBubbleComponent({
                     : undefined}
                 />
               </div>
-              {content.caption && (
+              {translationBanner}
+              {(content.caption || hasTranslation) && (
                 <MessageRichText
                   chatId={message.chatId}
                   className="attachment-caption"
-                  text={content.caption}
-                  entities={content.captionEntities}
+                  text={showingTranslation && message.translation ? message.translation.text : content.caption ?? ""}
+                  entities={showingTranslation && message.translation ? message.translation.entities : content.captionEntities}
                   highlightQuery={searchQuery}
                   onOpenMention={onOpenMention}
                   onSearchHashtag={onSearchHashtag}
@@ -1207,12 +1262,13 @@ function MessageBubbleComponent({
                   )}
                 </span>
               </div>
-              {content.caption && (
+              {translationBanner}
+              {(content.caption || hasTranslation) && (
                 <MessageRichText
                   chatId={message.chatId}
                   className="attachment-caption"
-                  text={content.caption}
-                  entities={content.captionEntities}
+                  text={showingTranslation && message.translation ? message.translation.text : content.caption ?? ""}
+                  entities={showingTranslation && message.translation ? message.translation.entities : content.captionEntities}
                   highlightQuery={searchQuery}
                   onOpenMention={onOpenMention}
                   onSearchHashtag={onSearchHashtag}

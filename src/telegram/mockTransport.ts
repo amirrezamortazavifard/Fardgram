@@ -2875,6 +2875,40 @@ export class MockTelegramTransport implements TelegramTransport {
     }
   }
 
+  async translateMessageText(chatId: string, messageId: string, toLanguageCode: string): Promise<import("./types").TranslatedText> {
+    const message = this.snapshot.messages.find((m) => m.chatId === chatId && m.id === messageId);
+    let originalText = "Mock message text";
+    let originalEntities: import("./types").MessageTextEntity[] | undefined;
+    if (message) {
+      if (message.content.kind === "text") {
+        originalText = message.content.text;
+        originalEntities = message.content.entities;
+      } else if (message.content.kind === "media" || message.content.kind === "file") {
+        originalText = message.content.caption || "Media description";
+        originalEntities = message.content.captionEntities;
+      }
+    }
+    const translated: import("./types").TranslatedText = {
+      text: `[Translated to ${toLanguageCode}]: ${originalText}`,
+      entities: originalEntities,
+      toLanguageCode,
+    };
+    if (message) {
+      message.translation = translated;
+      message.showTranslation = true;
+      this.listener?.({ type: "message.upsert", message: clone(message) });
+    }
+    return translated;
+  }
+
+  async translateText(text: string, entities: import("./types").MessageTextEntity[] | undefined, toLanguageCode: string): Promise<import("./types").TranslatedText> {
+    return {
+      text: `[Translated to ${toLanguageCode}]: ${text}`,
+      entities,
+      toLanguageCode,
+    };
+  }
+
   async forwardMessages({ fromChatId, toChatId, toTopicId, messageIds }: ForwardMessagesInput): Promise<ForwardMessagesResult> {
     const uniqueMessageIds = [...new Set(messageIds)];
     const selected = uniqueMessageIds

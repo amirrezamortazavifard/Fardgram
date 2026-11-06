@@ -1185,6 +1185,10 @@ export const createTelegramStore = (
         savedMessagesViewMode: "all",
         savedMessagesLoading: false,
         savedMessagesError: undefined,
+        translationTargetLanguage: "en",
+        doNotTranslateLanguages: [],
+        chatAutoTranslate: new Map(),
+        translatingMessageIds: new Set(),
         folderManagementPending: false,
         chatCreationPending: false,
         chatFilter: "main",
@@ -2775,6 +2779,10 @@ export const createTelegramStore = (
       savedMessagesViewMode: "all",
       savedMessagesLoading: false,
       savedMessagesError: undefined,
+      translationTargetLanguage: "en",
+      doNotTranslateLanguages: [],
+      chatAutoTranslate: new Map(),
+      translatingMessageIds: new Set(),
       folderManagementPending: false,
       chatCreationPending: false,
 
@@ -6327,6 +6335,96 @@ export const createTelegramStore = (
           set({ operationError: errorMessage(error, translate("Failed to rate transcription")) });
           return false;
         }
+      },
+
+      translateMessage: async (chatId, messageId, toLanguageCode) => {
+        const targetLang = toLanguageCode ?? get().translationTargetLanguage ?? "en";
+        const location = messageLocation(messageId, chatId);
+        if (!location) return false;
+
+        const nextTranslating = new Set(get().translatingMessageIds);
+        nextTranslating.add(messageId);
+        set({ translatingMessageIds: nextTranslating });
+
+        try {
+          const res = await transport.translateMessageText?.(chatId, messageId, targetLang);
+          if (res) {
+            const loc = messageLocation(messageId, chatId);
+            if (loc) {
+              const nextMsg: Message = {
+                ...loc.message,
+                translation: res,
+                showTranslation: true,
+              };
+              const nextMessages = new Map(get().messages);
+              nextMessages.set(chatId, upsertMessage(loc.messages, nextMsg));
+              const finalTranslating = new Set(get().translatingMessageIds);
+              finalTranslating.delete(messageId);
+              set({
+                messages: nextMessages,
+                translatingMessageIds: finalTranslating,
+              });
+              return true;
+            }
+          }
+          const finalTranslating = new Set(get().translatingMessageIds);
+          finalTranslating.delete(messageId);
+          set({ translatingMessageIds: finalTranslating });
+          return false;
+        } catch (error) {
+          const finalTranslating = new Set(get().translatingMessageIds);
+          finalTranslating.delete(messageId);
+          set({
+            translatingMessageIds: finalTranslating,
+            operationError: errorMessage(error, translate("Failed to translate message")),
+          });
+          return false;
+        }
+      },
+
+      toggleMessageTranslation: (messageId, chatId) => {
+        const location = messageLocation(messageId, chatId);
+        if (!location || !location.message.translation) return;
+        const currentShow = location.message.showTranslation !== false;
+        const nextMsg: Message = {
+          ...location.message,
+          showTranslation: !currentShow,
+        };
+        const nextMessages = new Map(get().messages);
+        nextMessages.set(location.chatId, upsertMessage(location.messages, nextMsg));
+        set({ messages: nextMessages });
+      },
+
+      setTranslationTargetLanguage: (languageCode) => {
+        set({ translationTargetLanguage: languageCode });
+      },
+
+      toggleChatAutoTranslate: async (chatId, enabled) => {
+        const currentMap = new Map(get().chatAutoTranslate);
+        const nextVal = enabled !== undefined ? enabled : !currentMap.get(chatId);
+        currentMap.set(chatId, nextVal);
+        set({ chatAutoTranslate: currentMap });
+
+        if (nextVal) {
+          const chatMessages = get().messages.get(chatId) ?? [];
+          const targetLang = get().translationTargetLanguage ?? "en";
+          const promises = chatMessages
+            .filter((msg) => !msg.translation)
+            .map((msg) => get().translateMessage(chatId, msg.id, targetLang));
+          await Promise.all(promises);
+        }
+      },
+
+      addDoNotTranslateLanguage: (languageCode) => {
+        const current = get().doNotTranslateLanguages;
+        if (!current.includes(languageCode)) {
+          set({ doNotTranslateLanguages: [...current, languageCode] });
+        }
+      },
+
+      removeDoNotTranslateLanguage: (languageCode) => {
+        const current = get().doNotTranslateLanguages;
+        set({ doNotTranslateLanguages: current.filter((l) => l !== languageCode) });
       },
 
       clearError: () => set({ error: undefined }),

@@ -6,6 +6,7 @@ import {
   BellOff,
   Clock3,
   Download,
+  Languages,
   LoaderCircle,
   ListChecks,
   Pin,
@@ -27,6 +28,7 @@ interface ChatActionMenuProps {
   onOpenPinned: () => void;
   onOpenMessageSearch: () => void;
   onOpenExport?: () => void;
+  onToggleTranslation?: () => void;
   onStartSelection: () => void;
   onOpenAutoDelete: () => void;
   onClose: () => void;
@@ -45,6 +47,7 @@ export function ChatActionMenu({
   onOpenPinned,
   onOpenMessageSearch,
   onOpenExport,
+  onToggleTranslation,
   onStartSelection,
   onOpenAutoDelete,
   onClose,
@@ -122,6 +125,20 @@ export function ChatActionMenu({
         <Download size={16} strokeWidth={1.9} />
         <span>Export chat history</span>
       </button>
+      {onToggleTranslation && (
+        <button
+          type="button"
+          role="menuitem"
+          disabled={busy}
+          onClick={() => {
+            onClose();
+            onToggleTranslation();
+          }}
+        >
+          <Languages size={16} strokeWidth={1.9} />
+          <span>{translate("Translate Chat")}</span>
+        </button>
+      )}
       <button
         type="button"
         role="menuitem"

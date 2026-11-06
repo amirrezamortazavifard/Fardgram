@@ -2,7 +2,7 @@ import { chatReportRequest, mapChatReportResult } from "./chatReport";
 import { ChatViewSession } from "./chatViewSession";
 import { mapChatInvitePreview, mapChatJoinResult } from "./chatJoin";
 import { telegramInviteLink } from "./telegramLinks";
-import type { DiscoveredProxy, JoinChatInput, JoinChatResult, SpeechRecognitionResult } from "./types";
+import type { DiscoveredProxy, JoinChatInput, JoinChatResult, MessageTextEntity, SpeechRecognitionResult, TranslatedText } from "./types";
 import { isInDeletedHistory } from "./deletedHistory";
 import { translate } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
@@ -25,6 +25,7 @@ import {
   mapTdSavedMessagesTag,
   mapTdSavedMessagesTopic,
   mapTdSpeechRecognitionResult,
+  mapTdFormattedText,
   messageSenderId,
   mapTdUser,
   tdId,
@@ -2735,6 +2736,39 @@ export class TauriTelegramTransport implements TelegramTransport {
       message_id: numericId(messageId),
       is_good: isGood,
     });
+  }
+
+  async translateMessageText(chatId: string, messageId: string, toLanguageCode: string): Promise<TranslatedText> {
+    const raw = await this.request({
+      "@type": "translateMessageText",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
+      to_language_code: toLanguageCode,
+    });
+    const mapped = mapTdFormattedText(raw);
+    return {
+      text: mapped.text,
+      entities: mapped.entities,
+      toLanguageCode,
+    };
+  }
+
+  async translateText(text: string, entities: MessageTextEntity[] | undefined, toLanguageCode: string): Promise<TranslatedText> {
+    const raw = await this.request({
+      "@type": "translateText",
+      text: {
+        "@type": "formattedText",
+        text,
+        entities: entities ?? [],
+      },
+      to_language_code: toLanguageCode,
+    });
+    const mapped = mapTdFormattedText(raw);
+    return {
+      text: mapped.text,
+      entities: mapped.entities,
+      toLanguageCode,
+    };
   }
 
   async forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult> {

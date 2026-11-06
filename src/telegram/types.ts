@@ -856,6 +856,13 @@ export interface SpeechRecognitionResult {
   ratedGood?: boolean;
 }
 
+export interface TranslatedText {
+  text: string;
+  entities?: MessageTextEntity[];
+  toLanguageCode: string;
+  fromLanguageCode?: string;
+}
+
 interface TransferableMessageContent {
   fileName: string;
   sizeLabel: string;
@@ -1098,6 +1105,8 @@ export interface Message {
   containsUnreadReaction?: boolean;
   unreadReactions?: UnreadMessageReaction[];
   replyMarkup?: MessageInlineKeyboard;
+  translation?: TranslatedText;
+  showTranslation?: boolean;
   content: MessageContent;
 }
 

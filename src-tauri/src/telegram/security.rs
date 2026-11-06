@@ -185,6 +185,8 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "setSavedMessagesTagLabel",
     "recognizeSpeech",
     "rateSpeechRecognition",
+    "translateText",
+    "translateMessageText",
 ];
 
 pub(super) fn request_type_from_extra(extra: &str) -> Option<&str> {
@@ -421,6 +423,43 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
             }
             if !request.get("is_good").map_or(false, Value::is_boolean) {
                 return Err("Missing or invalid is_good boolean".to_string());
+            }
+        }
+        "translateText" => {
+            let text_obj = request
+                .get("text")
+                .and_then(Value::as_object)
+                .ok_or_else(|| "Missing formatted text object".to_string())?;
+            let text = text_obj
+                .get("text")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing text string".to_string())?;
+            if text.chars().count() > 8192 {
+                return Err("Text exceeds maximum translation length".to_string());
+            }
+            let to_lang = request
+                .get("to_language_code")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing to_language_code".to_string())?;
+            if to_lang.is_empty() || to_lang.len() > 16 {
+                return Err("Invalid to_language_code".to_string());
+            }
+        }
+        "translateMessageText" => {
+            validate_nonzero_identifier(request, "chat_id")?;
+            let message_id = request
+                .get("message_id")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| "Missing message_id".to_string())?;
+            if message_id <= 0 {
+                return Err("Invalid message_id".to_string());
+            }
+            let to_lang = request
+                .get("to_language_code")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing to_language_code".to_string())?;
+            if to_lang.is_empty() || to_lang.len() > 16 {
+                return Err("Invalid to_language_code".to_string());
             }
         }
         "joinChat" | "openChat" | "closeChat" => {
@@ -4021,5 +4060,41 @@ mod tests {
         let mut invalid_rate = rate.clone();
         invalid_rate["is_good"] = json!("not-a-boolean");
         assert!(validate_webview_tdlib_request(&invalid_rate).is_err());
+    }
+
+    #[test]
+    fn validates_translation_requests() {
+        let translate_msg = json!({
+            "@type": "translateMessageText",
+            "chat_id": 12345678,
+            "message_id": 987654321,
+            "to_language_code": "en",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&translate_msg).is_ok());
+
+        let mut invalid_msg = translate_msg.clone();
+        invalid_msg["message_id"] = json!(-1);
+        assert!(validate_webview_tdlib_request(&invalid_msg).is_err());
+
+        let mut invalid_lang = translate_msg.clone();
+        invalid_lang["to_language_code"] = json!("");
+        assert!(validate_webview_tdlib_request(&invalid_lang).is_err());
+
+        let translate_txt = json!({
+            "@type": "translateText",
+            "text": {
+                "@type": "formattedText",
+                "text": "سلام دنیا",
+                "entities": []
+            },
+            "to_language_code": "en",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&translate_txt).is_ok());
+
+        let mut invalid_txt = translate_txt.clone();
+        invalid_txt["to_language_code"] = json!("this-language-code-is-way-too-long");
+        assert!(validate_webview_tdlib_request(&invalid_txt).is_err());
     }
 }

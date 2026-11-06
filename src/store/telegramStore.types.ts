@@ -211,6 +211,10 @@ export interface TelegramState {
   savedMessagesViewMode: "all" | "byChats";
   savedMessagesLoading: boolean;
   savedMessagesError?: string;
+  translationTargetLanguage: string;
+  doNotTranslateLanguages: string[];
+  chatAutoTranslate: Map<string, boolean>;
+  translatingMessageIds: Set<string>;
   initialize: (options?: {
     settingsOnly?: boolean;
     preserveAccountPending?: boolean;
@@ -519,6 +523,12 @@ export interface TelegramState {
   openExportFolder: (path: string) => Promise<void>;
   recognizeSpeech: (chatId: string, messageId: string) => Promise<boolean>;
   rateSpeechRecognition: (chatId: string, messageId: string, isGood: boolean) => Promise<boolean>;
+  translateMessage: (chatId: string, messageId: string, toLanguageCode?: string) => Promise<boolean>;
+  toggleMessageTranslation: (messageId: string, chatId?: string) => void;
+  setTranslationTargetLanguage: (languageCode: string) => void;
+  toggleChatAutoTranslate: (chatId: string, enabled?: boolean) => Promise<void>;
+  addDoNotTranslateLanguage: (languageCode: string) => void;
+  removeDoNotTranslateLanguage: (languageCode: string) => void;
   clearError: () => void;
   clearOperationError: () => void;
 }
