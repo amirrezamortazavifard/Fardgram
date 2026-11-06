@@ -26,6 +26,10 @@ import {
   mapTdSavedMessagesTopic,
   mapTdSpeechRecognitionResult,
   mapTdFormattedText,
+  mapTdStarTransaction,
+  mapTdStarsTopupOption,
+  mapTdStarRevenueStatus,
+  mapTdGift,
   messageSenderId,
   mapTdUser,
   tdId,
@@ -2750,6 +2754,95 @@ export class TauriTelegramTransport implements TelegramTransport {
       message_id: numericId(messageId),
       is_good: isGood,
     });
+  }
+
+  async getStarTransactions(offset = "", limit = 20): Promise<{ transactions: import("./types").StarTransaction[]; starAmount: number; nextOffset?: string }> {
+    try {
+      const res = await this.request({
+        "@type": "getStarTransactions",
+        offset,
+        limit,
+      });
+      const starAmount = tdNumber(res?.star_amount) ?? 0;
+      const transactions = Array.isArray(res?.transactions)
+        ? res.transactions.map((t: unknown) => mapTdStarTransaction(t)).filter((t): t is import("./types").StarTransaction => Boolean(t))
+        : [];
+      const nextOffset = typeof res?.next_offset === "string" ? res.next_offset : "";
+      return { transactions, starAmount, nextOffset };
+    } catch {
+      return { transactions: [], starAmount: 0, nextOffset: "" };
+    }
+  }
+
+  async getStarsTopupOptions(): Promise<import("./types").StarsTopupOption[]> {
+    try {
+      const res = await this.request({
+        "@type": "getStarsTopupOptions",
+      });
+      const options = Array.isArray(res?.options)
+        ? res.options.map((o: unknown) => mapTdStarsTopupOption(o)).filter((o): o is import("./types").StarsTopupOption => Boolean(o))
+        : [];
+      return options;
+    } catch {
+      return [];
+    }
+  }
+
+  async getStarRevenueStatus(chatId?: string): Promise<import("./types").StarRevenueStatus> {
+    try {
+      const res = await this.request({
+        "@type": "getStarRevenueStatus",
+        owner_id: chatId ? { "@type": "messageSenderChat", chat_id: numericId(chatId) } : null,
+      });
+      return mapTdStarRevenueStatus(res);
+    } catch {
+      return { totalAmount: 0, currentAmount: 0, availableAmount: 0, withdrawalEnabled: false };
+    }
+  }
+
+  async getAvailableGifts(): Promise<import("./types").TelegramGift[]> {
+    try {
+      const res = await this.request({
+        "@type": "getAvailableGifts",
+      });
+      const gifts = Array.isArray(res?.gifts)
+        ? res.gifts.map((g: unknown) => mapTdGift(g)).filter((g): g is import("./types").TelegramGift => Boolean(g))
+        : [];
+      return gifts;
+    } catch {
+      return [];
+    }
+  }
+
+  async sendGift(giftId: string, recipientUserId: string, text?: string, isPrivate?: boolean): Promise<boolean> {
+    try {
+      await this.request({
+        "@type": "sendGift",
+        gift_id: numericId(giftId),
+        owner_id: {
+          "@type": "messageSenderUser",
+          user_id: numericId(recipientUserId),
+        },
+        text: text ? { "@type": "formattedText", text, entities: [] } : null,
+        is_private: Boolean(isPrivate),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async buyPaidMedia(chatId: string, messageId: string): Promise<boolean> {
+    try {
+      await this.request({
+        "@type": "buyPaidMedia",
+        chat_id: numericId(chatId),
+        message_id: numericId(messageId),
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async translateMessageText(chatId: string, messageId: string, toLanguageCode: string): Promise<TranslatedText> {

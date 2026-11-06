@@ -1189,6 +1189,12 @@ export const createTelegramStore = (
         doNotTranslateLanguages: [],
         chatAutoTranslate: new Map(),
         translatingMessageIds: new Set(),
+        starBalance: 0,
+        starTransactions: [],
+        starsTopupOptions: [],
+        starRevenueStatus: null,
+        availableGifts: [],
+        starsLoading: false,
         folderManagementPending: false,
         chatCreationPending: false,
         chatFilter: "main",
@@ -2783,6 +2789,12 @@ export const createTelegramStore = (
       doNotTranslateLanguages: [],
       chatAutoTranslate: new Map(),
       translatingMessageIds: new Set(),
+      starBalance: 0,
+      starTransactions: [],
+      starsTopupOptions: [],
+      starRevenueStatus: null,
+      availableGifts: [],
+      starsLoading: false,
       folderManagementPending: false,
       chatCreationPending: false,
 
@@ -6456,6 +6468,44 @@ export const createTelegramStore = (
       removeDoNotTranslateLanguage: (languageCode) => {
         const current = get().doNotTranslateLanguages;
         set({ doNotTranslateLanguages: current.filter((l) => l !== languageCode) });
+      },
+
+      loadStarsData: async () => {
+        set({ starsLoading: true });
+        try {
+          const [txResult, topupResult, revenueResult, giftsResult] = await Promise.all([
+            transport.getStarTransactions ? transport.getStarTransactions("", 30) : Promise.resolve({ transactions: [], starAmount: 0 }),
+            transport.getStarsTopupOptions ? transport.getStarsTopupOptions() : Promise.resolve([]),
+            transport.getStarRevenueStatus ? transport.getStarRevenueStatus() : Promise.resolve(null),
+            transport.getAvailableGifts ? transport.getAvailableGifts() : Promise.resolve([]),
+          ]);
+          set({
+            starBalance: txResult.starAmount,
+            starTransactions: txResult.transactions,
+            starsTopupOptions: topupResult,
+            starRevenueStatus: revenueResult,
+            availableGifts: giftsResult,
+            starsLoading: false,
+          });
+        } catch {
+          set({ starsLoading: false });
+        }
+      },
+
+      buyPaidMedia: async (chatId: string, messageId: string) => {
+        const ok = (await transport.buyPaidMedia?.(chatId, messageId)) ?? false;
+        if (ok) {
+          void get().loadStarsData();
+        }
+        return ok;
+      },
+
+      sendGift: async (giftId: string, recipientUserId: string, text?: string, isPrivate?: boolean) => {
+        const ok = (await transport.sendGift?.(giftId, recipientUserId, text, isPrivate)) ?? false;
+        if (ok) {
+          void get().loadStarsData();
+        }
+        return ok;
       },
 
       clearError: () => set({ error: undefined }),

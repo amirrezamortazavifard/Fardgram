@@ -20,6 +20,9 @@ export const messageContentText = (content: MessageContent) => {
     return content.text;
   }
   if (content.kind === "poll") return content.question;
+  if (content.kind === "paidMedia") return content.caption || `Paid Media (${content.starCount} Stars)`;
+  if (content.kind === "invoice") return `${content.title}: ${content.currency} ${content.totalAmount}`;
+  if (content.kind === "gift") return content.text || `Gift (${content.starCount} Stars)`;
   return content.caption || content.fileName;
 };
 
@@ -28,6 +31,15 @@ export const messageContentText = (content: MessageContent) => {
  * metadata, not message text, so only real files keep their names here.
  */
 export const messagePreviewText = (content: MessageContent) => {
+  if (content.kind === "paidMedia") {
+    return content.caption || `Paid Media (⭐ ${content.starCount})`;
+  }
+  if (content.kind === "invoice") {
+    return `Invoice: ${content.title}`;
+  }
+  if (content.kind === "gift") {
+    return content.text ? `Gift: ${content.text}` : `Gift (⭐ ${content.starCount})`;
+  }
   if (content.kind !== "media") return messageContentText(content);
   if (content.caption) return content.caption;
   switch (content.mediaType) {

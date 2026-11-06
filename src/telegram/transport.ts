@@ -302,4 +302,10 @@ export interface TelegramTransport {
   markForumTopicRead(chatId: string, topicId: string, messageId: string): Promise<void>;
   markMessageAttentionRead(chatId: string, messageIds: string[]): Promise<void>;
   markAllChatReactionsRead(chatId: string): Promise<void>;
+  getStarTransactions?(offset?: string, limit?: number): Promise<{ transactions: import("./types").StarTransaction[]; starAmount: number; nextOffset?: string }>;
+  getStarsTopupOptions?(): Promise<import("./types").StarsTopupOption[]>;
+  getStarRevenueStatus?(chatId?: string): Promise<import("./types").StarRevenueStatus>;
+  getAvailableGifts?(): Promise<import("./types").TelegramGift[]>;
+  sendGift?(giftId: string, recipientUserId: string, text?: string, isPrivate?: boolean): Promise<boolean>;
+  buyPaidMedia?(chatId: string, messageId: string): Promise<boolean>;
 }

@@ -899,6 +899,84 @@ interface TransferableMessageContent {
   transcription?: SpeechRecognitionResult;
 }
 
+export interface PaidMediaItem {
+  type: "photo" | "video" | "preview";
+  width?: number;
+  height?: number;
+  duration?: number;
+  thumbnailPath?: string;
+  previewDataUrl?: string;
+  fileId?: number;
+  localPath?: string;
+  canDownload?: boolean;
+  isDownloading?: boolean;
+  isDownloaded?: boolean;
+}
+
+export interface MessagePaidMediaContent {
+  kind: "paidMedia";
+  starCount: number;
+  media: PaidMediaItem[];
+  caption?: string;
+  captionEntities?: MessageTextEntity[];
+  isBought?: boolean;
+}
+
+export interface MessageInvoiceContent {
+  kind: "invoice";
+  title: string;
+  description: string;
+  currency: string;
+  totalAmount: number;
+  isTest?: boolean;
+  isPaid?: boolean;
+  receiptMessageId?: string;
+}
+
+export interface MessageGiftContent {
+  kind: "gift";
+  giftId: string;
+  stickerFileId?: number;
+  stickerThumbnailPath?: string;
+  starCount: number;
+  text?: string;
+  isPrivate?: boolean;
+  senderUserId?: string;
+}
+
+export interface StarTransaction {
+  id: string;
+  starAmount: number;
+  isRefund?: boolean;
+  date: number;
+  sourceType: "app_store" | "play_store" | "fragment" | "bot" | "user" | "channel" | "unknown";
+  title: string;
+  description?: string;
+}
+
+export interface StarsTopupOption {
+  id: string;
+  starCount: number;
+  amount: number;
+  currency: string;
+}
+
+export interface StarRevenueStatus {
+  totalAmount: number;
+  currentAmount: number;
+  availableAmount: number;
+  withdrawalEnabled: boolean;
+}
+
+export interface TelegramGift {
+  id: string;
+  stickerFileId?: number;
+  stickerThumbnailPath?: string;
+  starCount: number;
+  remainingCount?: number;
+  totalCount?: number;
+}
+
 export type MessageContent =
   | { kind: "text"; text: string; entities?: MessageTextEntity[] }
   | {
@@ -910,6 +988,9 @@ export type MessageContent =
     }
   | { kind: "service"; text: string; memberUserIds?: string[]; event?: import("./serviceMessageTypes").ServiceMessageEvent }
   | MessagePollContent
+  | MessagePaidMediaContent
+  | MessageInvoiceContent
+  | MessageGiftContent
   | { kind: "unsupported"; type: string; text: string }
   | ({ kind: "file" } & TransferableMessageContent)
   | ({

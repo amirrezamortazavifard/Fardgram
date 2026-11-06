@@ -6,6 +6,31 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Telegram Stars, Gifts, Paid Media, Payments & Wallet Integrations (FG-018)**: Official TDLib integration parity for Telegram Stars ecosystem, paid media unlocking, invoice messages, digital gifts, and monetization:
+  - **Telegram Stars Settings & Management (`StarsSettingsPanel`)**:
+    - Real-time Stars balance display (`⭐ {balance} Stars`) with live USD estimate (~$0.02/Star) and refresh trigger.
+    - Top-up pack purchase grid (50, 100, 250, 500, 1000, 2500 Stars) with price tags and checkout state.
+    - Transaction history log listing incoming/outgoing transactions with partner identifiers (App Store, Google Play, Fragment, Bot, User, Channel), timestamps, and refund indicators.
+    - Channel and bot monetization revenue card showing Total Earned, Available Payout, and Pending Release amounts with direct Fragment withdrawal action.
+    - Telegram Gifts catalog and interactive Send Gift form supporting recipient selection, custom message, and private gift option.
+    - TON Blockchain & Non-Custodial Compliance card explicitly documenting zero private-key or seed-phrase custody inside the desktop client.
+  - **Paid Media Bubble Presentation & Unlocking (`PaidMediaMessage`)**:
+    - Blurred media preview container for locked photos and videos with lock badge and required Star cost (`⭐ {starCount} Stars`).
+    - One-click "Unlock for ⭐ {starCount}" action button triggering official TDLib `buyPaidMedia`.
+    - Unlocked media grid display with thumbnail and video rendering.
+    - Formatted caption rendering with rich text entities, mentions, and hashtags.
+  - **Invoice Messages (`InvoiceMessage`)**:
+    - Structured invoice card with receipt icon, title, description, formatted currency/amount (Stars `⭐ {totalAmount}` or fiat), and test mode badge.
+    - Interactive "Pay" action button and confirmed "Payment Completed" status indicator.
+  - **Digital Collectible Gifts (`GiftMessage`)**:
+    - Celebration gift message bubble with animated gift icon, collectible title, star value badge, private gift badge, and sender personal message.
+  - **Rust Backend TDLib Security Whitelisting**:
+    - Whitelisted `"buyPaidMedia"`, `"getAvailableGifts"`, `"getStarTransactions"`, `"getStarsTopupOptions"`, `"getStarRevenueStatus"`, and `"sendGift"` in `src-tauri/src/telegram/security.rs`.
+    - Implemented deep bounds and type validation for all 6 requests (`chat_id`, `message_id`, `gift_id`, `owner_id`, `offset`, `limit` 1..=100).
+    - Added unit test `validates_stars_and_gifts_requests` verifying valid requests and rejecting malformed identifiers.
+  - **100% Professional English & Dual-Theme Parity**:
+    - Completely English UI strings, placeholders, badges, and documentation.
+    - Strict dark/light theme parity across all cards, buttons, badges, and modals.
 - **Advanced Group, Channel & Community Administration (FG-017)**: Comprehensive Telegram Desktop administration parity across member lists, administrator promotion with granular rights, exception permissions, topic lifecycle, invite links, join requests, and audit logs:
   - **Group & Channel Member Management (`ChatManagementDialog`)**:
     - Real-time search filter for existing members by display name, username, or custom title.

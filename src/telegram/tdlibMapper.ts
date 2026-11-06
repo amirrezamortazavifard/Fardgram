@@ -42,6 +42,11 @@ import type {
   SavedMessagesTopic,
   SavedMessagesTopicTypeKind,
   SpeechRecognitionResult,
+  PaidMediaItem,
+  StarTransaction,
+  StarsTopupOption,
+  StarRevenueStatus,
+  TelegramGift,
 } from "./types";
 import { messagePreviewText } from "./messageContent";
 import { deriveChatManagementCapabilitiesFromTd } from "./chatManagement";
@@ -1322,15 +1327,107 @@ export const mapTdMessageContent = (value: unknown, includePendingUpload = false
       const game = asTdObject(content.game);
       return { kind: "text", text: labeledText(translate("游戏"), game?.title) };
     }
-    case "messageInvoice":
-      return { kind: "text", text: labeledText(translate("账单"), content.title) };
+    case "messageInvoice": {
+      const title = typeof content.title === "string" && content.title.trim() ? content.title : "Invoice";
+      const { text: description } = formattedTextDetails(content.description);
+      const currency = typeof content.currency === "string" ? content.currency : "XTR";
+      const totalAmount = tdNumber(content.total_amount) ?? 0;
+      const isTest = content.is_test === true;
+      const receiptMessageId = tdId(content.receipt_message_id);
+      return {
+        kind: "invoice",
+        title,
+        description: description || (typeof content.description === "string" ? content.description : ""),
+        currency,
+        totalAmount,
+        isTest,
+        isPaid: Boolean(receiptMessageId && receiptMessageId !== "0"),
+        receiptMessageId: receiptMessageId && receiptMessageId !== "0" ? receiptMessageId : undefined,
+      };
+    }
     case "messageChecklist": {
       const checklist = asTdObject(content.checklist);
       return { kind: "text", text: labeledText(translate("清单"), checklist?.title) };
     }
     case "messagePaidMedia": {
-      const caption = formattedText(content.caption);
-      return { kind: "text", text: caption ? translate("付费媒体：{{value0}}", { value0: caption }) : translate("付费媒体") };
+      const starCount = tdNumber(content.star_count) ?? 0;
+      const { text: caption, entities: captionEntities } = formattedTextDetails(content.caption);
+      const mediaList = asTdObjects(content.media);
+      const media: PaidMediaItem[] = mediaList.map((item) => {
+        const itemType = item?.["@type"];
+        if (itemType === "paidMediaPhoto") {
+          const photo = asTdObject(item.photo);
+          const sizes = asTdObjects(photo?.sizes);
+          const largest = sizes.reduce<TdObject | undefined>((best, candidate) => {
+            const area = (tdNumber(candidate.width) ?? 0) * (tdNumber(candidate.height) ?? 0);
+            const bestArea = (tdNumber(best?.width) ?? 0) * (tdNumber(best?.height) ?? 0);
+            return area >= bestArea ? candidate : best;
+          }, undefined);
+          const photoFile = asTdObject(largest?.photo);
+          return {
+            type: "photo",
+            width: tdNumber(largest?.width),
+            height: tdNumber(largest?.height),
+            fileId: tdNumber(photoFile?.id),
+            localPath: tdLocalFilePath(photoFile),
+            previewDataUrl: minithumbnailDataUrl(photo?.minithumbnail),
+            canDownload: asTdObject(photoFile?.local)?.can_be_downloaded === true,
+            isDownloading: asTdObject(photoFile?.local)?.is_downloading_active === true,
+            isDownloaded: asTdObject(photoFile?.local)?.is_downloading_completed === true,
+          };
+        }
+        if (itemType === "paidMediaVideo") {
+          const video = asTdObject(item.video);
+          const videoFile = asTdObject(video?.video);
+          return {
+            type: "video",
+            width: tdNumber(video?.width),
+            height: tdNumber(video?.height),
+            duration: tdNumber(video?.duration),
+            previewDataUrl: minithumbnailDataUrl(video?.minithumbnail),
+            fileId: tdNumber(videoFile?.id),
+            localPath: tdLocalFilePath(videoFile),
+            canDownload: asTdObject(videoFile?.local)?.can_be_downloaded === true,
+            isDownloading: asTdObject(videoFile?.local)?.is_downloading_active === true,
+            isDownloaded: asTdObject(videoFile?.local)?.is_downloading_completed === true,
+          };
+        }
+        return {
+          type: "preview",
+          width: tdNumber(item.width),
+          height: tdNumber(item.height),
+          duration: tdNumber(item.duration),
+          previewDataUrl: minithumbnailDataUrl(item.minithumbnail),
+        };
+      });
+      const isBought = media.length > 0 && media.some((m) => m.type !== "preview");
+      return {
+        kind: "paidMedia",
+        starCount,
+        media,
+        caption: caption || undefined,
+        captionEntities: captionEntities.length > 0 ? captionEntities : undefined,
+        isBought,
+      };
+    }
+    case "messageGift": {
+      const gift = asTdObject(content.gift);
+      const giftId = tdId(gift?.id) ?? "";
+      const starCount = tdNumber(gift?.star_count) ?? 0;
+      const sticker = asTdObject(gift?.sticker);
+      const stickerThumbnail = asTdObject(sticker?.thumbnail);
+      const stickerFile = asTdObject(stickerThumbnail?.file);
+      const { text } = formattedTextDetails(content.text);
+      return {
+        kind: "gift",
+        giftId,
+        starCount,
+        text: text || undefined,
+        isPrivate: content.is_private === true,
+        stickerFileId: tdNumber(stickerFile?.id),
+        stickerThumbnailPath: tdLocalFilePath(stickerFile),
+        senderUserId: tdId(content.sender_user_id),
+      };
     }
     case "messageStory":
       return { kind: "text", text: translate("故事") };
@@ -2256,5 +2353,88 @@ export const mapTdSavedMessagesTopic = (value: unknown): SavedMessagesTopic | un
     isPinned: obj.is_pinned === true,
     order: typeof obj.order === "string" ? obj.order : String(obj.order ?? "0"),
     lastMessage: lastMessageRaw ? mapTdMessage(lastMessageRaw) : undefined,
+  };
+};
+
+export const mapTdStarTransaction = (value: unknown): StarTransaction | undefined => {
+  const obj = asTdObject(value);
+  if (!obj) return undefined;
+  const id = tdId(obj.id) || String(Math.random());
+  const starAmount = tdNumber(obj.star_amount) ?? 0;
+  const isRefund = obj.is_refund === true;
+  const date = tdNumber(obj.date) ?? Math.floor(Date.now() / 1000);
+  const partner = asTdObject(obj.partner);
+  let sourceType: StarTransaction["sourceType"] = "unknown";
+  let title = "Transaction";
+  if (partner) {
+    const pType = partner["@type"];
+    if (pType === "starPartnerAppStore") {
+      sourceType = "app_store";
+      title = "Apple App Store";
+    } else if (pType === "starPartnerGooglePlay") {
+      sourceType = "play_store";
+      title = "Google Play";
+    } else if (pType === "starPartnerFragment") {
+      sourceType = "fragment";
+      title = "Fragment";
+    } else if (pType === "starPartnerBot") {
+      sourceType = "bot";
+      title = "Bot Purchase";
+    } else if (pType === "starPartnerUser") {
+      sourceType = "user";
+      title = "User Gift / Transfer";
+    } else if (pType === "starPartnerChat") {
+      sourceType = "channel";
+      title = "Channel";
+    }
+  }
+  return {
+    id,
+    starAmount,
+    isRefund,
+    date,
+    sourceType,
+    title,
+    description: typeof obj.description === "string" ? obj.description : undefined,
+  };
+};
+
+export const mapTdStarsTopupOption = (value: unknown): StarsTopupOption | undefined => {
+  const obj = asTdObject(value);
+  if (!obj) return undefined;
+  return {
+    id: tdId(obj.id) || String(tdNumber(obj.star_count) ?? 0),
+    starCount: tdNumber(obj.star_count) ?? 0,
+    amount: tdNumber(obj.amount) ?? 0,
+    currency: typeof obj.currency === "string" ? obj.currency : "USD",
+  };
+};
+
+export const mapTdStarRevenueStatus = (value: unknown): StarRevenueStatus => {
+  const obj = asTdObject(value);
+  const currentAmount = asTdObject(obj?.current_amount);
+  const availableAmount = asTdObject(obj?.available_amount);
+  const totalAmount = asTdObject(obj?.total_amount);
+  return {
+    totalAmount: tdNumber(totalAmount?.total_amount) ?? 0,
+    currentAmount: tdNumber(currentAmount?.total_amount) ?? 0,
+    availableAmount: tdNumber(availableAmount?.total_amount) ?? 0,
+    withdrawalEnabled: obj?.withdrawal_enabled === true,
+  };
+};
+
+export const mapTdGift = (value: unknown): TelegramGift | undefined => {
+  const obj = asTdObject(value);
+  if (!obj) return undefined;
+  const sticker = asTdObject(obj.sticker);
+  const thumbnail = asTdObject(sticker?.thumbnail);
+  const file = asTdObject(thumbnail?.file);
+  return {
+    id: tdId(obj.id) || "",
+    starCount: tdNumber(obj.star_count) ?? 0,
+    stickerFileId: tdNumber(file?.id),
+    stickerThumbnailPath: tdLocalFilePath(file),
+    remainingCount: tdNumber(obj.remaining_count),
+    totalCount: tdNumber(obj.total_count),
   };
 };

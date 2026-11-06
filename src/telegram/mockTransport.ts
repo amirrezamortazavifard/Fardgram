@@ -514,6 +514,67 @@ export class MockTelegramTransport implements TelegramTransport {
       lastUsageDate: Math.floor(Date.now() / 1000) - 86400 * 5,
     },
   ];
+  private mockStarBalance = 350;
+  private mockStarTransactions: import("./types").StarTransaction[] = [
+    {
+      id: "tx-1",
+      starAmount: 250,
+      date: Math.floor(Date.now() / 1000) - 3600 * 2,
+      sourceType: "fragment",
+      title: "Top-up via Fragment",
+      description: "Pack of 250 Telegram Stars",
+    },
+    {
+      id: "tx-2",
+      starAmount: -50,
+      date: Math.floor(Date.now() / 1000) - 3600 * 12,
+      sourceType: "user",
+      title: "Gift Sent to Mia",
+      description: "Deluxe Celebration Gift",
+    },
+    {
+      id: "tx-3",
+      starAmount: -15,
+      date: Math.floor(Date.now() / 1000) - 3600 * 24,
+      sourceType: "channel",
+      title: "Paid Media Unlock",
+      description: "Exclusive Design Assets",
+    },
+    {
+      id: "tx-4",
+      starAmount: 165,
+      date: Math.floor(Date.now() / 1000) - 3600 * 48,
+      sourceType: "bot",
+      title: "Bot Channel Revenue",
+      description: "Channel content unlock revenue",
+    },
+  ];
+  private mockGifts: import("./types").TelegramGift[] = [
+    {
+      id: "gift-1",
+      starCount: 25,
+      remainingCount: 450,
+      totalCount: 1000,
+    },
+    {
+      id: "gift-2",
+      starCount: 50,
+      remainingCount: 120,
+      totalCount: 500,
+    },
+    {
+      id: "gift-3",
+      starCount: 100,
+      remainingCount: 30,
+      totalCount: 200,
+    },
+    {
+      id: "gift-4",
+      starCount: 250,
+      remainingCount: 10,
+      totalCount: 50,
+    },
+  ];
 
   private mockSavedMessagesTopics: SavedMessagesTopic[] = [
     {
@@ -2956,6 +3017,71 @@ export class MockTelegramTransport implements TelegramTransport {
       message.content.transcription.ratedGood = isGood;
       this.listener?.({ type: "message.upsert", message: clone(message) });
     }
+  }
+
+  async getStarTransactions(offset = "", limit = 20): Promise<{ transactions: import("./types").StarTransaction[]; starAmount: number; nextOffset?: string }> {
+    return {
+      transactions: clone(this.mockStarTransactions),
+      starAmount: this.mockStarBalance,
+      nextOffset: "",
+    };
+  }
+
+  async getStarsTopupOptions(): Promise<import("./types").StarsTopupOption[]> {
+    return [
+      { id: "pack-50", starCount: 50, amount: 99, currency: "USD" },
+      { id: "pack-100", starCount: 100, amount: 199, currency: "USD" },
+      { id: "pack-250", starCount: 250, amount: 499, currency: "USD" },
+      { id: "pack-500", starCount: 500, amount: 999, currency: "USD" },
+      { id: "pack-1000", starCount: 1000, amount: 1999, currency: "USD" },
+      { id: "pack-2500", starCount: 2500, amount: 4999, currency: "USD" },
+    ];
+  }
+
+  async getStarRevenueStatus(chatId?: string): Promise<import("./types").StarRevenueStatus> {
+    return {
+      totalAmount: 1250,
+      currentAmount: 480,
+      availableAmount: 350,
+      withdrawalEnabled: true,
+    };
+  }
+
+  async getAvailableGifts(): Promise<import("./types").TelegramGift[]> {
+    return clone(this.mockGifts);
+  }
+
+  async sendGift(giftId: string, recipientUserId: string, text?: string, isPrivate?: boolean): Promise<boolean> {
+    const gift = this.mockGifts.find((g) => g.id === giftId);
+    const starCost = gift ? gift.starCount : 25;
+    this.mockStarBalance = Math.max(0, this.mockStarBalance - starCost);
+    this.mockStarTransactions.unshift({
+      id: `tx-${Date.now()}`,
+      starAmount: -starCost,
+      date: Math.floor(Date.now() / 1000),
+      sourceType: "user",
+      title: "Sent Gift",
+      description: text || "Telegram Gift",
+    });
+    return true;
+  }
+
+  async buyPaidMedia(chatId: string, messageId: string): Promise<boolean> {
+    const msg = this.snapshot.messages.find((m) => m.chatId === chatId && m.id === messageId);
+    if (msg && msg.content.kind === "paidMedia") {
+      msg.content.isBought = true;
+      this.mockStarBalance = Math.max(0, this.mockStarBalance - msg.content.starCount);
+      this.mockStarTransactions.unshift({
+        id: `tx-${Date.now()}`,
+        starAmount: -msg.content.starCount,
+        date: Math.floor(Date.now() / 1000),
+        sourceType: "channel",
+        title: "Paid Media Unlock",
+        description: msg.content.caption || "Unlocked paid media",
+      });
+      this.listener?.({ type: "message.upsert", message: clone(msg) });
+    }
+    return true;
   }
 
   async translateMessageText(chatId: string, messageId: string, toLanguageCode: string): Promise<import("./types").TranslatedText> {

@@ -216,6 +216,12 @@ export interface TelegramState {
   doNotTranslateLanguages: string[];
   chatAutoTranslate: Map<string, boolean>;
   translatingMessageIds: Set<string>;
+  starBalance: number;
+  starTransactions: import("../telegram/types").StarTransaction[];
+  starsTopupOptions: import("../telegram/types").StarsTopupOption[];
+  starRevenueStatus: import("../telegram/types").StarRevenueStatus | null;
+  availableGifts: import("../telegram/types").TelegramGift[];
+  starsLoading: boolean;
   initialize: (options?: {
     settingsOnly?: boolean;
     preserveAccountPending?: boolean;
@@ -533,6 +539,9 @@ export interface TelegramState {
   toggleChatAutoTranslate: (chatId: string, enabled?: boolean) => Promise<void>;
   addDoNotTranslateLanguage: (languageCode: string) => void;
   removeDoNotTranslateLanguage: (languageCode: string) => void;
+  loadStarsData: () => Promise<void>;
+  buyPaidMedia: (chatId: string, messageId: string) => Promise<boolean>;
+  sendGift: (giftId: string, recipientUserId: string, text?: string, isPrivate?: boolean) => Promise<boolean>;
   clearError: () => void;
   clearOperationError: () => void;
 }

@@ -17,6 +17,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "addChatMembers",
     "canTransferOwnership",
     "cancelDownloadFile",
+    "buyPaidMedia",
     "changeStickerSet",
     "clickChatSponsoredMessage",
     "closeChat",
@@ -59,6 +60,10 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "getForumTopics",
     "getChatInviteLinks",
     "getChatJoinRequests",
+    "getAvailableGifts",
+    "getStarTransactions",
+    "getStarsTopupOptions",
+    "getStarRevenueStatus",
     "getInternalLinkType",
     "getMessageLinkInfo",
     "getMessageAddedReactions",
@@ -124,6 +129,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "sendScheduledMessages",
     "sendInlineQueryResultMessage",
     "sendBotStartMessage",
+    "sendGift",
     "setBio",
     "setAuthenticationEmailAddress",
     "setAuthenticationPhoneNumber",
@@ -844,6 +850,40 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                 .ok_or_else(|| "Forum topic identifier is missing".to_string())?;
             if topic_id <= 0 {
                 return Err("Invalid forum topic identifier".to_string());
+            }
+        }
+        "buyPaidMedia" => {
+            validate_nonzero_identifier(request, "chat_id")?;
+            validate_nonzero_identifier(request, "message_id")?;
+        }
+        "getStarTransactions" => {
+            validate_profile_text(request, "offset", 128, true, false)?;
+            let limit = request
+                .get("limit")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| "Limit is missing".to_string())?;
+            if !(1..=100).contains(&limit) {
+                return Err("Limit out of bounds".to_string());
+            }
+        }
+        "getStarsTopupOptions" | "getAvailableGifts" => {}
+        "getStarRevenueStatus" => {
+            if let Some(owner) = request.get("owner_id").and_then(Value::as_object) {
+                let owner_type = owner.get("@type").and_then(Value::as_str).unwrap_or("");
+                if owner_type != "messageSenderUser" && owner_type != "messageSenderChat" {
+                    return Err("Invalid star revenue owner type".to_string());
+                }
+            }
+        }
+        "sendGift" => {
+            validate_nonzero_identifier(request, "gift_id")?;
+            let owner = request
+                .get("owner_id")
+                .and_then(Value::as_object)
+                .ok_or_else(|| "Owner is missing".to_string())?;
+            let owner_type = owner.get("@type").and_then(Value::as_str).unwrap_or("");
+            if owner_type != "messageSenderUser" && owner_type != "messageSenderChat" {
+                return Err("Invalid gift recipient type".to_string());
             }
         }
         "getInlineQueryResults" => {
@@ -4340,5 +4380,74 @@ mod tests {
             "@extra": EXTRA
         });
         assert!(validate_webview_tdlib_request(&invalid_topic).is_err());
+    }
+
+    #[test]
+    fn validates_stars_and_gifts_requests() {
+        let buy_media = json!({
+            "@type": "buyPaidMedia",
+            "chat_id": 100200,
+            "message_id": 4200,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&buy_media).is_ok());
+
+        let buy_media_bad = json!({
+            "@type": "buyPaidMedia",
+            "chat_id": 0,
+            "message_id": 4200,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&buy_media_bad).is_err());
+
+        let star_tx = json!({
+            "@type": "getStarTransactions",
+            "offset": "",
+            "limit": 25,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&star_tx).is_ok());
+
+        let star_tx_bad = json!({
+            "@type": "getStarTransactions",
+            "offset": "",
+            "limit": 150,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&star_tx_bad).is_err());
+
+        let topup = json!({
+            "@type": "getStarsTopupOptions",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&topup).is_ok());
+
+        let gifts = json!({
+            "@type": "getAvailableGifts",
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&gifts).is_ok());
+
+        let send_gift = json!({
+            "@type": "sendGift",
+            "gift_id": 12345,
+            "owner_id": {
+                "@type": "messageSenderUser",
+                "user_id": 998877
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&send_gift).is_ok());
+
+        let send_gift_bad = json!({
+            "@type": "sendGift",
+            "gift_id": 0,
+            "owner_id": {
+                "@type": "messageSenderUser",
+                "user_id": 998877
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&send_gift_bad).is_err());
     }
 }

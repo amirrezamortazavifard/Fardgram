@@ -73,6 +73,9 @@ import { isLargeEmojiText } from "../utils/largeEmoji";
 import { replyQuoteFromSelection } from "../utils/messageTextSelection";
 import { MediaProgressRing } from "./MediaProgressRing";
 import { PollMessage } from "./PollMessage";
+import { PaidMediaMessage } from "./PaidMediaMessage";
+import { InvoiceMessage } from "./InvoiceMessage";
+import { GiftMessage } from "./GiftMessage";
 import { InlineKeyboard } from "./InlineKeyboard";
 import type { CallbackQueryAnswer } from "../telegram/types";
 import { formatFileSize, isExecutableFile } from "../utils/fileTransfer";
@@ -149,6 +152,7 @@ export interface MessageBubbleProps {
   ) => Promise<MessageReactionSenderPage>;
   onPollAnswer: (messageId: string, optionPositions: number[], chatId?: string) => Promise<boolean>;
   onStopPoll?: (messageId: string, chatId?: string) => Promise<boolean>;
+  onBuyPaidMedia?: (chatId: string, messageId: string) => Promise<boolean | void>;
   onBotCallback: (messageId: string, data: string, chatId?: string) => Promise<CallbackQueryAnswer | undefined>;
   onOpenWebApp?: (url: string, title?: string) => void | Promise<void>;
   onCollapseQuote: (
@@ -225,6 +229,7 @@ function MessageBubbleComponent({
   onLoadReactionSenders,
   onPollAnswer,
   onStopPoll,
+  onBuyPaidMedia,
   onBotCallback,
   onOpenWebApp,
   onCollapseQuote,
@@ -1163,6 +1168,31 @@ function MessageBubbleComponent({
               )}
             </div>
             )
+          ) : content.kind === "paidMedia" ? (
+            <PaidMediaMessage
+              chatId={message.chatId}
+              messageId={message.id}
+              content={content}
+              isOutgoing={message.outgoing}
+              highlightQuery={searchQuery}
+              onBuyPaidMedia={onBuyPaidMedia}
+              onOpenMention={onOpenMention}
+              onSearchHashtag={onSearchHashtag}
+              onCollapseQuote={collapseQuote}
+              onExpandQuote={onExpandQuote}
+            />
+          ) : content.kind === "invoice" ? (
+            <InvoiceMessage
+              chatId={message.chatId}
+              messageId={message.id}
+              content={content}
+              isOutgoing={message.outgoing}
+            />
+          ) : content.kind === "gift" ? (
+            <GiftMessage
+              content={content}
+              isOutgoing={message.outgoing}
+            />
           ) : content.kind === "poll" ? (
             <PollMessage
               poll={content}

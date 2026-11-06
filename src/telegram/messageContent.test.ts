@@ -28,4 +28,48 @@ describe("message preview text", () => {
     expect(messagePreviewText(document)).toBe("archive.zip");
     expect(messageContentText(media("video", "clip.mp4"))).toBe("clip.mp4");
   });
+
+  it("handles paidMedia, invoice, and gift preview text", () => {
+    const paidMedia: MessageContent = {
+      kind: "paidMedia",
+      starCount: 50,
+      media: [{ type: "photo" }],
+      caption: "Special exclusive photo",
+    };
+    expect(messagePreviewText(paidMedia)).toBe("Special exclusive photo");
+
+    const paidMediaNoCaption: MessageContent = {
+      kind: "paidMedia",
+      starCount: 25,
+      media: [{ type: "preview" }],
+    };
+    expect(messagePreviewText(paidMediaNoCaption)).toBe("Paid Media (⭐ 25)");
+
+    const invoice: MessageContent = {
+      kind: "invoice",
+      title: "Pro Subscription",
+      description: "1 month premium access",
+      currency: "XTR",
+      totalAmount: 150,
+    };
+    expect(messagePreviewText(invoice)).toBe("Invoice: Pro Subscription");
+    expect(messageContentText(invoice)).toBe("Pro Subscription: XTR 150");
+
+    const gift: MessageContent = {
+      kind: "gift",
+      giftId: "gift-100",
+      starCount: 100,
+      text: "Happy Birthday!",
+    };
+    expect(messagePreviewText(gift)).toBe("Gift: Happy Birthday!");
+    expect(messageContentText(gift)).toBe("Happy Birthday!");
+
+    const giftNoText: MessageContent = {
+      kind: "gift",
+      giftId: "gift-25",
+      starCount: 25,
+    };
+    expect(messagePreviewText(giftNoText)).toBe("Gift (⭐ 25)");
+    expect(messageContentText(giftNoText)).toBe("Gift (25 Stars)");
+  });
 });
