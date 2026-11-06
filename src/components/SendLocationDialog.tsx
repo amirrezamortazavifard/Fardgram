@@ -11,6 +11,7 @@ import {
   Building2,
   Crosshair,
 } from "lucide-react";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 export interface SendLocationDialogProps {
   isOpen: boolean;
@@ -45,6 +46,8 @@ export const SendLocationDialog: React.FC<SendLocationDialogProps> = ({
   const [geoError, setGeoError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  const dialogRef = useModalFocus<HTMLDivElement>(onClose, isSubmitting);
+
   // Reset or detect when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -52,17 +55,6 @@ export const SendLocationDialog: React.FC<SendLocationDialogProps> = ({
       setIsSubmitting(false);
     }
   }, [isOpen]);
-
-  // Handle escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
 
   const handleLocateMe = useCallback(() => {
     if (!navigator.geolocation) {
@@ -140,6 +132,7 @@ export const SendLocationDialog: React.FC<SendLocationDialogProps> = ({
       data-testid="send-location-dialog"
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-md overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl text-slate-900 dark:text-slate-100 transition-all"
         onClick={(e) => e.stopPropagation()}
       >

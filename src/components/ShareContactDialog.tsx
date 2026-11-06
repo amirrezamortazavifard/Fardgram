@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { User, Phone, X, Search, Check, Send } from "lucide-react";
 import { useTelegramStore } from "../store/telegramStore";
+import { useModalFocus } from "../hooks/useModalFocus";
 import type { SendContactInput } from "../telegram/types";
 
 export interface ShareContactDialogProps {
@@ -49,15 +50,7 @@ export const ShareContactDialog: React.FC<ShareContactDialogProps> = ({
     );
   });
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    if (isOpen) {
-      window.addEventListener("keydown", handleKeyDown);
-    }
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  const dialogRef = useModalFocus<HTMLDivElement>(onClose, isSubmitting);
 
   if (!isOpen) return null;
 
@@ -137,6 +130,7 @@ export const ShareContactDialog: React.FC<ShareContactDialogProps> = ({
       data-testid="share-contact-dialog"
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 flex flex-col gap-4 text-slate-900 dark:text-white"
         onClick={(e) => e.stopPropagation()}
       >

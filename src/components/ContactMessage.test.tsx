@@ -43,3 +43,4 @@ describe("FG-026 ContactMessage Component", () => {
     expect(html).toContain("Add Contact");
   });
 });
+

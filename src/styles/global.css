@@ -5885,7 +5885,10 @@ button.message-forward-heading-icon { border: 0; cursor: pointer; }
   .chat-row, .message-bubble, .settings-category, .preference-list,
   .account-profile-card, .profile-identity-card, .folder-list-item, .dialog-secondary,
   .folder-dialog, .new-chat-dialog, .settings-dialog, .profile-drawer, .context-menu-panel,
-  .performance-summary, .performance-entry {
+  .performance-summary, .performance-entry, .create-poll-dialog,
+  [data-testid="share-contact-dialog"] > div, [data-testid="profile-qr-dialog"] > div,
+  [data-testid="send-location-dialog"] > div, [data-testid="mute-duration-dialog"] > div,
+  [data-testid="contact-message-card"], .message-effect-picker-card {
     border: 1px solid CanvasText;
     box-shadow: none;
   }

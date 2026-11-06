@@ -6,6 +6,18 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Screen-Reader, Keyboard-Only & High-Contrast Parity Audit (FG-027)**: Comprehensive accessibility infrastructure, ARIA live region announcements, modal focus restoration, and high-contrast system color enhancements:
+  - **Screen Reader Message Announcer (`ariaAnnouncer.ts` & `useScreenReaderAnnouncer.ts`)**:
+    - Dedicated live announcement dispatcher announcing newly arrived incoming messages (`"New message from [Sender]: [Summary]"`) in the currently active conversation.
+    - Intelligent filtering: strictly ignores background synchronization noise, ignores outgoing messages sent by the user, and suppresses announcement spam when switching chats.
+    - Automatic deduplication preventing stuttering or repetitive screen reader alerts within 1.5 seconds.
+  - **Offscreen Live Region Component (`AriaLiveRegion.tsx` & `App.tsx`)**:
+    - Mounted at root level providing dual polite (`role="status"`, `aria-live="polite"`) and assertive (`role="alert"`, `aria-live="assertive"`) live zones for assistive technologies (NVDA, Narrator, JAWS, VoiceOver).
+  - **Modal Focus Trapping & Restoration (`useModalFocus`)**:
+    - Upgraded recent dialogs (`ShareContactDialog`, `ProfileQrDialog`, `SendLocationDialog`, `CreatePollDialog`, `MuteDurationDialog`) to use `useModalFocus`.
+    - Eliminates keyboard traps, restricts `Tab` cycling within active modal boundaries, and automatically restores focus to the invoking trigger button upon modal dismissal.
+  - **Windows High-Contrast & Forced-Colors Styling (`global.css`)**:
+    - Explicit `@media (forced-colors: active)` enhancements for contact cards, QR dialog, location cards, poll dialogs, and mute dialogs using standard system color keywords (`Canvas`, `CanvasText`, `Highlight`, `HighlightText`).
 - **Extended Profile, Status, QR and Contact-Sharing Parity (FG-026)**: Complete native contact card sharing, interactive profile QR code generation, contact privacy controls, and official TDLib integration:
   - **Native Contact Card Message Component (`ContactMessage.tsx` & `MessageBubble.tsx`)**:
     - Rich visual contact card rendering sender's shared contact details (initials avatar, full name, phone number, and optional vCard/user ID).

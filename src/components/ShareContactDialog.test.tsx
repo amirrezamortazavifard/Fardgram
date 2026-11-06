@@ -36,3 +36,4 @@ describe("FG-026 ShareContactDialog Component", () => {
     expect(html).toBe("");
   });
 });
+

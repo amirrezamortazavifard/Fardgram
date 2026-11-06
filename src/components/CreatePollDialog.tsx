@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, type FormEvent } from "react";
 import { BarChart2, Check, HelpCircle, Plus, Trash2, X } from "lucide-react";
+import { useModalFocus } from "../hooks/useModalFocus";
 import type { SendPollInput } from "../telegram/types";
 
 export interface CreatePollDialogProps {
@@ -34,6 +35,7 @@ export function CreatePollDialog({
   const [error, setError] = useState<string | null>(null);
 
   const questionInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useModalFocus<HTMLDivElement>(onClose, submitting, questionInputRef);
 
   useEffect(() => {
     if (isOpen) {
@@ -136,16 +138,11 @@ export function CreatePollDialog({
       }}
     >
       <div
+        ref={dialogRef}
         className="create-poll-dialog"
         role="dialog"
         aria-modal="true"
         aria-label={isQuiz ? "Create new quiz" : "Create new poll"}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !submitting) {
-            e.stopPropagation();
-            onClose();
-          }
-        }}
       >
         <div className="create-poll-header">
           <div className="create-poll-title">

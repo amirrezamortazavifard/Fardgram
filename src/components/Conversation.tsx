@@ -19,6 +19,7 @@ import type { ComposerInputElement } from "./ComposerInput";
 import { useEditVisibleMessage } from "../hooks/useEditVisibleMessage";
 import { retainedMessageQuote } from "../telegram/retainedMessages";
 import { observeConversationPresentation } from "../utils/conversationPresentation";
+import { useScreenReaderAnnouncer } from "../accessibility/useScreenReaderAnnouncer";
 import {
   ArrowDown,
   ArrowUpRight,
@@ -758,6 +759,12 @@ export function Conversation({
   const memberLabels = useMemo(() => new Map(
     Object.entries(chat ? chatAdministratorLabels.get(chat.id) ?? {} : {}),
   ), [chat, chatAdministratorLabels]);
+
+  useScreenReaderAnnouncer({
+    chatId: chat?.id,
+    messages,
+    users,
+  });
   const composerInputRef = useRef<ComposerInputElement>(null);
   const conversationRef = useRef<HTMLElement>(null);
   const selectionMessageRef = useRef<HTMLElement | null>(null);

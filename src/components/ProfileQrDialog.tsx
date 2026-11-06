@@ -2,6 +2,7 @@ import React, { useState, useRef } from "react";
 import { QrCode, Copy, Check, X, Download, ExternalLink, Send } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { openExternalLink } from "../utils/externalLinks";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 export interface ProfileQrDialogProps {
   title: string;
@@ -18,6 +19,7 @@ export const ProfileQrDialog: React.FC<ProfileQrDialogProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const qrRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useModalFocus<HTMLDivElement>(onClose);
 
   const profileUrl = username
     ? `https://t.me/${username}`
@@ -62,6 +64,7 @@ export const ProfileQrDialog: React.FC<ProfileQrDialogProps> = ({
       data-testid="profile-qr-dialog"
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 flex flex-col items-center gap-4 text-slate-900 dark:text-white"
         onClick={(e) => e.stopPropagation()}
       >
@@ -74,6 +77,7 @@ export const ProfileQrDialog: React.FC<ProfileQrDialogProps> = ({
             type="button"
             onClick={onClose}
             className="p-1 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+            aria-label="Close dialog"
             title="Close"
           >
             <X className="w-5 h-5" />

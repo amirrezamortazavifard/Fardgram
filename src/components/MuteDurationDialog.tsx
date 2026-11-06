@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Bell, BellOff, Clock, X, Calendar, ShieldCheck } from "lucide-react";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 export interface MuteDurationDialogProps {
   isOpen: boolean;
@@ -21,6 +22,8 @@ export const MuteDurationDialog: React.FC<MuteDurationDialogProps> = ({
   const [isCustom, setIsCustom] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  const dialogRef = useModalFocus<HTMLDivElement>(onClose, submitting);
+
   useEffect(() => {
     if (isOpen) {
       setSelectedDuration(28800);
@@ -28,16 +31,6 @@ export const MuteDurationDialog: React.FC<MuteDurationDialogProps> = ({
       setSubmitting(false);
     }
   }, [isOpen]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -71,6 +64,7 @@ export const MuteDurationDialog: React.FC<MuteDurationDialogProps> = ({
       data-testid="mute-duration-dialog"
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-sm overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl text-slate-900 dark:text-slate-100 transition-all"
         onClick={(e) => e.stopPropagation()}
       >

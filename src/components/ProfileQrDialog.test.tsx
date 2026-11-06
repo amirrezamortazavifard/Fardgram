@@ -33,3 +33,4 @@ describe("FG-026 ProfileQrDialog Component", () => {
     expect(html).toContain("https://t.me/+1234567890");
   });
 });
+

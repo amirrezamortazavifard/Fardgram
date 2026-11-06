@@ -43,6 +43,7 @@ import { AudioPlaybackHost } from "../components/AudioPlaybackHost";
 import { StickerSetPreview } from "../components/StickerSetPreview";
 import { ChatInviteDialog } from "../components/ChatInviteDialog";
 import { MiniAppModal } from "../components/MiniAppModal";
+import { AriaLiveRegion } from "../components/AriaLiveRegion";
 import { installTelegramLinkReceiver } from "../release/telegramLinkReceiver";
 import { senderNameForMessage } from "../components/conversationMessages";
 import { telegramStore, useTelegramStore } from "../store/telegramStore";
@@ -2505,6 +2506,7 @@ export function App() {
           onProcessJoinRequests={processManagementJoinRequests}
         /> : null}
       </MotionPresence>
+      <AriaLiveRegion />
       <MiniAppModal />
     </>
   );
