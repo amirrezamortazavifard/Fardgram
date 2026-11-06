@@ -61,6 +61,7 @@ import type {
   MessagePermissions,
   MessageReactionSenderPage,
   MessageReactionType,
+  SendLocationInput,
   SendPollInput,
   MessageReplyQuote,
   MessageTextEntity,
@@ -394,6 +395,8 @@ export interface TelegramState {
   setPollAnswer: (messageId: string, optionPositions: number[], chatId?: string) => Promise<boolean>;
   sendPoll: (input: SendPollInput) => Promise<boolean>;
   stopPoll: (messageId: string, chatId?: string) => Promise<boolean>;
+  sendLocation: (input: SendLocationInput) => Promise<boolean>;
+  stopLiveLocation: (messageId: string, chatId?: string) => Promise<boolean>;
   loadPinnedMessages: (chatId: string) => Promise<Message[]>;
   pinMessage: (
     messageId: string,

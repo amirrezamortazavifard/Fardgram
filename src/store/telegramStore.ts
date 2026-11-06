@@ -4767,6 +4767,36 @@ export const createTelegramStore = (
         }
       },
 
+      sendLocation: async (input) => {
+        try {
+          const sent = await (transport.sendLocation?.(input) ?? Promise.resolve(false));
+          if (get().operationError) set({ operationError: undefined });
+          scheduleCacheWrite();
+          return sent;
+        } catch (error) {
+          set({
+            operationError: error instanceof Error ? error.message : "Failed to send location",
+          });
+          return false;
+        }
+      },
+
+      stopLiveLocation: async (messageId, preferredChatId) => {
+        const location = messageLocation(messageId, preferredChatId ?? get().activeChatId);
+        if (!location) return false;
+        try {
+          const stopped = await (transport.stopLiveLocation?.(location.chatId, messageId) ?? Promise.resolve(false));
+          if (get().operationError) set({ operationError: undefined });
+          scheduleCacheWrite();
+          return stopped;
+        } catch (error) {
+          set({
+            operationError: error instanceof Error ? error.message : "Failed to stop live location",
+          });
+          return false;
+        }
+      },
+
       loadPinnedMessages: async (chatId) => {
         if (!get().chats.has(chatId)) return [];
         try {

@@ -187,4 +187,75 @@ describe("Mock transport fixture contracts", () => {
       expect(await transport.getPrivacySettingRules("showPhoneNumber")).toEqual([{ kind: "allowContacts" }]);
     });
   });
+
+  describe("location sharing and live location (FG-022)", () => {
+    it("sends static location and venue messages", async () => {
+      const transport = new MockTelegramTransport();
+      const sent: Message[] = [];
+      await transport.connect((event) => {
+        if (event.type === "message.upsert") sent.push(event.message);
+      });
+
+      await transport.sendLocation?.({
+        chatId: "chat-product",
+        latitude: 37.7749,
+        longitude: -122.4194,
+        title: "San Francisco City Hall",
+        address: "1 Dr Carlton B Goodlett Pl",
+      });
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0].content).toMatchObject({
+        kind: "location",
+        latitude: 37.7749,
+        longitude: -122.4194,
+        title: "San Francisco City Hall",
+        address: "1 Dr Carlton B Goodlett Pl",
+        livePeriod: 0,
+      });
+    });
+
+    it("sends live location and stops active live tracking", async () => {
+      const transport = new MockTelegramTransport();
+      const upserts: Message[] = [];
+      await transport.connect((event) => {
+        if (event.type === "message.upsert") upserts.push(event.message);
+      });
+
+      await transport.sendLocation?.({
+        chatId: "chat-product",
+        latitude: 51.5074,
+        longitude: -0.1278,
+        livePeriod: 3600,
+        heading: 90,
+      });
+
+      expect(upserts).toHaveLength(1);
+      const liveMsg = upserts[0];
+      expect(liveMsg.content).toMatchObject({
+        kind: "location",
+        latitude: 51.5074,
+        longitude: -0.1278,
+        livePeriod: 3600,
+        expiresIn: 3600,
+        heading: 90,
+      });
+
+      // Stop live location
+      await transport.stopLiveLocation?.("chat-product", liveMsg.id);
+      expect(upserts).toHaveLength(2);
+      expect((upserts[1].content as any).expiresIn).toBe(0);
+    });
+
+    it("rejects out-of-bounds coordinates", async () => {
+      const transport = new MockTelegramTransport();
+      await expect(
+        transport.sendLocation?.({
+          chatId: "chat-product",
+          latitude: 95,
+          longitude: 0,
+        })
+      ).rejects.toThrow("Coordinates are out of bounds");
+    });
+  });
 });

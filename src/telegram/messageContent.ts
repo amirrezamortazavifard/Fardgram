@@ -23,6 +23,12 @@ export const messageContentText = (content: MessageContent) => {
   if (content.kind === "paidMedia") return content.caption || `Paid Media (${content.starCount} Stars)`;
   if (content.kind === "invoice") return `${content.title}: ${content.currency} ${content.totalAmount}`;
   if (content.kind === "gift") return content.text || `Gift (${content.starCount} Stars)`;
+  if (content.kind === "location") {
+    if (content.title) return content.address ? `${content.title} (${content.address})` : content.title;
+    if (content.address) return content.address;
+    if (content.livePeriod && content.livePeriod > 0) return "Live Location";
+    return `Location (${content.latitude.toFixed(4)}, ${content.longitude.toFixed(4)})`;
+  }
   return content.caption || content.fileName;
 };
 
@@ -39,6 +45,11 @@ export const messagePreviewText = (content: MessageContent) => {
   }
   if (content.kind === "gift") {
     return content.text ? `Gift: ${content.text}` : `Gift (⭐ ${content.starCount})`;
+  }
+  if (content.kind === "location") {
+    if (content.title) return `📍 ${content.title}`;
+    if (content.livePeriod && content.livePeriod > 0) return "📍 Live Location";
+    return "📍 Location";
   }
   if (content.kind !== "media") return messageContentText(content);
   if (content.caption) return content.caption;

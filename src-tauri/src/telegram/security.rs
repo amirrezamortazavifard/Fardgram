@@ -44,6 +44,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "editMessageText",
     "editMessageCaption",
     "editMessageSchedulingState",
+    "editMessageLiveLocation",
     "editChatInviteLink",
     "editChatSubscriptionInviteLink",
     "forwardMessages",
@@ -154,6 +155,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "setPinnedChats",
     "setPollAnswer",
     "stopPoll",
+    "stopLiveLocation",
     "setSupergroupUsername",
     "setUsername",
     "toggleChatIsMarkedAsUnread",
@@ -1167,6 +1169,25 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
         "stopPoll" => {
             validate_message_target(request)?;
         }
+        "stopLiveLocation" => {
+            validate_message_target(request)?;
+        }
+        "editMessageLiveLocation" => {
+            validate_message_target(request)?;
+            if let Some(location) = request.get("location").and_then(Value::as_object) {
+                let lat = location
+                    .get("latitude")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "Latitude is missing or not a number".to_string())?;
+                let lon = location
+                    .get("longitude")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "Longitude is missing or not a number".to_string())?;
+                if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+                    return Err("Latitude must be between -90 and 90 and longitude between -180 and 180".to_string());
+                }
+            }
+        }
         "getMessageAddedReactions" => {
             validate_message_target(request)?;
             let offset = request
@@ -1421,6 +1442,8 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
         let file_pointer = match content_type {
             Some("inputMessageText") => None,
             Some("inputMessagePoll") => None,
+            Some("inputMessageLocation") => None,
+            Some("inputMessageVenue") => None,
             Some("inputMessageSticker") => Some("/sticker/sticker"),
             Some("inputMessageAnimation") => Some("/animation/animation"),
             Some("inputMessagePhoto") => Some("/photo/photo"),
@@ -1482,6 +1505,49 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                         return Err("Quiz explanation cannot exceed 200 characters".to_string());
                     }
                 }
+            }
+        }
+        if content_type == Some("inputMessageLocation") {
+            let location = content
+                .get("location")
+                .and_then(Value::as_object)
+                .ok_or_else(|| "Location object is missing".to_string())?;
+            let lat = location
+                .get("latitude")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| "Latitude is missing or not a number".to_string())?;
+            let lon = location
+                .get("longitude")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| "Longitude is missing or not a number".to_string())?;
+            if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+                return Err("Latitude must be between -90 and 90 and longitude between -180 and 180".to_string());
+            }
+            if let Some(live_period) = content.get("live_period").and_then(Value::as_i64) {
+                if live_period < 0 {
+                    return Err("Live period must be non-negative".to_string());
+                }
+            }
+        }
+        if content_type == Some("inputMessageVenue") {
+            let venue = content
+                .get("venue")
+                .and_then(Value::as_object)
+                .ok_or_else(|| "Venue object is missing".to_string())?;
+            let location = venue
+                .get("location")
+                .and_then(Value::as_object)
+                .ok_or_else(|| "Venue location object is missing".to_string())?;
+            let lat = location
+                .get("latitude")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| "Venue latitude is missing or not a number".to_string())?;
+            let lon = location
+                .get("longitude")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| "Venue longitude is missing or not a number".to_string())?;
+            if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+                return Err("Venue coordinates out of bounds".to_string());
             }
         }
         if let Some(pointer) = file_pointer {
@@ -4281,6 +4347,95 @@ mod tests {
         let mut invalid_txt = translate_txt.clone();
         invalid_txt["to_language_code"] = json!("this-language-code-is-way-too-long");
         assert!(validate_webview_tdlib_request(&invalid_txt).is_err());
+    }
+
+    #[test]
+    fn validates_location_sharing_and_live_location_requests() {
+        let send_static_location = json!({
+            "@type": "sendMessage",
+            "chat_id": 12345678,
+            "input_message_content": {
+                "@type": "inputMessageLocation",
+                "location": {
+                    "@type": "location",
+                    "latitude": 35.6892,
+                    "longitude": 51.3890,
+                    "horizontal_accuracy": 15.0
+                },
+                "live_period": 0
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&send_static_location).is_ok());
+
+        let send_live_location = json!({
+            "@type": "sendMessage",
+            "chat_id": 12345678,
+            "input_message_content": {
+                "@type": "inputMessageLocation",
+                "location": {
+                    "@type": "location",
+                    "latitude": 48.8584,
+                    "longitude": 2.2945
+                },
+                "live_period": 3600,
+                "heading": 90,
+                "proximity_alert_radius": 100
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&send_live_location).is_ok());
+
+        let send_venue = json!({
+            "@type": "sendMessage",
+            "chat_id": 12345678,
+            "input_message_content": {
+                "@type": "inputMessageVenue",
+                "venue": {
+                    "@type": "venue",
+                    "location": {
+                        "@type": "location",
+                        "latitude": 40.7128,
+                        "longitude": -74.0060
+                    },
+                    "title": "New York City Hall",
+                    "address": "Broadway & Park Row"
+                }
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&send_venue).is_ok());
+
+        let stop_live_loc = json!({
+            "@type": "stopLiveLocation",
+            "chat_id": 12345678,
+            "message_id": 999111,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&stop_live_loc).is_ok());
+
+        let edit_live_loc = json!({
+            "@type": "editMessageLiveLocation",
+            "chat_id": 12345678,
+            "message_id": 999111,
+            "location": {
+                "@type": "location",
+                "latitude": 48.8600,
+                "longitude": 2.2950
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&edit_live_loc).is_ok());
+
+        // Invalid latitude (> 90)
+        let mut invalid_lat = send_static_location.clone();
+        invalid_lat["input_message_content"]["location"]["latitude"] = json!(95.0);
+        assert!(validate_webview_tdlib_request(&invalid_lat).is_err());
+
+        // Invalid negative live period
+        let mut invalid_period = send_live_location.clone();
+        invalid_period["input_message_content"]["live_period"] = json!(-100);
+        assert!(validate_webview_tdlib_request(&invalid_period).is_err());
     }
 
     #[test]

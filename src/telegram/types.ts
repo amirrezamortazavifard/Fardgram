@@ -987,6 +987,19 @@ export interface TelegramGift {
   totalCount?: number;
 }
 
+export interface MessageLocationContent {
+  kind: "location";
+  latitude: number;
+  longitude: number;
+  horizontalAccuracy?: number;
+  livePeriod?: number;
+  expiresIn?: number;
+  heading?: number;
+  proximityAlertRadius?: number;
+  title?: string;
+  address?: string;
+}
+
 export type MessageContent =
   | { kind: "text"; text: string; entities?: MessageTextEntity[] }
   | {
@@ -1001,6 +1014,7 @@ export type MessageContent =
   | MessagePaidMediaContent
   | MessageInvoiceContent
   | MessageGiftContent
+  | MessageLocationContent
   | { kind: "unsupported"; type: string; text: string }
   | ({ kind: "file" } & TransferableMessageContent)
   | ({
@@ -1372,6 +1386,23 @@ export interface SendMessageInput {
   replyToMessageId?: string;
   replyQuote?: MessageReplyQuote;
   clearDraft?: boolean;
+  disableNotification?: boolean;
+  schedulingState?: MessageSchedulingState;
+}
+
+export interface SendLocationInput {
+  chatId: string;
+  topicId?: string;
+  latitude: number;
+  longitude: number;
+  horizontalAccuracy?: number;
+  livePeriod?: number;
+  heading?: number;
+  proximityAlertRadius?: number;
+  title?: string;
+  address?: string;
+  replyToMessageId?: string;
+  replyQuote?: MessageReplyQuote;
   disableNotification?: boolean;
   schedulingState?: MessageSchedulingState;
 }

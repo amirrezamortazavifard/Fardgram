@@ -50,6 +50,51 @@ export const inputMessageText = (text: string | TdObject, clearDraft: boolean): 
   clear_draft: clearDraft,
 });
 
+export const inputMessageLocation = (
+  latitude: number,
+  longitude: number,
+  horizontalAccuracy?: number,
+  livePeriod = 0,
+  heading?: number,
+  proximityAlertRadius?: number,
+): TdObject => ({
+  "@type": "inputMessageLocation",
+  location: {
+    "@type": "location",
+    latitude,
+    longitude,
+    horizontal_accuracy: horizontalAccuracy ?? 0,
+  },
+  live_period: livePeriod,
+  heading: heading ?? 0,
+  proximity_alert_radius: proximityAlertRadius ?? 0,
+});
+
+export const inputMessageVenue = (
+  latitude: number,
+  longitude: number,
+  title: string,
+  address: string,
+  provider = "",
+  id = "",
+  type = "",
+): TdObject => ({
+  "@type": "inputMessageVenue",
+  venue: {
+    "@type": "venue",
+    location: {
+      "@type": "location",
+      latitude,
+      longitude,
+    },
+    title,
+    address,
+    provider,
+    id,
+    type,
+  },
+});
+
 export const messageSchedulingStateObject = (state?: MessageSchedulingState): TdObject | null => {
   if (!state) return null;
   if (state.kind === "atDate") {

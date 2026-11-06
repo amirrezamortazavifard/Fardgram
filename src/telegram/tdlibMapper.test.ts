@@ -1199,10 +1199,54 @@ describe("TDLib mapper", () => {
       explanationEntities: undefined,
     });
     expect(mapTdMessageContent({
+      "@type": "messageLocation",
+      location: { "@type": "location", latitude: 37.7749, longitude: -122.4194, horizontal_accuracy: 5 },
+      live_period: 0,
+    })).toEqual({
+      kind: "location",
+      latitude: 37.7749,
+      longitude: -122.4194,
+      horizontalAccuracy: 5,
+      livePeriod: 0,
+      expiresIn: undefined,
+      heading: undefined,
+      proximityAlertRadius: undefined,
+    });
+    expect(mapTdMessageContent({
+      "@type": "messageLiveLocation",
+      location: { "@type": "location", latitude: 51.5074, longitude: -0.1278 },
+      live_period: 3600,
+      expires_in: 3500,
+      heading: 90,
+    })).toEqual({
+      kind: "location",
+      latitude: 51.5074,
+      longitude: -0.1278,
+      livePeriod: 3600,
+      expiresIn: 3500,
+      heading: 90,
+      proximityAlertRadius: undefined,
+    });
+    expect(mapTdMessageContent({
+      "@type": "messageVenue",
+      venue: {
+        "@type": "venue",
+        location: { "@type": "location", latitude: 40.7128, longitude: -74.006 },
+        title: "Empire State Building",
+        address: "20 W 34th St, New York",
+      },
+    })).toEqual({
+      kind: "location",
+      latitude: 40.7128,
+      longitude: -74.006,
+      title: "Empire State Building",
+      address: "20 W 34th St, New York",
+    });
+    expect(mapTdMessageContent({
       "@type": "messageDice",
       emoji: "🎲",
       value: 6,
-    })).toEqual({ kind: "text", text: "🎲 6" });
+      })).toEqual({ kind: "text", text: "🎲 6" });
   });
 
   it("maps rich message headings, nested formatting, lists, and quotes", () => {

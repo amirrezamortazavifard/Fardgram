@@ -33,6 +33,7 @@ import {
   type ScannedArchiveFile,
 } from "../utils/archiveBuilder";
 import { CreatePollDialog } from "./CreatePollDialog";
+import { SendLocationDialog } from "./SendLocationDialog";
 import { VoiceVideoRecorder, type RecordingKind } from "./VoiceVideoRecorder";
 import { useAgentStore } from "../agent/agentStore";
 import {
@@ -245,10 +246,12 @@ export const ConversationComposer = memo(function ConversationComposer({
 }: ConversationComposerProps) {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [showPollDialog, setShowPollDialog] = useState(false);
+  const [showLocationDialog, setShowLocationDialog] = useState(false);
   const [showSendMenu, setShowSendMenu] = useState(false);
   const focusComposer = focus.request;
   useTranslation();
   const sendPoll = useTelegramStore((state) => state.sendPoll);
+  const sendLocation = useTelegramStore((state) => state.sendLocation);
   const chatDraft = useTelegramStore((state) => state.drafts.get(draftKey));
   const getChatMentionSuggestions = useTelegramStore((state) => state.getChatMentionSuggestions);
   const activeAccountId = useTelegramStore((state) => state.activeAccountId);
@@ -1815,6 +1818,7 @@ export const ConversationComposer = memo(function ConversationComposer({
             onPickAudio={() => audioInputRef.current?.click()}
             onPickPoll={() => setShowPollDialog(true)}
             onPickFolder={() => folderInputRef.current?.click()}
+            onPickLocation={() => setShowLocationDialog(true)}
           />
         </div>
         {previewOpen && draft.trim() && (
@@ -2234,6 +2238,26 @@ export const ConversationComposer = memo(function ConversationComposer({
             return success;
           }}
           onClose={() => setShowPollDialog(false)}
+        />
+      )}
+      {showLocationDialog && (
+        <SendLocationDialog
+          isOpen={showLocationDialog}
+          onSend={async (locationData) => {
+            const success = await sendLocation({
+              chatId,
+              latitude: locationData.latitude,
+              longitude: locationData.longitude,
+              horizontalAccuracy: locationData.horizontalAccuracy,
+              livePeriod: locationData.livePeriod,
+              heading: locationData.heading,
+              title: locationData.title,
+              address: locationData.address,
+              replyToMessageId: replyingTo?.id ?? chatDraft?.replyToMessageId,
+            });
+            return success;
+          }}
+          onClose={() => setShowLocationDialog(false)}
         />
       )}
       {activeRecording && (

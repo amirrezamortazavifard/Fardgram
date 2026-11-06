@@ -6,6 +6,31 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Location Sharing & Live Location Parity (FG-022)**: Complete location messaging and real-time live location tracking parity with official TDLib methods, dual-theme support, and privacy safeguards:
+  - **Interactive Location Card Component (`src/components/LocationMessage.tsx`)**:
+    - Visual map card with coordinate formatting (`37.7749° N, 122.4194° W`), venue title, and street address.
+    - Live location tracker with real-time countdown timer, radar pulse beacon, and compass heading orientation (`transform: rotate(deg)`).
+    - Direct "Stop Sharing" button for outgoing active live locations delegating to `stopLiveLocation`.
+    - Safe "Open in Google Maps" external link integration using `openExternalLink` and "Copy coordinates" button with clipboard feedback.
+    - Offline-resilient SVG street grid vector preview ensuring zero tracking leaks or missing tile issues.
+    - Dual-theme parity supporting dark and light modes with high contrast and smooth transitions.
+  - **Send Location Picker Dialog (`src/components/SendLocationDialog.tsx`)**:
+    - Dual-mode tabs: "Static Location" and "Share Live Location".
+    - "Locate Me" auto-detection using `navigator.geolocation.getCurrentPosition` with graceful permission denial and timeout handling.
+    - Coordinate inputs with real-time numeric bounds validation (-90° to +90° latitude, -180° to +180° longitude).
+    - Telegram standard live duration options: 15 minutes, 1 hour, and 8 hours.
+    - Optional venue name and street address fields for static landmark pins.
+    - Explicit privacy safeguard notice confirming no continuous background tracking occurs without explicit user action.
+  - **Attachment Menu & Composer Integration**:
+    - Added "Location" item with dedicated rose-gradient map icon to `AttachmentPickerMenu.tsx`.
+    - Integrated `SendLocationDialog` directly into `ConversationComposer.tsx` with reply-to and draft tracking.
+    - Updated message preview and chat list previews to show `📍 Location`, `📍 Live Location`, and venue names.
+  - **Security & TDLib Engine Integration**:
+    - Whitelisted `editMessageLiveLocation` and `stopLiveLocation` in `src-tauri/src/telegram/security.rs`.
+    - Added coordinate bounds validation (-90..90, -180..180) and target message permission checks.
+    - Added TDLib generator functions `inputMessageLocation` and `inputMessageVenue` in `tdlibRequests.ts`.
+    - Mapped TDLib `messageLocation`, `messageLiveLocation`, and `messageVenue` to structured `MessageLocationContent` in `tdlibMapper.ts`.
+    - Implemented `sendLocation` and `stopLiveLocation` across `TauriTransport`, `tauriMessageMediaService`, `MockTelegramTransport`, and `telegramStore`.
 - **Drag-and-Drop Folders & File-Set Archive Sending Parity (FG-021)**: Comprehensive folder drop and structured archive creation parity with strict security controls, dual-theme support, and lossless compression:
   - **Archive Drop & Send Dialog (`ArchiveDropModal.tsx`)**:
     - Automatic detection when folders or multiple files are dropped into the conversation or composer.

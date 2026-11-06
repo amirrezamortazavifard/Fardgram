@@ -82,6 +82,7 @@ import type {
   SetChatMessageAutoDeleteTimeInput,
   SetMessageReactionInput,
   SetPollAnswerInput,
+  SendLocationInput,
   SendPollInput,
   StopPollInput,
   MessagePollOption,
@@ -2410,6 +2411,57 @@ export class MockTelegramTransport implements TelegramTransport {
     );
     if (!message || message.content.kind !== "poll") throw new Error("Poll does not exist");
     message.content.isClosed = true;
+    this.listener?.({ type: "message.upsert", message: clone(message) });
+    return true;
+  }
+
+  async sendLocation(input: SendLocationInput): Promise<boolean> {
+    if (input.latitude < -90 || input.latitude > 90 || input.longitude < -180 || input.longitude > 180) {
+      throw new Error("Coordinates are out of bounds");
+    }
+    const messageId = `mock_loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const livePeriod = input.livePeriod ?? 0;
+    const locationMessage: Message = {
+      id: messageId,
+      chatId: input.chatId,
+      senderId: this.snapshot.currentUserId ?? "user_self",
+      sentAt: new Date().toISOString(),
+      delivery: "read",
+      outgoing: true,
+      permissions: {
+        canReply: true,
+        canEdit: false,
+        canDeleteOnlyForSelf: true,
+        canDeleteForAllUsers: true,
+        canForward: true,
+      },
+      content: {
+        kind: "location",
+        latitude: input.latitude,
+        longitude: input.longitude,
+        horizontalAccuracy: input.horizontalAccuracy,
+        livePeriod,
+        expiresIn: livePeriod > 0 ? livePeriod : undefined,
+        heading: input.heading,
+        proximityAlertRadius: input.proximityAlertRadius,
+        title: input.title,
+        address: input.address,
+      },
+    };
+
+    this.snapshot.messages.push(locationMessage);
+    this.listener?.({ type: "message.upsert", message: clone(locationMessage) });
+    return true;
+  }
+
+  async stopLiveLocation(chatId: string, messageId: string): Promise<boolean> {
+    const message = this.snapshot.messages.find(
+      (item) => item.chatId === chatId && item.id === messageId,
+    );
+    if (!message || message.content.kind !== "location") {
+      throw new Error("Location message does not exist");
+    }
+    message.content.expiresIn = 0;
     this.listener?.({ type: "message.upsert", message: clone(message) });
     return true;
   }

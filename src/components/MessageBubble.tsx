@@ -73,6 +73,7 @@ import { isLargeEmojiText } from "../utils/largeEmoji";
 import { replyQuoteFromSelection } from "../utils/messageTextSelection";
 import { MediaProgressRing } from "./MediaProgressRing";
 import { PollMessage } from "./PollMessage";
+import { LocationMessage } from "./LocationMessage";
 import { PaidMediaMessage } from "./PaidMediaMessage";
 import { InvoiceMessage } from "./InvoiceMessage";
 import { GiftMessage } from "./GiftMessage";
@@ -152,6 +153,7 @@ export interface MessageBubbleProps {
   ) => Promise<MessageReactionSenderPage>;
   onPollAnswer: (messageId: string, optionPositions: number[], chatId?: string) => Promise<boolean>;
   onStopPoll?: (messageId: string, chatId?: string) => Promise<boolean>;
+  onStopLiveLocation?: (messageId: string, chatId?: string) => Promise<boolean | void>;
   onBuyPaidMedia?: (chatId: string, messageId: string) => Promise<boolean | void>;
   onBotCallback: (messageId: string, data: string, chatId?: string) => Promise<CallbackQueryAnswer | undefined>;
   onOpenWebApp?: (url: string, title?: string) => void | Promise<void>;
@@ -229,6 +231,7 @@ function MessageBubbleComponent({
   onLoadReactionSenders,
   onPollAnswer,
   onStopPoll,
+  onStopLiveLocation,
   onBuyPaidMedia,
   onBotCallback,
   onOpenWebApp,
@@ -1204,6 +1207,13 @@ function MessageBubbleComponent({
               onStopPoll={onStopPoll}
               onSearchHashtag={onSearchHashtag}
             />
+          ) : content.kind === "location" ? (
+            <LocationMessage
+              message={message}
+              content={content}
+              isOutgoing={message.outgoing}
+              onStopLiveLocation={onStopLiveLocation}
+            />
           ) : content.kind === "media" && ["audio", "voice"].includes(content.mediaType) ? (
             <div className="attachment-message">
               <div className="audio-message">
@@ -1434,6 +1444,7 @@ export interface MessageBubblePreviewProps {
   onLoadReactionSenders?: MessageBubbleProps["onLoadReactionSenders"];
   onPollAnswer?: MessageBubbleProps["onPollAnswer"];
   onStopPoll?: MessageBubbleProps["onStopPoll"];
+  onStopLiveLocation?: MessageBubbleProps["onStopLiveLocation"];
   onBotCallback?: MessageBubbleProps["onBotCallback"];
   onOpenWebApp?: MessageBubbleProps["onOpenWebApp"];
   onOpenMedia?: MessageBubbleProps["onOpenMedia"];
@@ -1492,6 +1503,7 @@ export function MessageBubblePreview({
   onLoadReactionSenders = previewReactionSenders,
   onPollAnswer = previewFalse,
   onStopPoll,
+  onStopLiveLocation,
   onBotCallback = previewCallback,
   onOpenWebApp,
   onOpenMedia,
@@ -1543,6 +1555,7 @@ export function MessageBubblePreview({
       onLoadReactionSenders={onLoadReactionSenders}
       onPollAnswer={onPollAnswer}
       onStopPoll={onStopPoll}
+      onStopLiveLocation={onStopLiveLocation}
       onBotCallback={onBotCallback}
       onOpenWebApp={onOpenWebApp}
       onCollapseQuote={previewCollapseQuote}

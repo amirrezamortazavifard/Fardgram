@@ -1247,15 +1247,41 @@ export const mapTdMessageContent = (value: unknown, includePendingUpload = false
       const phone = typeof contact?.phone_number === "string" ? contact.phone_number : "";
       return { kind: "text", text: [translate("联系人"), name, phone].filter(Boolean).join(" · ") };
     }
-    case "messageLocation":
-      return { kind: "text", text: translate("位置") };
-    case "messageLiveLocation":
-      return { kind: "text", text: translate("实时位置") };
+    case "messageLocation": {
+      const location = asTdObject(content.location);
+      return {
+        kind: "location",
+        latitude: tdNumber(location?.latitude) ?? 0,
+        longitude: tdNumber(location?.longitude) ?? 0,
+        horizontalAccuracy: tdNumber(location?.horizontal_accuracy),
+        livePeriod: tdNumber(content.live_period) ?? 0,
+        expiresIn: tdNumber(content.expires_in),
+        heading: tdNumber(content.heading),
+        proximityAlertRadius: tdNumber(content.proximity_alert_radius),
+      };
+    }
+    case "messageLiveLocation": {
+      const location = asTdObject(content.location);
+      return {
+        kind: "location",
+        latitude: tdNumber(location?.latitude) ?? 0,
+        longitude: tdNumber(location?.longitude) ?? 0,
+        livePeriod: tdNumber(content.live_period) ?? 900,
+        expiresIn: tdNumber(content.expires_in) ?? 900,
+        heading: tdNumber(content.heading),
+        proximityAlertRadius: tdNumber(content.proximity_alert_radius),
+      };
+    }
     case "messageVenue": {
       const venue = asTdObject(content.venue);
-      const title = typeof venue?.title === "string" ? venue.title : "";
-      const address = typeof venue?.address === "string" ? venue.address : "";
-      return { kind: "text", text: [translate("地点"), title, address].filter(Boolean).join(" · ") };
+      const location = asTdObject(venue?.location);
+      return {
+        kind: "location",
+        latitude: tdNumber(location?.latitude) ?? 0,
+        longitude: tdNumber(location?.longitude) ?? 0,
+        title: typeof venue?.title === "string" ? venue.title : undefined,
+        address: typeof venue?.address === "string" ? venue.address : undefined,
+      };
     }
     case "messagePoll": {
       const poll = asTdObject(content.poll);

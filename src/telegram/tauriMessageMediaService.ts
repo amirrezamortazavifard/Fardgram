@@ -26,7 +26,9 @@ import {
 import {
   formattedTextObject,
   forumTopicObject,
+  inputMessageLocation,
   inputMessageText,
+  inputMessageVenue,
   messageSendOptions,
   numericId,
   selfDestructTypeObject,
@@ -55,6 +57,7 @@ import type {
   SendEmojiAssetInput,
   SendFileInput,
   SendFilesInput,
+  SendLocationInput,
   SendMessageInput,
   SendMediaCopyInput,
   SetChatDraftInput,
@@ -448,6 +451,45 @@ export class TauriMessageMediaService {
       "@type": "stopPoll",
       chat_id: numericId(input.chatId),
       message_id: numericId(input.messageId),
+    });
+    return true;
+  }
+
+  async sendLocation(input: SendLocationInput): Promise<boolean> {
+    const inputMessageContent = input.title || input.address
+      ? inputMessageVenue(
+          input.latitude,
+          input.longitude,
+          input.title ?? "",
+          input.address ?? "",
+        )
+      : inputMessageLocation(
+          input.latitude,
+          input.longitude,
+          input.horizontalAccuracy,
+          input.livePeriod ?? 0,
+          input.heading,
+          input.proximityAlertRadius,
+        );
+
+    const request = {
+      "@type": "sendMessage",
+      chat_id: numericId(input.chatId),
+      message_thread_id: input.topicId ? numericId(input.topicId) : undefined,
+      reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
+      options: messageSendOptions(input.disableNotification, input.schedulingState),
+      input_message_content: inputMessageContent,
+    };
+
+    await this.context.request(request);
+    return true;
+  }
+
+  async stopLiveLocation(chatId: string, messageId: string): Promise<boolean> {
+    await this.context.request({
+      "@type": "stopLiveLocation",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
     });
     return true;
   }
