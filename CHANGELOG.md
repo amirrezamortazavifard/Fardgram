@@ -3,7 +3,7 @@
 Notable Fardgram changes are recorded here. Versions follow Semantic Versioning,
 with prerelease identifiers used for release candidates.
 
-## [Unreleased]
+## [1.1.0] - 2026-11-07
 
 ### Added
 - **Full Regression, Migration, Security & Native Release Validation (FG-RELEASE)**: Comprehensive cross-platform quality gate completed across all implemented Telegram Desktop vertical slices:
