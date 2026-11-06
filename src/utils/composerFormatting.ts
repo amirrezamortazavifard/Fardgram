@@ -8,9 +8,18 @@ export const composerEntityKinds: MessageTextEntityKind[] = [
   "email", "phone", "customEmoji", "dateTime",
 ];
 
-export type ComposerFormat = "spoiler" | "strikethrough" | "underline" | "bold" | "italic" | "code" | "blockquote" | "link";
+export type ComposerFormat = "spoiler" | "strikethrough" | "underline" | "bold" | "italic" | "code" | "pre" | "blockquote" | "link";
+
 const composerFormatShortcuts: Partial<Record<string, ComposerFormat>> = {
-  m: "spoiler", x: "strikethrough", u: "underline", b: "bold", q: "blockquote", k: "link",
+  m: "spoiler",
+  p: "spoiler",
+  x: "strikethrough",
+  u: "underline",
+  b: "bold",
+  i: "italic",
+  q: "blockquote",
+  k: "link",
+  c: "pre",
 };
 
 export const composerFormatShortcut = (event: Pick<KeyboardEvent,

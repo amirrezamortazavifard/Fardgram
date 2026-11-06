@@ -10389,4 +10389,410 @@ button.message-forward-heading-icon { border: 0; cursor: pointer; }
   justify-content: flex-start;
 }
 
+/* ==========================================================================
+   FG-014: Rich Code Blocks, Formatting Toolbar, Link Dialog & Message Preview
+   ========================================================================== */
+
+/* Rich Code Block Container */
+.rich-code-block-container {
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-bg-elevated, #111827) 94%, #000);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="light"] .rich-code-block-container,
+.light .rich-code-block-container {
+  background: #f8fafc;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.rich-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] .rich-code-header,
+.light .rich-code-header {
+  background: #f1f5f9;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.rich-code-language {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary, #94a3b8);
+  font-family: Consolas, "Courier New", monospace;
+}
+
+[data-theme="light"] .rich-code-language,
+.light .rich-code-language {
+  color: #475569;
+}
+
+.rich-code-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-secondary, #cbd5e1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rich-code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+[data-theme="light"] .rich-code-copy-btn,
+.light .rich-code-copy-btn {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #ffffff;
+  color: #475569;
+}
+
+[data-theme="light"] .rich-code-copy-btn:hover,
+.light .rich-code-copy-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.rich-code-pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: max(11px, calc(var(--chat-font-size) - 2px));
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--color-text-primary, #f8fafc);
+}
+
+[data-theme="light"] .rich-code-pre,
+.light .rich-code-pre {
+  color: #0f172a;
+}
+
+/* Light Mode Overrides for Formatting Toolbar */
+[data-theme="light"] .composer-formatting-toolbar,
+.light .composer-formatting-toolbar {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+[data-theme="light"] .composer-formatting-toolbar::after,
+.light .composer-formatting-toolbar::after {
+  border-color: rgba(0, 0, 0, 0.14) transparent transparent transparent;
+}
+
+[data-theme="light"] .format-tool-btn,
+.light .format-tool-btn {
+  color: #475569;
+}
+
+[data-theme="light"] .format-tool-btn:hover,
+.light .format-tool-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #0f172a;
+}
+
+/* Composer Link Dialog */
+.composer-link-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.composer-link-dialog {
+  width: 90%;
+  max-width: 380px;
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--color-bg-elevated, #111827) 96%, #050811);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  color: var(--color-text-primary, #ffffff);
+  animation: composerMenuFadeUp 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+[data-theme="light"] .composer-link-dialog,
+.light .composer-link-dialog {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15);
+  color: #0f172a;
+}
+
+.composer-link-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.composer-link-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.composer-link-dialog-close {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary, #94a3b8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.composer-link-dialog-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+[data-theme="light"] .composer-link-dialog-close:hover,
+.light .composer-link-dialog-close:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #0f172a;
+}
+
+.composer-link-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.composer-link-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.composer-link-dialog-field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #94a3b8);
+}
+
+[data-theme="light"] .composer-link-dialog-field label,
+.light .composer-link-dialog-field label {
+  color: #64748b;
+}
+
+.composer-link-input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.composer-link-input:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+[data-theme="light"] .composer-link-input,
+.light .composer-link-input {
+  background: #f8fafc;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  color: #0f172a;
+}
+
+[data-theme="light"] .composer-link-input:focus,
+.light .composer-link-input:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
+
+.composer-link-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.composer-link-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 0;
+}
+
+.composer-link-btn-cancel {
+  background: transparent;
+  color: var(--color-text-secondary, #94a3b8);
+}
+
+.composer-link-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+[data-theme="light"] .composer-link-btn-cancel:hover,
+.light .composer-link-btn-cancel:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #0f172a;
+}
+
+.composer-link-btn-save {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+.composer-link-btn-save:hover:not(:disabled) {
+  background: #0369a1;
+}
+
+.composer-link-btn-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Composer Message Preview Panel */
+.composer-message-preview-container {
+  margin: 0 12px 8px 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-bg-elevated, #111827) 94%, #000);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  animation: composerMenuFadeUp 0.15s ease-out both;
+}
+
+.composer-message-preview-container.is-light {
+  background: #f8fafc;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.composer-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.composer-message-preview-container.is-light .composer-preview-header {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.composer-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary, #ffffff);
+}
+
+.composer-message-preview-container.is-light .composer-preview-title {
+  color: #0f172a;
+}
+
+.composer-preview-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.composer-preview-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.composer-preview-stat {
+  font-size: 11px;
+  color: var(--color-text-secondary, #94a3b8);
+}
+
+.composer-message-preview-container.is-light .composer-preview-stat {
+  color: #64748b;
+}
+
+.composer-preview-close {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary, #94a3b8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.composer-preview-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.composer-message-preview-container.is-light .composer-preview-close:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #0f172a;
+}
+
+.composer-preview-bubble-wrapper {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.composer-preview-bubble {
+  display: inline-block;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--color-message-outgoing, #1e3a5f);
+  color: var(--color-text-primary, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.composer-message-preview-container.is-light .composer-preview-bubble {
+  background: #e0f2fe;
+  color: #0c4a6e;
+}
+
+
 

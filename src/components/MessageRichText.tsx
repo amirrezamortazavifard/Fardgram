@@ -13,6 +13,7 @@ import { highlightedText, textHighlightRanges } from "../utils/textHighlight";
 import { isRtlText } from "../utils/textDirection";
 import { TextSpoiler, TextSpoilerGroup } from "./Spoiler";
 import { CollapsibleBlockQuote, type CollapseQuoteHandler, type ExpandQuoteHandler } from "./CollapsibleBlockQuote";
+import { RichCodeBlock } from "./RichCodeBlock";
 
 const MarkdownText = lazy(() => import("./MarkdownText"));
 
@@ -150,7 +151,7 @@ const wrapEntity = (
       ? <time key={key} dateTime={new Date(entity.dateTime.unixTime * 1_000).toISOString()}>{children}</time>
       : <Fragment key={key}>{children}</Fragment>;
     case "code": return <code key={key}>{children}</code>;
-    case "pre": return <code key={key} className="rich-pre" data-language={entity.language}>{children}</code>;
+    case "pre": return <RichCodeBlock key={key} language={entity.language} rawText={value}>{children}</RichCodeBlock>;
     case "blockquote": return <span key={key} className="rich-blockquote">{children}</span>;
     case "hashtag": return (
       <HashtagLink key={key} value={value} onSearchHashtag={onSearchHashtag}>

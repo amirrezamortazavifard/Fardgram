@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 import { MessageBubble } from "./MessageBubble";
-import { telegramStore } from "../store/telegramStore";
 import type { Message } from "../telegram/types";
+import type { AutoDownloadPolicy } from "../media/autoDownload";
 
 function createMockTextMessage(overrides?: Partial<Message>): Message {
   return {
@@ -29,11 +29,16 @@ function createMockTextMessage(overrides?: Partial<Message>): Message {
 
 const noop = () => Promise.resolve();
 const noopBool = () => Promise.resolve(true);
-const mockPolicy = { images: false, videos: false, audio: false, files: false, limitMb: 0 };
+
+const mockPolicy: AutoDownloadPolicy = {
+  images: false,
+  videos: false,
+  audio: false,
+  files: false,
+  limitMb: 0,
+};
+
 const defaultProps = {
-  senderName: "Carol",
-  senderProfileAvailable: true,
-  groupPosition: "single" as const,
   selectionMode: false,
   selected: false,
   highlighted: false,
@@ -66,6 +71,9 @@ const defaultProps = {
   onSearchHashtag: () => {},
   autoplayAnimations: false,
   autoDownloadPolicy: mockPolicy,
+  senderName: "Carol",
+  senderProfileAvailable: true,
+  groupPosition: "single" as const,
 };
 
 describe("MessageBubble Translation UI (FG-013)", () => {

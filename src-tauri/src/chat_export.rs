@@ -149,7 +149,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("fardgram-export-test-{stamp}"));
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!("fardgram-export-test-{pid}-{stamp}"));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

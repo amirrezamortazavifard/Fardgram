@@ -7,6 +7,7 @@ import type { Components } from "react-markdown";
 import { handleExternalLinkClick, safeExternalHref as safeHref } from "../utils/externalLinks";
 import { highlightTextNodes } from "../utils/textHighlight";
 import { CollapsibleBlockQuote, type CollapseQuoteHandler, type ExpandQuoteHandler } from "./CollapsibleBlockQuote";
+import { RichCodeBlock } from "./RichCodeBlock";
 import { createMarkdownParseCache } from "../utils/markdownParseCache";
 import { telegramStore } from "../store/telegramStore";
 
@@ -38,7 +39,7 @@ function MarkdownText({ text, className, highlightQuery, dir, onCollapseQuote, o
         ? <a href={safe} target="_blank" rel="noreferrer" onClick={handleExternalLinkClick}>{highlight(children)}</a>
         : <>{highlight(children)}</>;
     },
-    img: ({ alt }) => <span className="rich-image-alt">{alt || translate("图片")}</span>,
+    img: ({ alt }) => <span className="rich-image-alt">{alt || "Image"}</span>,
     p: ({ children }) => <p dir="auto">{highlight(children)}</p>,
     h1: ({ children }) => <h1 dir="auto">{highlight(children)}</h1>,
     h2: ({ children }) => <h2 dir="auto">{highlight(children)}</h2>,
@@ -58,7 +59,7 @@ function MarkdownText({ text, className, highlightQuery, dir, onCollapseQuote, o
     ),
     td: ({ children }) => <td>{highlight(children)}</td>,
     th: ({ children }) => <th>{highlight(children)}</th>,
-    pre: ({ children }) => <pre>{highlight(children)}</pre>,
+    pre: ({ children }) => <RichCodeBlock>{highlight(children)}</RichCodeBlock>,
   }), [text, highlightQuery, onCollapseQuote, onExpandQuote]);
   return (
     <div className={`message-rich-text ${className}`} data-rich-text="markdown" dir={resolvedDir}>

@@ -11,6 +11,7 @@ import { composerDocument, composerEntityKinds, composerFormattedText, composerF
 import { ComposerContextMenu, type ComposerMenuAction } from "./ComposerContextMenu";
 import type { ContextMenuPoint } from "./ContextMenuSurface";
 import { ComposerFormattingBar } from "./ComposerFormattingBar";
+import { ComposerLinkDialog } from "./ComposerLinkDialog";
 
 export interface ComposerInputElement extends HTMLDivElement {
   readonly value: string;
@@ -78,6 +79,9 @@ export function ComposerInput(props: Props) {
   const [menu, setMenu] = useState<{ point: ContextMenuPoint; from: number; to: number }>();
   const [hasSelection, setHasSelection] = useState(false);
   const [clipboardError, setClipboardError] = useState(false);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [linkInitialText, setLinkInitialText] = useState("");
+  const [linkSelectionRange, setLinkSelectionRange] = useState<{ from: number; to: number } | null>(null);
   const closeMenu = useCallback(() => setMenu(undefined), []);
 
   const applyFormat = useCallback((format: ComposerFormat) => {
@@ -87,11 +91,29 @@ export function ComposerInput(props: Props) {
     const to = Math.min(editor.state.doc.content.size - 1, editor.state.selection.to);
     if (format === "link") {
       const selected = editor.state.doc.textBetween(from, to, "", "\n");
-      // Insert delimiters around the existing text to retain any overlapping marks.
-      editor.view.dispatch(editor.state.tr.insertText("]()", to).insertText("[", from));
-      editor.commands.setTextSelection(from + selected.length + 3);
-    } else editor.commands.toggleMark(format);
+      setLinkInitialText(selected);
+      setLinkSelectionRange({ from, to });
+      setLinkDialogOpen(true);
+    } else {
+      editor.commands.toggleMark(format);
+    }
   }, []);
+
+  const handleApplyLink = useCallback((displayText: string, url: string) => {
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed) return;
+    const range = linkSelectionRange ?? {
+      from: editor.state.selection.from,
+      to: editor.state.selection.to,
+    };
+    const textNode = editor.schema.text(displayText, [
+      editor.schema.marks.textUrl.create({ entity: { href: url } }),
+    ]);
+    editor.view.dispatch(editor.state.tr.replaceWith(range.from, range.to, textNode));
+    editor.commands.setTextSelection(range.from + displayText.length);
+    setLinkDialogOpen(false);
+    setLinkSelectionRange(null);
+  }, [linkSelectionRange]);
 
   const pasteText = useCallback((text: string) => {
     const editor = editorRef.current;
@@ -268,5 +290,17 @@ export function ComposerInput(props: Props) {
     {clipboardError && <span className="composer-clipboard-error" role="alert">{translate("无法访问剪贴板，请使用键盘快捷键")}</span>}
     {menu && <ComposerContextMenu point={menu.point} selected={menu.from !== menu.to} colorTheme={props.colorTheme}
       onAction={action => void runMenuAction(action)} onClose={closeMenu} restoreFocus={restoreFocus} />}
+    {linkDialogOpen && (
+      <ComposerLinkDialog
+        isOpen={linkDialogOpen}
+        initialText={linkInitialText}
+        onApply={handleApplyLink}
+        onClose={() => {
+          setLinkDialogOpen(false);
+          setLinkSelectionRange(null);
+          restoreFocus();
+        }}
+      />
+    )}
   </div>;
 }

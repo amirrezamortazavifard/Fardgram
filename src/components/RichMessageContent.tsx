@@ -29,6 +29,7 @@ import { AutoplayVideo } from "./AutoplayVideo";
 import { StableImage } from "./StableImage";
 import { MediaSpoiler, TextSpoiler, TextSpoilerGroup } from "./Spoiler";
 import { CollapsibleBlockQuote, type CollapseQuoteHandler, type ExpandQuoteHandler } from "./CollapsibleBlockQuote";
+import { RichCodeBlock } from "./RichCodeBlock";
 
 interface RichMessageContentProps {
   blocks: MessageRichBlock[];
@@ -367,7 +368,7 @@ const renderBlocks = (blocks: MessageRichBlock[], parentKey: string, context: Re
       case "paragraph":
         return <p key={key}>{renderRuns(block.text, key, context)}</p>;
       case "preformatted":
-        return <pre key={key}><code data-language={block.language}>{renderRuns(block.text, key, context)}</code></pre>;
+        return <RichCodeBlock key={key} language={block.language}>{renderRuns(block.text, key, context)}</RichCodeBlock>;
       case "footer":
         return <footer key={key}>{renderRuns(block.text, key, context)}</footer>;
       case "thinking":

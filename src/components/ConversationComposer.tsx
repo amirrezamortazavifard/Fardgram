@@ -21,6 +21,7 @@ import {
   Video,
   Plus,
   Pencil,
+  Eye,
 } from "lucide-react";
 import { ScheduleMessageDialog } from "./ScheduleMessageDialog";
 import { MediaEditorModal, type MediaEditorResult } from "./MediaEditorModal";
@@ -88,6 +89,8 @@ import { MediaSpoiler } from "./Spoiler";
 import { StableImage } from "./StableImage";
 import { Avatar } from "./Avatar";
 import { ComposerInput, type ComposerInputElement } from "./ComposerInput";
+import { ComposerMessagePreview } from "./ComposerMessagePreview";
+import { parseMarkdownToFormattedText } from "../utils/markdownEntities";
 
 interface ConversationComposerProps {
   chatId: string;
@@ -282,6 +285,7 @@ export const ConversationComposer = memo(function ConversationComposer({
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [recordingMode, setRecordingMode] = useState<RecordingKind>("voice");
   const [activeRecording, setActiveRecording] = useState<RecordingKind | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const paperclipAnchorRef = useRef<HTMLDivElement>(null);
@@ -1097,7 +1101,8 @@ export const ConversationComposer = memo(function ConversationComposer({
   const sendPendingAttachments = async (schedulingState?: MessageSchedulingState, forceDisableNotification?: boolean) => {
     if (editingMessage || sending || attachmentPending || pendingAttachments.length === 0) return;
     const restoreFocus = focus.capture();
-    const caption = trimComposerFormattedText(draftRef.current, mentionEntitiesRef.current);
+    const rawCaption = trimComposerFormattedText(draftRef.current, mentionEntitiesRef.current);
+    const caption = parseMarkdownToFormattedText(rawCaption.text, rawCaption.entities);
     setAttachmentPending(true);
     try {
       const inspectedAttachments = await Promise.all(
@@ -1177,7 +1182,8 @@ export const ConversationComposer = memo(function ConversationComposer({
       await sendPendingAttachments(schedulingState, forceDisableNotification);
       return;
     }
-    const submitted = trimComposerFormattedText(draftRef.current, mentionEntitiesRef.current);
+    const rawSubmitted = trimComposerFormattedText(draftRef.current, mentionEntitiesRef.current);
+    const submitted = parseMarkdownToFormattedText(rawSubmitted.text, rawSubmitted.entities);
     if (!submitted.text && !editingCaption) return;
     const restoreFocus = focus.capture();
     closeEmojiPicker();
@@ -1747,6 +1753,14 @@ export const ConversationComposer = memo(function ConversationComposer({
             onPickAudio={() => audioInputRef.current?.click()}
           />
         </div>
+        {previewOpen && draft.trim() && (
+          <ComposerMessagePreview
+            text={draft}
+            entities={mentionEntitiesRef.current}
+            colorTheme={colorTheme}
+            onClose={() => setPreviewOpen(false)}
+          />
+        )}
         <ComposerInput
           inputRef={inputRef}
           value={draft}
@@ -1893,6 +1907,18 @@ export const ConversationComposer = memo(function ConversationComposer({
             ? <BellOff size={20} strokeWidth={1.8} />
             : <Bell size={20} strokeWidth={1.8} />}
         </button>}
+
+        {/* Rich Message Preview Trigger (FG-014) */}
+        <button
+          className={`icon-button composer-preview-trigger ${previewOpen ? "is-active text-sky-400" : ""}`}
+          type="button"
+          aria-label={previewOpen ? "Hide message preview" : "Preview formatted message"}
+          title={previewOpen ? "Hide message preview" : "Preview formatted message"}
+          disabled={!draft.trim() && pendingAttachments.length === 0}
+          onClick={() => setPreviewOpen((prev) => !prev)}
+        >
+          <Eye size={19} strokeWidth={1.8} />
+        </button>
 
         {/* AI Co-pilot Quick Tools in Composer */}
         <div ref={aiAnchorRef} className="composer-ai-tools-anchor">
