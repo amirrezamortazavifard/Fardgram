@@ -51,6 +51,22 @@
   --color-overlay: rgba(0, 0, 0, 0.42);
 }
 
+html[dir="rtl"],
+html[lang="fa"] {
+  --app-font-family: "Vazirmatn", "Segoe UI", Tahoma, Arial, "Noto Color Emoji", sans-serif;
+}
+
+/* Ensure code blocks, numbers, URLs, and scrubbers maintain directional integrity in RTL */
+html[dir="rtl"] pre,
+html[dir="rtl"] code,
+html[dir="rtl"] .rich-code-block,
+html[dir="rtl"] .video-scrubber,
+html[dir="rtl"] .audio-progress-bar,
+html[dir="rtl"] .media-timeline {
+  direction: ltr;
+  text-align: left;
+}
+
 * { box-sizing: border-box; letter-spacing: 0; }
 /* Universal Sleek Minimalist Scrollbar */
 * {

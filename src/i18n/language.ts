@@ -1,4 +1,4 @@
-export const SUPPORTED_LANGUAGES = ["zh-CN", "en", "ja"] as const;
+export const SUPPORTED_LANGUAGES = ["en", "fa", "zh-CN", "ja"] as const;
 
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 export type LanguagePreference = "system" | SupportedLanguage;
@@ -11,6 +11,7 @@ export const isLanguagePreference = (value: unknown): value is LanguagePreferenc
 export const supportedLanguageFor = (languageTag: string): SupportedLanguage | undefined => {
   const normalized = languageTag.trim().toLowerCase();
   if (!normalized) return undefined;
+  if (normalized === "fa" || normalized.startsWith("fa-")) return "fa";
   if (normalized === "zh" || normalized.startsWith("zh-")) return "zh-CN";
   if (normalized === "ja" || normalized.startsWith("ja-")) return "ja";
   if (normalized === "en" || normalized.startsWith("en-")) return "en";

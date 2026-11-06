@@ -1,5 +1,6 @@
 import type { Chat, ChatFolder } from "../telegram/types";
 import type { ChatFilter, TelegramState } from "./telegramStore.types";
+import { persianSearchMatches } from "../utils/persianSearch";
 
 export const compareChats = (left: Chat, right: Chat) =>
   Number(right.pinned) - Number(left.pinned) ||
@@ -46,14 +47,16 @@ export const filterAndSortChats = (
   folderId: ChatFilter,
   searchQuery: string,
 ) => {
-  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+  const normalizedQuery = searchQuery.trim();
   return [...chats]
     .filter((chat) => normalizedQuery || chat.folderIds.includes(folderId))
     .filter((chat) => {
       if (!normalizedQuery) return true;
-      return `${chat.title} ${chat.preview}`
-        .toLocaleLowerCase()
-        .includes(normalizedQuery);
+      const combined = `${chat.title} ${chat.preview}`;
+      return (
+        combined.toLocaleLowerCase().includes(normalizedQuery.toLocaleLowerCase()) ||
+        persianSearchMatches(combined, normalizedQuery)
+      );
     })
     .sort(compareChatsInFolder(folderId));
 };

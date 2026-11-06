@@ -6,6 +6,27 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Localization, Persian/RTL Completeness & Accessibility (FG-020)**: Comprehensive localization architecture parity with Persian (Farsi) language support, full RTL layout integration, resilient search normalization, and Jalali (Solar Hijri) calendar formatting:
+  - **Persian Localization Catalog (`src/i18n/locales/fa.ts`)**:
+    - Complete Persian translation catalog covering navigation, chat headers, dialogs, media actions, settings, notifications, errors, and stickers.
+    - Registered `"fa"` in `SUPPORTED_LANGUAGES` across `src/i18n/language.ts` and `src/i18n/index.ts`.
+    - Integrated Persian language option (`فارسی (Persian)`) into Language Settings dropdown in `SettingsDialog.tsx`.
+  - **Dynamic RTL Layout & Typography**:
+    - Automatically updates `document.documentElement.dir = "rtl"` and `document.documentElement.lang = "fa"` when Persian language is active.
+    - Applied Vazirmatn typography font stack (`"Vazirmatn", "Segoe UI", Tahoma, Arial, sans-serif`) for RTL locales in `src/styles/global.css`.
+    - Preserved directional integrity for media controls, video scrubbers, audio progress bars, volume controls, and code blocks (`dir="ltr"`).
+  - **Resilient Persian/Arabic Search Normalization (`persianSearch.ts`)**:
+    - Real-time character variant unification: Arabic Yeh (`ي`, `ى`) to Persian Yeh (`ی`), Arabic Kaf (`ك`) to Persian Kaf (`ک`), Teh Marbuta (`ة`) to Heh (`ه`), and Alef variants (`آ`, `أ`, `إ`) to plain Alef.
+    - Stripped Arabic diacritics / harakat (`َ ِ ُ ً ٍ ٌ ّ ْ`) and zero-width non-joiners (`\u200c` ZWNJ).
+    - Bi-directional word matching supporting both spaced and compound words (e.g. `می‌خواهم` vs `میخواهم`, `برنامه‌نویسی` vs `برنامه نویسی`).
+    - Integrated search normalization into chat filtering (`filterAndSortChats` in `src/store/telegramStore.selectors.ts`).
+  - **Jalali (Solar Hijri) Calendar Formatting**:
+    - Native `formatJalaliDate` utility powered by standards-compliant `Intl.DateTimeFormat("fa-IR-u-ca-persian")`.
+    - Bi-directional Persian digits converter (`toPersianDigits`, `toLatinDigits`).
+    - Integrated Persian date formatting into message and chat timestamp formatters while preserving timezone-aware ISO stored timestamps.
+  - **Accessibility & Focusability**:
+    - Semantic accessibility names, screen-reader labels, and keyboard navigation parity.
+    - Comprehensive unit test suite (`src/components/LocalizationAndRtl.test.tsx` and `src/utils/persianSearch.test.ts`) with zero regressions across 198 test files and 1,721 tests.
 - **Stickers, Custom Emoji, Emoji Status & Profile Media Parity (FG-019)**: Official TDLib integration parity for custom emojis, sticker packs management, user emoji statuses, and profile sharing media:
   - **Emoji Status Management (`EmojiStatusPicker`)**:
     - Interactive emoji status selector dialog supporting status presets (💼 Working, 🚀 Building, ☕ Coffee Break, 🌴 On Vacation, 🎯 Deep Focus, 🎧 Listening, 🎮 Gaming, 🤒 Sick, 🌙 Resting, ⭐ Star, 🔥 High Energy, ✨ Creative).

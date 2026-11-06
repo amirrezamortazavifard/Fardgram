@@ -7,14 +7,17 @@ import {
 } from "./language";
 
 describe("application language resolution", () => {
-  it("maps regional Chinese, English and Japanese language tags", () => {
+  it("maps regional Chinese, English, Japanese and Persian language tags", () => {
     expect(supportedLanguageFor("zh-Hant-TW")).toBe("zh-CN");
     expect(supportedLanguageFor("en-GB")).toBe("en");
     expect(supportedLanguageFor("ja-JP")).toBe("ja");
+    expect(supportedLanguageFor("fa-IR")).toBe("fa");
+    expect(supportedLanguageFor("fa")).toBe("fa");
   });
 
   it("uses the first supported PC language", () => {
     expect(detectSystemLanguage(["fr-FR", "ja-JP", "en-US"])).toBe("ja");
+    expect(detectSystemLanguage(["de-DE", "fa-IR"])).toBe("fa");
     expect(detectSystemLanguage(["de-DE", "zh-Hans-CN"])).toBe("zh-CN");
   });
 
@@ -31,6 +34,7 @@ describe("application language resolution", () => {
   it("accepts only persisted language preference values", () => {
     expect(isLanguagePreference("system")).toBe(true);
     expect(isLanguagePreference("en")).toBe(true);
+    expect(isLanguagePreference("fa")).toBe(true);
     expect(isLanguagePreference("fr")).toBe(false);
     expect(isLanguagePreference(null)).toBe(false);
   });

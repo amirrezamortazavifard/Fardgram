@@ -31,7 +31,8 @@ const dateFormatter = (format: DateFormat) => {
   }
   let formatter = formatters.get(format);
   if (!formatter) {
-    formatter = new Intl.DateTimeFormat(language, { ...dateFormats[format], timeZone });
+    const locale = language === "fa" ? "fa-IR-u-ca-persian" : language;
+    formatter = new Intl.DateTimeFormat(locale, { ...dateFormats[format], timeZone });
     formatters.set(format, formatter);
   }
   return formatter;
