@@ -1,6 +1,7 @@
 import { Eye, Forward, Pin } from "lucide-react";
 import { translate } from "../i18n";
 import { MessageDeliveryStatus } from "./MessageDeliveryStatus";
+import { MessageEffectPlayer } from "./MessageEffectPlayer";
 import "./messageMetadata.css";
 import type { Message } from "../telegram/types";
 import { formatCompactCount, formatMessageTime } from "../utils/formatters";
@@ -20,6 +21,7 @@ export function MessageMetadata({ message, channelPost, showChannelMetadata, cha
   const context = channelPost ? "channel" : message.outgoing ? "outgoing" : "incoming";
   return (
     <span className={`message-meta ${channelPost ? "is-channel-meta" : ""}`} data-context={context}>
+      {message.effectId && <MessageEffectPlayer effectId={message.effectId} />}
       <span className="message-meta-stats">
         {showChannelMetadata && message.interaction && <>
           <span className="message-meta-stat" aria-label={translate("转发 {{value0}} 次", { value0: message.interaction.forwardCount })}>

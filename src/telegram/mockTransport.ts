@@ -2695,7 +2695,7 @@ export class MockTelegramTransport implements TelegramTransport {
     };
   }
 
-  async sendMessage({ chatId, topicId, text, entities, replyToMessageId, replyQuote, clearDraft = true, schedulingState }: SendMessageInput) {
+  async sendMessage({ chatId, topicId, text, entities, replyToMessageId, replyQuote, clearDraft = true, schedulingState, effectId }: SendMessageInput) {
     const replyTarget = replyToMessageId
       ? this.snapshot.messages.find(
           (message) => message.chatId === chatId && message.topicId === topicId && message.id === replyToMessageId,
@@ -2726,6 +2726,7 @@ export class MockTelegramTransport implements TelegramTransport {
         delivery: "sent",
         isScheduled: true,
         schedulingState,
+        ...(effectId ? { effectId } : {}),
         replyTo: replyTarget
           ? {
               kind: "message",
@@ -2753,6 +2754,7 @@ export class MockTelegramTransport implements TelegramTransport {
       outgoing: true,
       sentAt: new Date().toISOString(),
       delivery: "sent",
+      ...(effectId ? { effectId } : {}),
       replyTo: replyTarget
         ? {
             kind: "message",
@@ -3543,6 +3545,7 @@ export class MockTelegramTransport implements TelegramTransport {
       outgoing: true,
       sentAt: new Date().toISOString(),
       delivery: "sent",
+      ...(input.effectId ? { effectId: input.effectId } : {}),
       replyTo: replyTarget
         ? {
             kind: "message",

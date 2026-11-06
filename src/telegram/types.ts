@@ -1177,6 +1177,7 @@ export interface Message {
   expiresAt?: string;
   isScheduled?: boolean;
   schedulingState?: MessageSchedulingState;
+  effectId?: string;
   id: string;
   renderKey?: string;
   chatId: string;
@@ -1390,6 +1391,7 @@ export interface SendMessageInput {
   clearDraft?: boolean;
   disableNotification?: boolean;
   schedulingState?: MessageSchedulingState;
+  effectId?: string;
 }
 
 export interface SendLocationInput {
@@ -1407,6 +1409,7 @@ export interface SendLocationInput {
   replyQuote?: MessageReplyQuote;
   disableNotification?: boolean;
   schedulingState?: MessageSchedulingState;
+  effectId?: string;
 }
 
 export interface SendEmojiAssetInput {
@@ -1417,6 +1420,7 @@ export interface SendEmojiAssetInput {
   replyQuote?: MessageReplyQuote;
   disableNotification?: boolean;
   schedulingState?: MessageSchedulingState;
+  effectId?: string;
 }
 
 export interface EditMessageInput {

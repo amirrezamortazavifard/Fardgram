@@ -5273,6 +5273,7 @@ export const createTelegramStore = (
             disableNotification,
             clearDraft,
             schedulingState: context?.schedulingState,
+            effectId: context?.effectId,
           });
           if (sendGeneration !== accountGeneration) return false;
           if (clearGeneration !== undefined) draftSync.markAwaitingAck(draftKey, clearGeneration);

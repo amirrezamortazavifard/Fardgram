@@ -2213,8 +2213,8 @@ export function App() {
           chatManagementPending={activeChatId
             ? chatManagementPending.has(activeChatId)
             : false}
-          onSendMessage={(text, replyToMessageId, replyQuote, entities, disableNotification, schedulingState) =>
-            sendMessage(text, replyToMessageId, replyQuote, entities, disableNotification, { chatId: activeChatId ?? "", schedulingState })
+          onSendMessage={(text, replyToMessageId, replyQuote, entities, disableNotification, schedulingState, effectId) =>
+            sendMessage(text, replyToMessageId, replyQuote, entities, disableNotification, { chatId: activeChatId ?? "", schedulingState, effectId })
           }
           onEditMessage={editMessage}
           onDeleteMessage={deleteMessage}

@@ -11,6 +11,7 @@ import {
   Flag,
   Forward,
   Languages,
+  Link2,
   LoaderCircle,
   MessageCircleReply,
   Pencil,
@@ -117,6 +118,7 @@ interface MessageActionMenuProps {
   onPlayInWindow?: () => void;
   onDownload?: () => void;
   onCopy: () => void;
+  onCopyLink?: () => void;
   onTranslate?: () => void;
   onReaction?: (emoji: string) => void;
   onDismiss: () => void;
@@ -143,6 +145,7 @@ export function MessageActionMenu({
   onPlayInWindow,
   onDownload,
   onCopy,
+  onCopyLink,
   onTranslate,
   onReaction,
   onDismiss,
@@ -186,6 +189,7 @@ export function MessageActionMenu({
       children: quickForwardItems.length > 0 ? quickForwardItems : undefined,
     }] : []),
     { id: "copy", label: translate("复制"), icon: "copy" },
+    ...(onCopyLink ? [{ id: "copy-link", label: "Copy Message Link", icon: "link" as const }] : []),
     ...(onViewEditHistory && message.editHistory && message.editHistory.length > 0
       ? [{ id: "edit-history", label: `Edit History (${message.editHistory.length})`, icon: "edit" as const }]
       : []),
@@ -206,6 +210,7 @@ export function MessageActionMenu({
     ...(onReport ? [{ id: "report", label: translate("举报"), icon: "flag" as const, danger: true }] : []),
   ] : [
     { id: "copy", label: translate("复制"), icon: "copy" },
+    ...(onCopyLink ? [{ id: "copy-link", label: "Copy Message Link", icon: "link" as const }] : []),
     ...(onViewEditHistory && message.editHistory && message.editHistory.length > 0
       ? [{ id: "edit-history", label: `Edit History (${message.editHistory.length})`, icon: "edit" as const }]
       : []),
@@ -240,6 +245,7 @@ export function MessageActionMenu({
       if (target) onQuickForward(target);
     }
     else if (actionId === "copy") onCopy();
+    else if (actionId === "copy-link") onCopyLink?.();
     else if (actionId === "edit-history") onViewEditHistory?.();
     else if (actionId === "inspect-osint") onInspectOsint?.();
     else if (actionId === "translate") onTranslate?.();
@@ -301,6 +307,12 @@ export function MessageActionMenu({
             <ClipboardCopy size={17} strokeWidth={2.1} />
             <span>{translate("复制")}</span>
           </button>
+          {onCopyLink && (
+            <button key="copy-link" type="button" role="menuitem" onClick={onCopyLink}>
+              <Link2 size={17} strokeWidth={2.1} />
+              <span>Copy Message Link</span>
+            </button>
+          )}
           {onDownload && (
             <button key="download" type="button" role="menuitem" onClick={onDownload}>
               <Download size={16} strokeWidth={1.9} />
@@ -378,6 +390,12 @@ export function MessageActionMenu({
             <ClipboardCopy size={17} strokeWidth={2.1} />
             <span>{translate("复制")}</span>
           </button>
+          {onCopyLink && (
+            <button key="copy-link" type="button" role="menuitem" onClick={onCopyLink}>
+              <Link2 size={17} strokeWidth={2.1} />
+              <span>Copy Message Link</span>
+            </button>
+          )}
           {onViewEditHistory && message.editHistory && message.editHistory.length > 0 && (
             <button key="edit-history" type="button" role="menuitem" onClick={onViewEditHistory}>
               <History size={17} strokeWidth={2.1} />

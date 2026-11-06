@@ -1818,6 +1818,7 @@ export const mapTdMessage = (raw: TdObject, options: { isChannel?: boolean } = {
     containsUnreadMention: raw.contains_unread_mention === true,
     containsUnreadReaction: Array.isArray(raw.unread_reactions) && raw.unread_reactions.length > 0,
     ...(unreadReactions.length > 0 ? { unreadReactions } : {}),
+    ...(raw.effect_id && tdId(raw.effect_id) !== "0" ? { effectId: tdId(raw.effect_id) } : {}),
     ...(raw.is_scheduled === true ? { isScheduled: true } : {}),
     ...(asTdObject(raw.scheduling_state)
       ? asTdObject(raw.scheduling_state)?.["@type"] === "messageSchedulingStateSendAtDate"

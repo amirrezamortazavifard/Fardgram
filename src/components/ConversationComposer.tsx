@@ -34,6 +34,8 @@ import {
 } from "../utils/archiveBuilder";
 import { CreatePollDialog } from "./CreatePollDialog";
 import { SendLocationDialog } from "./SendLocationDialog";
+import { MessageEffectPicker } from "./MessageEffectPicker";
+import type { TelegramMessageEffect } from "../telegram/messageEffects";
 import { VoiceVideoRecorder, type RecordingKind } from "./VoiceVideoRecorder";
 import { useAgentStore } from "../agent/agentStore";
 import {
@@ -134,6 +136,7 @@ interface ConversationComposerProps {
     entities?: MessageTextEntity[],
     disableNotification?: boolean,
     schedulingState?: MessageSchedulingState,
+    effectId?: string,
   ) => Promise<boolean>;
   onEditMessage: (messageId: string, text: string, entities?: MessageTextEntity[]) => Promise<boolean>;
   onDraftChange: (chatId: string, text: string, replyToMessageId?: string, replyQuote?: MessageReplyQuote, entities?: MessageTextEntity[]) => void;
@@ -146,6 +149,7 @@ interface ConversationComposerProps {
     replyQuote?: MessageReplyQuote,
     disableNotification?: boolean,
     schedulingState?: MessageSchedulingState,
+    effectId?: string,
   ) => Promise<boolean>;
   onCancelEditing: () => void;
   onCancelReply: () => void;
@@ -248,6 +252,8 @@ export const ConversationComposer = memo(function ConversationComposer({
   const [showPollDialog, setShowPollDialog] = useState(false);
   const [showLocationDialog, setShowLocationDialog] = useState(false);
   const [showSendMenu, setShowSendMenu] = useState(false);
+  const [selectedEffect, setSelectedEffect] = useState<TelegramMessageEffect | undefined>(undefined);
+  const [showEffectPicker, setShowEffectPicker] = useState(false);
   const focusComposer = focus.request;
   useTranslation();
   const sendPoll = useTelegramStore((state) => state.sendPoll);
@@ -1259,6 +1265,7 @@ export const ConversationComposer = memo(function ConversationComposer({
     stopTyping();
     focusComposer();
     setSending(true);
+    const effectIdToSend = selectedEffect?.id;
     const sent = await onSendMessage(
       submitted.text,
       replyingTo?.id ?? chatDraft?.replyToMessageId,
@@ -1266,10 +1273,12 @@ export const ConversationComposer = memo(function ConversationComposer({
       submitted.entities,
       forceDisableNotification ?? disableNotification,
       schedulingState,
+      effectIdToSend,
     );
     setSending(false);
     if (sent) {
       onCancelReply();
+      setSelectedEffect(undefined);
     } else {
       const restored = prependComposerFormattedText(
         submitted,
@@ -1829,6 +1838,24 @@ export const ConversationComposer = memo(function ConversationComposer({
             onClose={() => setPreviewOpen(false)}
           />
         )}
+        {selectedEffect && (
+          <div className="flex items-center justify-between px-3 py-1.5 mb-2 rounded-xl bg-purple-50/90 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-200 text-xs animate-in fade-in duration-150">
+            <div className="flex items-center gap-2">
+              <span className="text-base leading-none">{selectedEffect.emoji}</span>
+              <span className="font-semibold">{selectedEffect.name} Effect</span>
+              <span className="text-purple-600 dark:text-purple-400 opacity-80 text-[11px]">— {selectedEffect.description}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedEffect(undefined)}
+              title="Remove effect"
+              aria-label="Remove message effect"
+              className="p-1 rounded-md hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-600 dark:text-purple-300 transition-colors"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
         <ComposerInput
           inputRef={inputRef}
           value={draft}
@@ -1865,6 +1892,26 @@ export const ConversationComposer = memo(function ConversationComposer({
             stopTyping();
           }}
           onKeyDown={(event) => {
+            if (!event.nativeEvent.isComposing && !composingRef.current && event.key === "Escape") {
+              if (showEffectPicker) {
+                event.preventDefault();
+                event.stopPropagation();
+                setShowEffectPicker(false);
+                return;
+              }
+              if (selectedEffect) {
+                event.preventDefault();
+                event.stopPropagation();
+                setSelectedEffect(undefined);
+                return;
+              }
+              if (replyingTo) {
+                event.preventDefault();
+                event.stopPropagation();
+                onCancelReply();
+                return;
+              }
+            }
             if (!event.nativeEvent.isComposing && !composingRef.current && (
               shortcutActionForEvent(event.nativeEvent, preferencesStore.getState().shortcuts) === "editLastMessage" ||
               (editingMessage && event.key === "Escape")
@@ -2153,6 +2200,21 @@ export const ConversationComposer = memo(function ConversationComposer({
                 <Calendar size={18} strokeWidth={2} className="text-sky-500" />
               </button>
             )}
+            {!editingMessage && (
+              <button
+                className={`icon-button composer-effect-trigger ${selectedEffect ? "text-purple-500 bg-purple-50 dark:bg-purple-950/40" : ""}`}
+                type="button"
+                aria-label="Message send effect"
+                title={selectedEffect ? `Active effect: ${selectedEffect.name} (Click to change)` : "Attach message send effect"}
+                onClick={() => setShowEffectPicker((prev) => !prev)}
+              >
+                {selectedEffect ? (
+                  <span className="text-base leading-none">{selectedEffect.emoji}</span>
+                ) : (
+                  <Sparkles size={18} strokeWidth={2} className="text-purple-500 hover:scale-110 transition-transform" />
+                )}
+              </button>
+            )}
             <button
               className="send-button icon-button"
               type="button"
@@ -2207,6 +2269,17 @@ export const ConversationComposer = memo(function ConversationComposer({
                   className="px-3 py-2 text-xs font-medium text-left rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 flex items-center gap-2 transition"
                   onClick={() => {
                     setShowSendMenu(false);
+                    setShowEffectPicker(true);
+                  }}
+                >
+                  <Sparkles size={14} className="text-purple-500" />
+                  <span>Message effect...</span>
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-2 text-xs font-medium text-left rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 flex items-center gap-2 transition"
+                  onClick={() => {
+                    setShowSendMenu(false);
                     void submitMessage(undefined, true);
                   }}
                 >
@@ -2214,6 +2287,16 @@ export const ConversationComposer = memo(function ConversationComposer({
                   <span>Send without sound</span>
                 </button>
               </div>
+            )}
+            {showEffectPicker && (
+              <MessageEffectPicker
+                selectedEffectId={selectedEffect?.id}
+                onSelectEffect={(effect) => {
+                  setSelectedEffect(effect);
+                  setShowEffectPicker(false);
+                }}
+                onClose={() => setShowEffectPicker(false)}
+              />
             )}
           </div>
         )}

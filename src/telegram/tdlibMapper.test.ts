@@ -2070,4 +2070,21 @@ describe("TDLib mapper", () => {
 
     expect(chat?.folderIds).toEqual(["main"]);
   });
+
+  it("maps message effect_id into Message domain object", () => {
+    const message = mapTdMessage({
+      id: 901,
+      chat_id: 101,
+      sender_id: { "@type": "messageSenderUser", user_id: 12 },
+      date: 1700000000,
+      content: {
+        "@type": "messageText",
+        text: { "@type": "formattedText", text: "Look at this flame!", entities: [] },
+      },
+      effect_id: "5104841245755180586",
+    });
+
+    expect(message).toBeDefined();
+    expect(message?.effectId).toBe("5104841245755180586");
+  });
 });

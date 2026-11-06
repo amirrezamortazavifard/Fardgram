@@ -6,6 +6,7 @@ export interface ConversationSendContext {
   discussionThreadId?: string;
   clearDraft?: boolean;
   schedulingState?: import("../telegram/types").MessageSchedulingState;
+  effectId?: string;
 }
 
 export interface DiscussionSendOptions {

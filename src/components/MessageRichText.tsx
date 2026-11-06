@@ -166,8 +166,13 @@ const wrapEntity = (
       const linkChildren = entity.kind === "url"
         ? telegramUrlDisplayText(value) ?? children
         : children;
+      const tooltip = href
+        ? entity.kind === "textUrl"
+          ? `Link to: ${href}`
+          : href
+        : undefined;
       return href
-        ? <a key={key} href={href} target="_blank" rel="noreferrer" onClick={handleExternalLinkClick}>{linkChildren}</a>
+        ? <a key={key} href={href} target="_blank" rel="noreferrer" title={tooltip} aria-label={tooltip} onClick={handleExternalLinkClick}>{linkChildren}</a>
         : <Fragment key={key}>{children}</Fragment>;
     }
     case "mention":

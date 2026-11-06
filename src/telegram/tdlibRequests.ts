@@ -129,10 +129,12 @@ export const selfDestructTypeObject = (
 
 export const messageSendOptions = (
   disableNotification = false,
-  schedulingState?: MessageSchedulingState
+  schedulingState?: MessageSchedulingState,
+  effectId?: string,
 ): TdObject | null => {
   const schedulingObj = messageSchedulingStateObject(schedulingState);
-  if (!disableNotification && !schedulingObj) return null;
+  const hasEffect = typeof effectId === "string" && effectId.trim().length > 0 && effectId !== "0";
+  if (!disableNotification && !schedulingObj && !hasEffect) return null;
   return {
     "@type": "messageSendOptions",
     disable_notification: disableNotification,
@@ -141,6 +143,7 @@ export const messageSendOptions = (
     update_order_of_installed_sticker_sets: false,
     scheduling_state: schedulingObj,
     paid_message_star_count: 0,
+    effect_id: hasEffect ? (Number.isSafeInteger(Number(effectId)) ? Number(effectId) : effectId) : 0,
   };
 };
 

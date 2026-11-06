@@ -319,6 +319,7 @@ interface ConversationProps {
     entities?: MessageTextEntity[],
     disableNotification?: boolean,
     schedulingState?: import("../telegram/types").MessageSchedulingState,
+    effectId?: string,
   ) => Promise<boolean>;
   onEditMessage: (
     messageId: string,
@@ -386,6 +387,7 @@ interface ConversationProps {
     replyQuote?: MessageReplyQuote,
     disableNotification?: boolean,
     schedulingState?: import("../telegram/types").MessageSchedulingState,
+    effectId?: string,
   ) => Promise<boolean>;
   onCancelFileUpload: (messageId: string, chatId?: string) => Promise<void>;
   onLoadOlder: () => Promise<void>;
@@ -1113,7 +1115,9 @@ export function Conversation({
   const audioPlaybackNeighborsByMessage = useMemo(() => audioMessageNeighbors(renderedMessages), [renderedMessages]);
   const audioTrackQueue = useMemo<AudioTrackDescriptor[]>(() => renderedMessages.flatMap((message) => {
     const content = message.content;
-    if (content.kind !== "media" || !["audio", "voice"].includes(content.mediaType)) return [];
+    const isAudioMedia = content.kind === "media" && ["audio", "voice"].includes(content.mediaType);
+    const isAudioFile = content.kind === "file" && (content.mimeType?.startsWith("audio/") || /\.(mp3|m4a|ogg|opus|wav|flac|aac|wma)$/i.test(content.fileName ?? ""));
+    if (!isAudioMedia && !isAudioFile) return [];
     const neighbors = audioPlaybackNeighborsByMessage.get(message.id);
     const canDownload = content.fileId !== undefined &&
       content.canDownload !== false &&
@@ -1127,7 +1131,7 @@ export function Conversation({
       fileId: content.fileId,
       size: content.size,
       mimeType: content.mimeType,
-      durationHint: content.duration,
+      durationHint: "duration" in content && typeof content.duration === "number" ? content.duration : undefined,
       previousId: neighbors?.previousId,
       nextId: neighbors?.nextId,
       downloadProgress: content.progress,
@@ -1653,6 +1657,7 @@ export function Conversation({
     entities?: MessageTextEntity[],
     disableNotification?: boolean,
     schedulingState?: import("../telegram/types").MessageSchedulingState,
+    effectId?: string,
   ) => {
     jumpToLatest("auto");
     const localReply = replyToMessageId
@@ -1673,6 +1678,7 @@ export function Conversation({
       localOnlyReply ? [...(localQuote?.entities ?? []), ...(entities ?? []).map((entity) => ({ ...entity, offset: entity.offset + localReplyPrefix.length }))] : entities,
       disableNotification,
       schedulingState,
+      effectId,
     );
   }, [chat, forwardTargetsById, jumpToLatest, onSendMessage, users]);
 
@@ -1684,6 +1690,7 @@ export function Conversation({
     selectedReplyQuote?: MessageReplyQuote,
     disableNotification?: boolean,
     schedulingState?: import("../telegram/types").MessageSchedulingState,
+    effectId?: string,
   ) => {
     jumpToLatest("auto");
     const localOnlyReply = replyToMessageId
@@ -1697,6 +1704,7 @@ export function Conversation({
       localOnlyReply ? undefined : selectedReplyQuote,
       disableNotification,
       schedulingState,
+      effectId,
     );
   }, [jumpToLatest, onSendFiles]);
 
@@ -2268,6 +2276,20 @@ export function Conversation({
       closeActionMenu(false);
     } catch {
       // Keep the menu open so the user can retry or download an unavailable image.
+    }
+  };
+
+  const copyMessageLink = async (message: Message) => {
+    try {
+      const msgChat = telegramStore.getState().chats.get(message.chatId) ?? chat;
+      const cleanChatId = message.chatId.replace(/^-100/, "").replace(/^-/, "");
+      const link = msgChat?.username
+        ? `https://t.me/${msgChat.username}/${message.id}`
+        : `https://t.me/c/${cleanChatId}/${message.id}`;
+      await writeClipboardText(link);
+      closeActionMenu(false);
+    } catch {
+      // Ignore write failure
     }
   };
 
@@ -3323,6 +3345,7 @@ export function Conversation({
               }
             : undefined}
           onCopy={() => void copyMessage(actionMessageForMenu)}
+          onCopyLink={() => void copyMessageLink(actionMessageForMenu)}
           onReaction={onSetMessageReaction
             ? (emoji) => {
                 const isChosen = actionMessageForMenu.interaction?.reactions.find(

@@ -477,7 +477,7 @@ export class TauriMessageMediaService {
       chat_id: numericId(input.chatId),
       message_thread_id: input.topicId ? numericId(input.topicId) : undefined,
       reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
-      options: messageSendOptions(input.disableNotification, input.schedulingState),
+      options: messageSendOptions(input.disableNotification, input.schedulingState, input.effectId),
       input_message_content: inputMessageContent,
     };
 
@@ -665,7 +665,7 @@ export class TauriMessageMediaService {
       chat_id: numericId(input.chatId),
       topic_id: forumTopicObject(input.topicId),
       reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
-      options: messageSendOptions(input.disableNotification, input.schedulingState),
+      options: messageSendOptions(input.disableNotification, input.schedulingState, input.effectId),
       reply_markup: null,
       input_message_content: {
         "@type": "inputMessageSticker",
@@ -688,7 +688,7 @@ export class TauriMessageMediaService {
       chat_id: numericId(input.chatId),
       topic_id: forumTopicObject(input.topicId),
       reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
-      options: messageSendOptions(input.disableNotification, input.schedulingState),
+      options: messageSendOptions(input.disableNotification, input.schedulingState, input.effectId),
       reply_markup: null,
       input_message_content: {
         "@type": "inputMessageAnimation",
@@ -721,7 +721,7 @@ export class TauriMessageMediaService {
       chat_id: numericId(input.chatId),
       topic_id: forumTopicObject(input.topicId),
       reply_to: inputMessageReplyTarget(input.replyToMessageId, input.replyQuote),
-      options: messageSendOptions(input.disableNotification, input.schedulingState),
+      options: messageSendOptions(input.disableNotification, input.schedulingState, input.effectId),
       reply_markup: null,
       input_message_content: inputMessageText(text, input.clearDraft !== false),
     }).catch(error => { throw classifySendError(error); });

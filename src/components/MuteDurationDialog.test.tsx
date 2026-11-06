@@ -56,3 +56,4 @@ describe("FG-023 MuteDurationDialog Component", () => {
     expect(html).toBe("");
   });
 });
+

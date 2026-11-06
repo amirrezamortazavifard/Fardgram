@@ -9827,6 +9827,28 @@ button.message-forward-heading-icon { border: 0; cursor: pointer; }
   filter: drop-shadow(0 16px 36px rgba(0, 0, 0, 0.65));
 }
 
+@keyframes messageParticleBurst {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.5);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  80% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+.animate-message-particle {
+  animation: messageParticleBurst ease-out forwards;
+}
+
 .video-note-progress-ring {
   position: absolute;
   inset: 0;

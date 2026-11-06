@@ -6,6 +6,25 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Chat Quality-of-Life, Message Effects & Interaction Parity (FG-024)**: Complete message effect engine, particle explosion rendering, continuous audio playlist playback, safe external link inspection, and keyboard interaction parity with official TDLib methods:
+  - **Animated Message Effects Engine & Particle Player (`MessageEffectPlayer.tsx` & `src/telegram/messageEffects.ts`)**:
+    - Full catalog of standard Telegram animated send effects: 🔥 Fire, 🎉 Party Popper, ❤️ Love Hearts, 👍 Thumbs Up, 👎 Thumbs Down, 💩 Poop, ⚡ Lightning, 🕊️ Peace Dove, 💯 100, and 🏆 Trophy with official identifiers and color schemes.
+    - GPU-accelerated particle animation engine spawning radiating emoji burst animations anchored to message bubbles.
+    - Interactive replay trigger on message bubbles allowing users to replay received effects on demand.
+    - Performance and accessibility safeguards: strictly respects user preferences `effectiveReduceMotion` and `autoplayAnimations`, falling back to static badges without performance stalls.
+  - **Composer Message Effect Picker (`MessageEffectPicker.tsx` & `ConversationComposer.tsx`)**:
+    - Dedicated effect picker dialog accessible from composer toolbar and secondary send menu.
+    - Visual preview card showing effect emoji, title, and description with active selection indicator and clear option.
+    - Active effect indicator badge above composer input with one-click removal button.
+    - Full protocol integration forwarding `effect_id` through `messageSendOptions` in TDLib runtime.
+  - **Continuous Audio Playlist & Voice Message Continuity (`audioMessageQueue.ts` & `Conversation.tsx`)**:
+    - Expanded playable track detection across voice notes, audio media, and audio document files (`.mp3`, `.m4a`, `.ogg`, `.opus`, `.flac`, `.wav`, `.aac`).
+    - Automatic playlist chaining providing seamless auto-advance to subsequent audio/voice messages in conversations and channel discussion topics.
+  - **Safe Link Tooltips & Mismatched Destination Inspection (`MessageRichText.tsx`)**:
+    - Informative hover tooltips displaying full sanitized URLs, verified HTTPS indicators, and destination inspection for all formatted external links (`textUrl`, `url`, `email`, `phone`).
+  - **Message Context Menu & Interaction Refinements (`ConversationOverlays.tsx` & `Conversation.tsx`)**:
+    - Added "Copy Message Link" action supporting both public username links (`https://t.me/username/id`) and private channel/chat links (`https://t.me/c/id/id`).
+    - Discoverable composer keyboard shortcuts: `Escape` key intelligently cancels effect picker, active effect, or reply preview; `ArrowUp` on empty input edits the last outgoing message.
 - **Advanced Notification, Focus & Desktop Integration Parity (FG-023)**: Comprehensive notification policy engine, privacy modes, focus integration, taskbar flashing, and mute presets with full dual-theme parity and TDLib synchronization:
   - **Comprehensive Notification Settings View (`src/components/NotificationSettings.tsx`)**:
     - Dedicated dual-theme panel integrated into `SettingsDialog.tsx` under the Notifications category.

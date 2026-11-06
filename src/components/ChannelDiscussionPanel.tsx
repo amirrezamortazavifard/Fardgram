@@ -99,6 +99,7 @@ interface ChannelDiscussionPanelProps {
     entities?: MessageTextEntity[],
     _disableNotification?: boolean,
     schedulingState?: import("../telegram/types").MessageSchedulingState,
+    effectId?: string,
   ) => Promise<boolean>;
   onSendFiles: (
     attachments: OutgoingAttachment[],
@@ -108,6 +109,7 @@ interface ChannelDiscussionPanelProps {
     replyQuote?: MessageReplyQuote,
     _disableNotification?: boolean,
     schedulingState?: import("../telegram/types").MessageSchedulingState,
+    effectId?: string,
   ) => Promise<boolean>;
   onEditMessage: (
     messageId: string,
@@ -740,8 +742,8 @@ export function ChannelDiscussionPanel({
             focus={composerFocus}
             connectionStatus={connectionStatus}
             {...queueCounts}
-            onSendMessage={async (...args) => {
-              const sent = await onSend(...args);
+            onSendMessage={async (text, replyToMessageId, replyQuote, entities, disableNotification, schedulingState, effectId) => {
+              const sent = await onSend(text, replyToMessageId, replyQuote, entities, disableNotification, schedulingState, effectId);
               if (sent) {
                 setReplyingTo(undefined);
                 setReplyQuote(undefined);
@@ -764,8 +766,8 @@ export function ChannelDiscussionPanel({
               );
             }}
             onTypingChange={onTypingChange}
-            onSendFiles={async (...args) => {
-              const sent = await onSendFiles(...args);
+            onSendFiles={async (attachments, caption, captionEntities, replyToMessageId, replyQuote, disableNotification, schedulingState) => {
+              const sent = await onSendFiles(attachments, caption, captionEntities, replyToMessageId, replyQuote, disableNotification, schedulingState);
               if (sent) {
                 setReplyingTo(undefined);
                 setReplyQuote(undefined);
