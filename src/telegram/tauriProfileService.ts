@@ -383,6 +383,8 @@ export class TauriProfileService {
       profileAudioCount: profileAudioPage.totalCount,
       profileAudios: profileAudioPage.audios,
       businessInfo: mapTdBusinessInfo(full.business_info),
+      emojiStatus: user.emojiStatus,
+      isPremium: user.isPremium,
     };
   }
 

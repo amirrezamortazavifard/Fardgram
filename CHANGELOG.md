@@ -6,6 +6,32 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Stickers, Custom Emoji, Emoji Status & Profile Media Parity (FG-019)**: Official TDLib integration parity for custom emojis, sticker packs management, user emoji statuses, and profile sharing media:
+  - **Emoji Status Management (`EmojiStatusPicker`)**:
+    - Interactive emoji status selector dialog supporting status presets (💼 Working, 🚀 Building, ☕ Coffee Break, 🌴 On Vacation, 🎯 Deep Focus, 🎧 Listening, 🎮 Gaming, 🤒 Sick, 🌙 Resting, ⭐ Star, 🔥 High Energy, ✨ Creative).
+    - Status duration options (1 hour, 2 hours, Until Tomorrow, 2 days, Don't clear).
+    - One-click "Clear Status" button to revoke the current status emoji.
+    - Official TDLib method `setUserEmojiStatus` bound through Tauri backend with validation.
+  - **Profile QR Code Presentation (`ProfileQrDialog`)**:
+    - High-contrast, deterministic SVG QR code generation for user profiles and channels.
+    - Displays formatted username link (`https://t.me/{username}`) or phone link (`https://t.me/+{phone}`).
+    - Quick "Copy Link" action with visual confirmation toast and "Open in Browser" action.
+    - Integrated QR trigger button into user identity card in `ProfileDrawer`.
+  - **Emoji & Sticker Picker Modernization (`EmojiPicker`)**:
+    - Modernized all category headers to 100% professional English ("Smileys & People", "Gestures & Body", "Animals & Nature", "Food & Drink", "Activities & Objects", "Symbols & Flags").
+    - Clean English tab labels ("Emoji", "Stickers", "GIFs") and search placeholders.
+    - Quick shortcut button to official `@Stickers` management bot for custom sticker and emoji pack creation.
+  - **Sticker Set Preview & Sharing (`StickerSetPreview`)**:
+    - Converted preview dialogues, counts, and buttons to 100% professional English ("Sticker Pack", "{{count}} stickers", "Add Sticker Pack", "Remove Sticker Pack").
+    - One-click "Share Sticker Set" button copying the official `https://t.me/addstickers/{name}` link to clipboard with copy confirmation.
+  - **Rust Backend TDLib Security Whitelisting**:
+    - Whitelisted `"setUserEmojiStatus"` and `"getCustomEmojiStickers"` in `src-tauri/src/telegram/security.rs`.
+    - Added comprehensive validation for `setUserEmojiStatus` (validating `emojiStatusCustomEmoji` / `emojiStatusUpgradedGift`, non-zero `custom_emoji_id`, `expiration_date >= 0`, null allowed to clear).
+    - Added validation for `getCustomEmojiStickers` (array of 1..=100 positive `custom_emoji_ids`).
+    - Added unit test `validates_emoji_status_and_custom_emoji_requests` verifying valid requests and rejecting malformed payloads.
+  - **100% Professional English & Dual-Theme Parity**:
+    - Fully styled for dark and light modes across all dialogs, pickers, and tooltips.
+    - Zero regressions across 196 test suites (1696 tests) and clean production bundle.
 - **Telegram Stars, Gifts, Paid Media, Payments & Wallet Integrations (FG-018)**: Official TDLib integration parity for Telegram Stars ecosystem, paid media unlocking, invoice messages, digital gifts, and monetization:
   - **Telegram Stars Settings & Management (`StarsSettingsPanel`)**:
     - Real-time Stars balance display (`⭐ {balance} Stars`) with live USD estimate (~$0.02/Star) and refresh trigger.

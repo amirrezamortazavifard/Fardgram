@@ -2845,6 +2845,29 @@ export class TauriTelegramTransport implements TelegramTransport {
     }
   }
 
+  async setUserEmojiStatus(customEmojiId?: string, durationSeconds = 0): Promise<boolean> {
+    try {
+      const expirationDate = durationSeconds > 0 ? Math.floor(Date.now() / 1000) + durationSeconds : 0;
+      await this.request({
+        "@type": "setUserEmojiStatus",
+        emoji_status: customEmojiId
+          ? {
+              "@type": "emojiStatusCustomEmoji",
+              custom_emoji_id: numericId(customEmojiId),
+              expiration_date: expirationDate,
+            }
+          : null,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getCustomEmojiStickers(customEmojiIds: string[]): Promise<EmojiPickerAsset[]> {
+    return this.messageMediaService.getCustomEmojiStickers(customEmojiIds);
+  }
+
   async translateMessageText(chatId: string, messageId: string, toLanguageCode: string): Promise<TranslatedText> {
     const raw = await this.request({
       "@type": "translateMessageText",

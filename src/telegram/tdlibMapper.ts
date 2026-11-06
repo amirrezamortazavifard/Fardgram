@@ -2176,6 +2176,17 @@ export const mapTdUser = (raw: TdObject): User | undefined => {
     ? usernames.active_usernames.find((value): value is string => typeof value === "string")
     : undefined;
   const type = asTdObject(raw.type);
+  const emojiStatusObj = asTdObject(raw.emoji_status);
+  const customEmojiId = emojiStatusObj && (emojiStatusObj["@type"] === "emojiStatusCustomEmoji" || emojiStatusObj["@type"] === "emojiStatusUpgradedGift")
+    ? tdId(emojiStatusObj.custom_emoji_id)
+    : undefined;
+  const emojiStatusExpiration = tdNumber(emojiStatusObj?.expiration_date);
+  const emojiStatus = customEmojiId
+    ? {
+        customEmojiId,
+        expirationDate: emojiStatusExpiration && emojiStatusExpiration > 0 ? emojiStatusExpiration : undefined,
+      }
+    : undefined;
 
   return {
     id,
@@ -2194,6 +2205,8 @@ export const mapTdUser = (raw: TdObject): User | undefined => {
     },
     presence: online ? "online" : "offline",
     lastSeenLabel: lastSeen ? new Date(lastSeen * 1000).toLocaleString(currentLanguage()) : undefined,
+    emojiStatus,
+    isPremium: raw.is_premium === true,
   };
 };
 

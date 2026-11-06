@@ -158,7 +158,7 @@ The order below is the recommended delivery sequence. It can be changed only whe
 ### P2 — Ecosystem, content creation and completeness
 
 - [x] **FG-018 — Telegram Stars, gifts, paid media, payments and Money/Wallet integrations**
-- [ ] **FG-019 — Stickers, custom emoji, emoji status and profile media parity**
+- [x] **FG-019 — Stickers, custom emoji, emoji status and profile media parity**
 - [ ] **FG-020 — Localization, Persian/RTL completeness and accessibility**
 - [ ] **FG-021 — Drag-and-drop folders and file-set archive sending**
 - [ ] **FG-022 — Location sharing and live location**

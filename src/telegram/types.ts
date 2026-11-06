@@ -40,6 +40,12 @@ export interface ChatFolder {
   iconName: string;
 }
 
+export interface UserEmojiStatus {
+  customEmojiId: string;
+  expirationDate?: number;
+  emoji?: string;
+}
+
 export interface User {
   id: string;
   displayName: string;
@@ -51,6 +57,8 @@ export interface User {
   avatar: Avatar;
   presence: "online" | "offline" | "typing";
   lastSeenLabel?: string;
+  emojiStatus?: UserEmojiStatus;
+  isPremium?: boolean;
 }
 
 export type ProfileKind = "self" | "user" | "group" | "channel";
@@ -436,6 +444,8 @@ export interface ChatProfile {
   profileAudioCount?: number;
   profileAudios?: ProfileAudio[];
   businessInfo?: BusinessInfo;
+  emojiStatus?: UserEmojiStatus;
+  isPremium?: boolean;
 }
 
 export interface BusinessLocation {

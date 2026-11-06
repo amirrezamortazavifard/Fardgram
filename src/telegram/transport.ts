@@ -308,4 +308,6 @@ export interface TelegramTransport {
   getAvailableGifts?(): Promise<import("./types").TelegramGift[]>;
   sendGift?(giftId: string, recipientUserId: string, text?: string, isPrivate?: boolean): Promise<boolean>;
   buyPaidMedia?(chatId: string, messageId: string): Promise<boolean>;
+  setUserEmojiStatus?(customEmojiId?: string, durationSeconds?: number): Promise<boolean>;
+  getCustomEmojiStickers?(customEmojiIds: string[]): Promise<import("./types").EmojiPickerAsset[]>;
 }

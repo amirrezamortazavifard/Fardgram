@@ -542,6 +542,8 @@ export interface TelegramState {
   loadStarsData: () => Promise<void>;
   buyPaidMedia: (chatId: string, messageId: string) => Promise<boolean>;
   sendGift: (giftId: string, recipientUserId: string, text?: string, isPrivate?: boolean) => Promise<boolean>;
+  setUserEmojiStatus: (customEmojiId?: string, durationSeconds?: number) => Promise<boolean>;
+  getCustomEmojiStickers: (customEmojiIds: string[]) => Promise<import("../telegram/types").EmojiPickerAsset[]>;
   clearError: () => void;
   clearOperationError: () => void;
 }

@@ -596,6 +596,20 @@ export class TauriMessageMediaService {
       .filter((asset): asset is EmojiPickerAsset => Boolean(asset));
   }
 
+  async getCustomEmojiStickers(customEmojiIds: string[]): Promise<EmojiPickerAsset[]> {
+    try {
+      const response = await this.context.request({
+        "@type": "getCustomEmojiStickers",
+        custom_emoji_ids: customEmojiIds.map(numericId),
+      });
+      return asTdObjects(response.stickers)
+        .map((sticker) => mapEmojiSticker(sticker))
+        .filter((asset): asset is EmojiPickerAsset => Boolean(asset));
+    } catch {
+      return [];
+    }
+  }
+
   async loadEmojiAsset(asset: EmojiPickerAsset) {
     if (asset.localPath) return asset.localPath;
     await this.context.fileDownloads.cache(asset.fileId, 28);

@@ -3084,6 +3084,31 @@ export class MockTelegramTransport implements TelegramTransport {
     return true;
   }
 
+  async setUserEmojiStatus(customEmojiId?: string, durationSeconds = 0): Promise<boolean> {
+    const currentUserId = this.snapshot.currentUserId;
+    const user = this.snapshot.users.find((u) => u.id === currentUserId);
+    if (user) {
+      user.emojiStatus = customEmojiId
+        ? {
+            customEmojiId,
+            expirationDate: durationSeconds > 0 ? Math.floor(Date.now() / 1000) + durationSeconds : undefined,
+          }
+        : undefined;
+      this.listener?.({ type: "user.upsert", user: clone(user) });
+    }
+    return true;
+  }
+
+  async getCustomEmojiStickers(customEmojiIds: string[]): Promise<EmojiPickerAsset[]> {
+    return customEmojiIds.map((id, index) => ({
+      id: `custom-emoji-${id}`,
+      kind: "sticker",
+      fileId: 900000 + index,
+      fileName: `custom_emoji_${id}.webp`,
+      emoji: ["⭐", "🔥", "🎉", "💼", "🚀", "☕", "🌴", "🎯", "❤️", "👍"][index % 10],
+    }));
+  }
+
   async translateMessageText(chatId: string, messageId: string, toLanguageCode: string): Promise<import("./types").TranslatedText> {
     const message = this.snapshot.messages.find((m) => m.chatId === chatId && m.id === messageId);
     let originalText = "Mock message text";

@@ -6508,6 +6508,35 @@ export const createTelegramStore = (
         return ok;
       },
 
+      setUserEmojiStatus: async (customEmojiId?: string, durationSeconds = 0) => {
+        const ok = (await transport.setUserEmojiStatus?.(customEmojiId, durationSeconds)) ?? false;
+        if (ok) {
+          const currentUserId = get().currentUserId;
+          if (currentUserId) {
+            const user = get().users.get(currentUserId);
+            if (user) {
+              const updatedUser: User = {
+                ...user,
+                emojiStatus: customEmojiId
+                  ? {
+                      customEmojiId,
+                      expirationDate: durationSeconds > 0 ? Math.floor(Date.now() / 1000) + durationSeconds : undefined,
+                    }
+                  : undefined,
+              };
+              const nextUsers = new Map(get().users);
+              nextUsers.set(currentUserId, updatedUser);
+              set({ users: nextUsers });
+            }
+          }
+        }
+        return ok;
+      },
+
+      getCustomEmojiStickers: async (customEmojiIds: string[]) => {
+        return (await transport.getCustomEmojiStickers?.(customEmojiIds)) ?? [];
+      },
+
       clearError: () => set({ error: undefined }),
       clearOperationError: () => set({ operationError: undefined }),
     };

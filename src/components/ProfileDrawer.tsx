@@ -19,6 +19,9 @@ import {
   ShieldCheck,
   Users,
   X,
+  QrCode,
+  Smile,
+  Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useModalFocus } from "../hooks/useModalFocus";
@@ -36,6 +39,8 @@ import { Avatar } from "./Avatar";
 import { MessageRichText } from "./MessageRichText";
 import { MotionPresence } from "./MotionPresence";
 import { ProfilePlaylist } from "./ProfilePlaylist";
+import { ProfileQrDialog } from "./ProfileQrDialog";
+import { EmojiStatusPicker } from "./EmojiStatusPicker";
 import { ReportDialog } from "./ReportDialog";
 import { SharedMediaBrowser } from "./SharedMediaBrowser";
 
@@ -121,6 +126,8 @@ export function ProfileDrawer({
 }: ProfileDrawerProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
   const dialogRef = useModalFocus<HTMLElement>(onClose, false, closeRef, reportOpen);
   const [page, setPage] = useState<ProfilePage>("main");
   const cacheFile = useTelegramStore((store) => store.cacheFile);
@@ -346,7 +353,32 @@ export function ProfileDrawer({
                       <Avatar avatar={profile.avatar} size="large" />
                     </button>
                   ) : <span className="profile-avatar-static"><Avatar avatar={profile.avatar} size="large" /></span>}
-                  <h3 id="profile-name" className={isAdministrator ? "is-administrator" : undefined}>{profile.title}</h3>
+                  <div className="profile-title-row" style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                    <h3 id="profile-name" className={isAdministrator ? "is-administrator" : undefined}>{profile.title}</h3>
+                    {profile.emojiStatus ? (
+                      <button
+                        type="button"
+                        className="profile-emoji-status-badge"
+                        style={{ background: "none", border: "none", padding: "2px 4px", cursor: profile.kind === "self" ? "pointer" : "default", fontSize: "18px", lineHeight: "1" }}
+                        title={profile.kind === "self" ? translate("Change Emoji Status") : translate("Emoji Status")}
+                        onClick={() => profile.kind === "self" && setStatusPickerOpen(true)}
+                        aria-label="Emoji status"
+                      >
+                        {profile.emojiStatus.emoji ?? "⭐"}
+                      </button>
+                    ) : profile.kind === "self" ? (
+                      <button
+                        type="button"
+                        className="profile-emoji-status-add"
+                        style={{ background: "none", border: "none", padding: "2px 4px", cursor: "pointer", opacity: 0.6 }}
+                        title={translate("Set Emoji Status")}
+                        onClick={() => setStatusPickerOpen(true)}
+                        aria-label="Set emoji status"
+                      >
+                        <Smile size={18} />
+                      </button>
+                    ) : null}
+                  </div>
                   <span className={`profile-status ${profileIsBot ? "is-bot" : ""}`.trim()}>
                     {profileIsBot && isAdministrator
                       ? translate("机器人 · 管理员")
@@ -364,6 +396,11 @@ export function ProfileDrawer({
                 </section>
                 <div className="profile-secondary-content">
                   <div className="profile-actions">
+                    {profile.kind === "self" ? (
+                      <button type="button" onClick={() => setStatusPickerOpen(true)}>
+                        <Smile size={18} /><span>{translate("Emoji Status")}</span>
+                      </button>
+                    ) : null}
                     {profile.kind === "user" && profile.userId && profile.userId !== currentUserId ? (
                       <button type="button" onClick={() => void onStartPrivateChat(profile.userId!)}>
                         <MessageCircle size={18} /><span>{translate("发消息")}</span>
@@ -424,7 +461,22 @@ export function ProfileDrawer({
                   {(profile.kind === "user" || profile.kind === "self") ? (
                     <section className="profile-identity-card" aria-label={translate("用户账户信息")}>
                       {profile.username ? (
-                        <div><AtSign size={18} /><span><strong>@{profile.username}</strong><small>{translate("用户名")}</small></span></div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <AtSign size={18} />
+                            <span><strong>@{profile.username}</strong><small>{translate("用户名")}</small></span>
+                          </div>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            style={{ padding: "4px" }}
+                            title={translate("Show QR Code")}
+                            aria-label={translate("Show QR Code")}
+                            onClick={() => setQrOpen(true)}
+                          >
+                            <QrCode size={18} />
+                          </button>
+                        </div>
                       ) : null}
                       {profile.phoneNumber && profile.kind === "self" ? (
                         <div><Phone size={18} /><span><strong>{profile.phoneNumber}</strong><small>{translate("手机号")}</small></span></div>
@@ -474,6 +526,21 @@ export function ProfileDrawer({
       </section>
       <MotionPresence present={Boolean(reportOpen && (profile?.chatId || reportChatId))}>
         {reportOpen && (profile?.chatId || reportChatId) ? <ReportDialog chatId={profile?.chatId ?? reportChatId!} messageIds={[]} title={profile?.title ?? translate("聊天")} onGetOptions={onGetReportOptions} onSubmit={onReportChat} onLeaveChat={onLeaveChat} onClose={() => setReportOpen(false)} /> : null}
+      </MotionPresence>
+      <MotionPresence present={Boolean(qrOpen && profile)}>
+        {qrOpen && profile ? (
+          <ProfileQrDialog
+            title={profile.title}
+            username={profile.username}
+            phoneNumber={profile.phoneNumber}
+            onClose={() => setQrOpen(false)}
+          />
+        ) : null}
+      </MotionPresence>
+      <MotionPresence present={Boolean(statusPickerOpen)}>
+        {statusPickerOpen ? (
+          <EmojiStatusPicker onClose={() => setStatusPickerOpen(false)} />
+        ) : null}
       </MotionPresence>
     </div>
   );

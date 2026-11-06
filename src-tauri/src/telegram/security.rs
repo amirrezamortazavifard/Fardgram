@@ -61,6 +61,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "getChatInviteLinks",
     "getChatJoinRequests",
     "getAvailableGifts",
+    "getCustomEmojiStickers",
     "getStarTransactions",
     "getStarsTopupOptions",
     "getStarRevenueStatus",
@@ -142,6 +143,7 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "reorderChatFolders",
     "setMessageSenderBlockList",
     "setUserPrivacySettingRules",
+    "setUserEmojiStatus",
     "terminateSession",
     "terminateAllOtherSessions",
     "transferChatOwnership",
@@ -884,6 +886,40 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
             let owner_type = owner.get("@type").and_then(Value::as_str).unwrap_or("");
             if owner_type != "messageSenderUser" && owner_type != "messageSenderChat" {
                 return Err("Invalid gift recipient type".to_string());
+            }
+        }
+        "setUserEmojiStatus" => {
+            if let Some(status) = request.get("emoji_status") {
+                if !status.is_null() {
+                    let status_obj = status.as_object().ok_or_else(|| "Invalid emoji status".to_string())?;
+                    let status_type = status_obj.get("@type").and_then(Value::as_str).unwrap_or("");
+                    if status_type != "emojiStatusCustomEmoji" && status_type != "emojiStatusUpgradedGift" {
+                        return Err("Invalid emoji status type".to_string());
+                    }
+                    validate_nonzero_identifier(status, "custom_emoji_id")?;
+                    let expiration = status_obj
+                        .get("expiration_date")
+                        .and_then(Value::as_i64)
+                        .unwrap_or(0);
+                    if expiration < 0 {
+                        return Err("Invalid expiration date".to_string());
+                    }
+                }
+            }
+        }
+        "getCustomEmojiStickers" => {
+            let ids = request
+                .get("custom_emoji_ids")
+                .and_then(Value::as_array)
+                .ok_or_else(|| "Custom emoji identifiers are missing".to_string())?;
+            if ids.is_empty() || ids.len() > 100 {
+                return Err("Invalid custom emoji identifiers count".to_string());
+            }
+            for id in ids {
+                let num = id.as_i64().ok_or_else(|| "Invalid custom emoji identifier".to_string())?;
+                if num <= 0 {
+                    return Err("Custom emoji identifier out of bounds".to_string());
+                }
             }
         }
         "getInlineQueryResults" => {
@@ -4449,5 +4485,51 @@ mod tests {
             "@extra": EXTRA
         });
         assert!(validate_webview_tdlib_request(&send_gift_bad).is_err());
+    }
+
+    #[test]
+    fn validates_emoji_status_and_custom_emoji_requests() {
+        let set_status = json!({
+            "@type": "setUserEmojiStatus",
+            "emoji_status": {
+                "@type": "emojiStatusCustomEmoji",
+                "custom_emoji_id": 543210,
+                "expiration_date": 1750000000
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&set_status).is_ok());
+
+        let clear_status = json!({
+            "@type": "setUserEmojiStatus",
+            "emoji_status": null,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&clear_status).is_ok());
+
+        let bad_status_id = json!({
+            "@type": "setUserEmojiStatus",
+            "emoji_status": {
+                "@type": "emojiStatusCustomEmoji",
+                "custom_emoji_id": 0,
+                "expiration_date": 1750000000
+            },
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&bad_status_id).is_err());
+
+        let custom_stickers = json!({
+            "@type": "getCustomEmojiStickers",
+            "custom_emoji_ids": [100, 200, 300],
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&custom_stickers).is_ok());
+
+        let empty_custom_stickers = json!({
+            "@type": "getCustomEmojiStickers",
+            "custom_emoji_ids": [],
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&empty_custom_stickers).is_err());
     }
 }
