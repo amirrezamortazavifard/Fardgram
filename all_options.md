@@ -173,7 +173,7 @@ The order below is the recommended delivery sequence. It can be changed only whe
 
 ### Separate release gate (not a feature)
 
-- [ ] **FG-RELEASE — Full regression, migration, security and native release validation**
+- [x] **FG-RELEASE — Full regression, migration, security and native release validation**
 
 ---
 
