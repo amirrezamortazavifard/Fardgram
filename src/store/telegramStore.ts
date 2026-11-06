@@ -6243,6 +6243,92 @@ export const createTelegramStore = (
         }
       },
 
+      recognizeSpeech: async (chatId, messageId) => {
+        try {
+          // Immediately set optimistic pending transcription state
+          const location = messageLocation(messageId, chatId);
+          if (location && location.message.content.kind === "media") {
+            const nextMsg: Message = {
+              ...location.message,
+              content: {
+                ...location.message.content,
+                transcription: { status: "pending" as const },
+              },
+            };
+            const nextMessages = new Map(get().messages);
+            nextMessages.set(chatId, upsertMessage(location.messages, nextMsg));
+            set({ messages: nextMessages });
+          }
+
+          const res = await transport.recognizeSpeech?.(chatId, messageId);
+          if (res) {
+            const loc = messageLocation(messageId, chatId);
+            if (loc && loc.message.content.kind === "media") {
+              const nextMsg: Message = {
+                ...loc.message,
+                content: {
+                  ...loc.message.content,
+                  transcription: res,
+                },
+              };
+              const nextMessages = new Map(get().messages);
+              nextMessages.set(chatId, upsertMessage(loc.messages, nextMsg));
+              set({ messages: nextMessages });
+            }
+          }
+          return true;
+        } catch (error) {
+          const loc = messageLocation(messageId, chatId);
+          if (loc && loc.message.content.kind === "media") {
+            const nextMsg: Message = {
+              ...loc.message,
+              content: {
+                ...loc.message.content,
+                transcription: {
+                  status: "failed" as const,
+                  error: errorMessage(error, translate("Failed to transcribe message")),
+                },
+              },
+            };
+            const nextMessages = new Map(get().messages);
+            nextMessages.set(chatId, upsertMessage(loc.messages, nextMsg));
+            set({
+              messages: nextMessages,
+              operationError: errorMessage(error, translate("Failed to transcribe message")),
+            });
+          } else {
+            set({ operationError: errorMessage(error, translate("Failed to transcribe message")) });
+          }
+          return false;
+        }
+      },
+
+      rateSpeechRecognition: async (chatId, messageId, isGood) => {
+        try {
+          await transport.rateSpeechRecognition?.(chatId, messageId, isGood);
+          const location = messageLocation(messageId, chatId);
+          if (location && location.message.content.kind === "media" && location.message.content.transcription) {
+            const nextMsg: Message = {
+              ...location.message,
+              content: {
+                ...location.message.content,
+                transcription: {
+                  ...location.message.content.transcription,
+                  ratedGood: isGood,
+                },
+              },
+            };
+            const nextMessages = new Map(get().messages);
+            nextMessages.set(chatId, upsertMessage(location.messages, nextMsg));
+            set({ messages: nextMessages });
+          }
+          return true;
+        } catch (error) {
+          set({ operationError: errorMessage(error, translate("Failed to rate transcription")) });
+          return false;
+        }
+      },
+
       clearError: () => set({ error: undefined }),
       clearOperationError: () => set({ operationError: undefined }),
     };

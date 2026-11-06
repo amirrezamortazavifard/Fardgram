@@ -183,6 +183,8 @@ const WEBVIEW_TDLIB_REQUESTS: &[&str] = &[
     "setPinnedSavedMessagesTopics",
     "toggleSavedMessagesTopicIsPinned",
     "setSavedMessagesTagLabel",
+    "recognizeSpeech",
+    "rateSpeechRecognition",
 ];
 
 pub(super) fn request_type_from_extra(extra: &str) -> Option<&str> {
@@ -398,6 +400,27 @@ pub(super) fn validate_webview_tdlib_request(request: &Value) -> Result<(), Stri
                 if label.chars().count() > 12 {
                     return Err("Saved messages tag label cannot exceed 12 characters".to_string());
                 }
+            }
+        }
+        "recognizeSpeech" => {
+            let message_id = request
+                .get("message_id")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| "Missing message_id".to_string())?;
+            if message_id <= 0 {
+                return Err("Invalid message_id".to_string());
+            }
+        }
+        "rateSpeechRecognition" => {
+            let message_id = request
+                .get("message_id")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| "Missing message_id".to_string())?;
+            if message_id <= 0 {
+                return Err("Invalid message_id".to_string());
+            }
+            if !request.get("is_good").map_or(false, Value::is_boolean) {
+                return Err("Missing or invalid is_good boolean".to_string());
             }
         }
         "joinChat" | "openChat" | "closeChat" => {
@@ -3970,5 +3993,33 @@ mod tests {
         let mut invalid_label = set_tag_label.clone();
         invalid_label["label"] = json!("this label is way too long to be allowed");
         assert!(validate_webview_tdlib_request(&invalid_label).is_err());
+    }
+
+    #[test]
+    fn validates_speech_recognition_requests() {
+        let recognize = json!({
+            "@type": "recognizeSpeech",
+            "chat_id": 12345678,
+            "message_id": 987654321,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&recognize).is_ok());
+
+        let mut invalid_recognize = recognize.clone();
+        invalid_recognize["message_id"] = json!(0);
+        assert!(validate_webview_tdlib_request(&invalid_recognize).is_err());
+
+        let rate = json!({
+            "@type": "rateSpeechRecognition",
+            "chat_id": 12345678,
+            "message_id": 987654321,
+            "is_good": true,
+            "@extra": EXTRA
+        });
+        assert!(validate_webview_tdlib_request(&rate).is_ok());
+
+        let mut invalid_rate = rate.clone();
+        invalid_rate["is_good"] = json!("not-a-boolean");
+        assert!(validate_webview_tdlib_request(&invalid_rate).is_err());
     }
 }

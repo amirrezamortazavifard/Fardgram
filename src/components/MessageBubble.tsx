@@ -55,6 +55,7 @@ import { RichMessageContent } from "./RichMessageContent";
 import { highlightedText } from "../utils/textHighlight";
 import { isRtlText } from "../utils/textDirection";
 import { AudioPlayer } from "./AudioPlayer";
+import { AudioTranscriptView } from "./AudioTranscriptView";
 import {
   nextVisibleMediaFileId,
   shouldAutoDownload,
@@ -1101,6 +1102,9 @@ function MessageBubbleComponent({
                 )}
               </div>
               {!content.showCaptionAboveMedia && visualCaption}
+              {content.mediaType === "videoNote" && (
+                <AudioTranscriptView message={message} />
+              )}
             </div>
             )
           ) : content.kind === "poll" ? (
@@ -1155,6 +1159,9 @@ function MessageBubbleComponent({
                   onCollapseQuote={collapseQuote}
                   onExpandQuote={onExpandQuote}
                 />
+              )}
+              {content.mediaType === "voice" && (
+                <AudioTranscriptView message={message} />
               )}
             </div>
           ) : (

@@ -847,6 +847,15 @@ export type MessageRichBlock =
     }
   | { kind: "divider" };
 
+export type SpeechRecognitionStatus = "pending" | "completed" | "failed";
+
+export interface SpeechRecognitionResult {
+  status: SpeechRecognitionStatus;
+  text?: string;
+  error?: string;
+  ratedGood?: boolean;
+}
+
 interface TransferableMessageContent {
   fileName: string;
   sizeLabel: string;
@@ -880,6 +889,7 @@ interface TransferableMessageContent {
   duration?: number;
   supportsStreaming?: boolean;
   hasSpoiler?: boolean;
+  transcription?: SpeechRecognitionResult;
 }
 
 export type MessageContent =
@@ -1017,6 +1027,7 @@ export interface MessagePermissions {
   canDeleteForAllUsers: boolean;
   canForward: boolean;
   canPin?: boolean;
+  canRecognizeSpeech?: boolean;
 }
 
 export interface MessageSendFailure {

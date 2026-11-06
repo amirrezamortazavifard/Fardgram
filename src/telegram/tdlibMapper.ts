@@ -41,6 +41,7 @@ import type {
   SavedMessagesTag,
   SavedMessagesTopic,
   SavedMessagesTopicTypeKind,
+  SpeechRecognitionResult,
 } from "./types";
 import { messagePreviewText } from "./messageContent";
 import { deriveChatManagementCapabilitiesFromTd } from "./chatManagement";
@@ -443,6 +444,7 @@ const mediaContent = (
     hasSpoiler?: boolean;
     showCaptionAboveMedia?: boolean;
     stickerSetId?: string;
+    transcription?: SpeechRecognitionResult;
     includePendingUpload?: boolean;
   } = {},
 ): MessageContent => {
@@ -1030,6 +1032,33 @@ const labeledText = (label: string, detail: unknown) => {
   return text ? `${label}：${text}` : label;
 };
 
+export const mapTdSpeechRecognitionResult = (raw: unknown): SpeechRecognitionResult | undefined => {
+  const obj = asTdObject(raw);
+  if (!obj) return undefined;
+  const type = obj["@type"];
+  if (type === "speechRecognitionResultPending") {
+    return {
+      status: "pending",
+      text: typeof obj.partial_text === "string" ? obj.partial_text : "",
+    };
+  }
+  if (type === "speechRecognitionResultText") {
+    return {
+      status: "completed",
+      text: typeof obj.text === "string" ? obj.text : "",
+    };
+  }
+  if (type === "speechRecognitionResultError") {
+    const err = asTdObject(obj.error);
+    const msg = typeof err?.message === "string" ? err.message : "Speech recognition failed";
+    return {
+      status: "failed",
+      error: msg,
+    };
+  }
+  return undefined;
+};
+
 export const mapTdMessageContent = (value: unknown, includePendingUpload = false): MessageContent => {
   const content = asTdObject(value);
   const event = content && mapTdServiceEvent(content);
@@ -1168,6 +1197,7 @@ export const mapTdMessageContent = (value: unknown, includePendingUpload = false
         ...formattedCaption(content.caption),
         mimeType: typeof voice?.mime_type === "string" ? voice.mime_type : undefined,
         duration: tdNumber(voice?.duration),
+        transcription: mapTdSpeechRecognitionResult(voice?.speech_recognition_result),
         includePendingUpload,
       });
     }
@@ -1187,6 +1217,7 @@ export const mapTdMessageContent = (value: unknown, includePendingUpload = false
         height: length,
         duration: tdNumber(videoNote?.duration),
         mimeType: "video/mp4",
+        transcription: mapTdSpeechRecognitionResult(videoNote?.speech_recognition_result),
         includePendingUpload,
       });
     }
@@ -1561,6 +1592,7 @@ export const mapTdMessageProperties = (raw: TdObject): MessagePermissions => {
     ...(includesPinPermissions ? {
       canPin: raw.can_be_pinned === true,
     } : {}),
+    ...(typeof raw.can_recognize_speech === "boolean" ? { canRecognizeSpeech: raw.can_recognize_speech } : {}),
   };
 };
 

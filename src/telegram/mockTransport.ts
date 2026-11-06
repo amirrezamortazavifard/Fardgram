@@ -2854,6 +2854,27 @@ export class MockTelegramTransport implements TelegramTransport {
     );
   }
 
+  async recognizeSpeech(chatId: string, messageId: string): Promise<import("./types").SpeechRecognitionResult> {
+    const message = this.snapshot.messages.find((m) => m.chatId === chatId && m.id === messageId);
+    const result: import("./types").SpeechRecognitionResult = {
+      status: "completed",
+      text: "This is a transcribed voice note from the mock TDLib engine.",
+    };
+    if (message && message.content.kind === "media") {
+      message.content.transcription = result;
+      this.listener?.({ type: "message.upsert", message: clone(message) });
+    }
+    return result;
+  }
+
+  async rateSpeechRecognition(chatId: string, messageId: string, isGood: boolean): Promise<void> {
+    const message = this.snapshot.messages.find((m) => m.chatId === chatId && m.id === messageId);
+    if (message && message.content.kind === "media" && message.content.transcription) {
+      message.content.transcription.ratedGood = isGood;
+      this.listener?.({ type: "message.upsert", message: clone(message) });
+    }
+  }
+
   async forwardMessages({ fromChatId, toChatId, toTopicId, messageIds }: ForwardMessagesInput): Promise<ForwardMessagesResult> {
     const uniqueMessageIds = [...new Set(messageIds)];
     const selected = uniqueMessageIds

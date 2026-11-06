@@ -517,6 +517,8 @@ export interface TelegramState {
   resumeChatExport: () => void;
   pickExportFolder: () => Promise<string | null>;
   openExportFolder: (path: string) => Promise<void>;
+  recognizeSpeech: (chatId: string, messageId: string) => Promise<boolean>;
+  rateSpeechRecognition: (chatId: string, messageId: string, isGood: boolean) => Promise<boolean>;
   clearError: () => void;
   clearOperationError: () => void;
 }

@@ -2,7 +2,7 @@ import { chatReportRequest, mapChatReportResult } from "./chatReport";
 import { ChatViewSession } from "./chatViewSession";
 import { mapChatInvitePreview, mapChatJoinResult } from "./chatJoin";
 import { telegramInviteLink } from "./telegramLinks";
-import type { DiscoveredProxy, JoinChatInput, JoinChatResult } from "./types";
+import type { DiscoveredProxy, JoinChatInput, JoinChatResult, SpeechRecognitionResult } from "./types";
 import { isInDeletedHistory } from "./deletedHistory";
 import { translate } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
@@ -24,6 +24,7 @@ import {
   mapTdPasskey,
   mapTdSavedMessagesTag,
   mapTdSavedMessagesTopic,
+  mapTdSpeechRecognitionResult,
   messageSenderId,
   mapTdUser,
   tdId,
@@ -2716,6 +2717,24 @@ export class TauriTelegramTransport implements TelegramTransport {
     } catch {
       return [];
     }
+  }
+
+  async recognizeSpeech(chatId: string, messageId: string): Promise<SpeechRecognitionResult> {
+    const raw = await this.request({
+      "@type": "recognizeSpeech",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
+    });
+    return mapTdSpeechRecognitionResult(raw) ?? { status: "pending" };
+  }
+
+  async rateSpeechRecognition(chatId: string, messageId: string, isGood: boolean): Promise<void> {
+    await this.request({
+      "@type": "rateSpeechRecognition",
+      chat_id: numericId(chatId),
+      message_id: numericId(messageId),
+      is_good: isGood,
+    });
   }
 
   async forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult> {

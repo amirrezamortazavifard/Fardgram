@@ -6,6 +6,18 @@ with prerelease identifiers used for release candidates.
 ## [Unreleased]
 
 ### Added
+- **Voice & Video Note Transcription & Transcript UX (FG-012)**: Telegram-native speech-to-text recognition with interactive transcript UI for voice messages and video notes:
+  - **Telegram-Native TDLib Speech Recognition**: Integrated `recognizeSpeech` and `rateSpeechRecognition` TDLib methods with security request whitelist validation in `src-tauri/src/telegram/security.rs`.
+  - **Asynchronous Lifecycle & States**: Reactive mapping of TDLib's `speechRecognitionResultPending` (with live partial text streaming), `speechRecognitionResultText` (completed full transcript), and `speechRecognitionResultError` (with contextual retry actions) across voice and video note message media.
+  - **Dedicated Transcript UX Component (`AudioTranscriptView`)**:
+    - Intuitive inline trigger button with sparkles icon displayed only for transcription-eligible messages (`canRecognizeSpeech`).
+    - Real-time animated pending indicator displaying live progress or partial text stream.
+    - Formatted expandable transcript panel with full bidirectional RTL/LTR (`dir="auto"`) text rendering, line height optimization, and word wrapping.
+    - One-click clipboard copy action with instant checkmark visual feedback.
+    - Feedback rating buttons (Thumbs Up / Thumbs Down) enabling users to rate transcription accuracy back to the Telegram network.
+    - Collapsible "Show more / Show less" controls for lengthy speech transcripts.
+  - **Dual-Theme Design Parity**: 100% professional English UI copy with strict light and dark mode parity, ensuring crisp contrast without hardcoded dark backgrounds.
+  - **Privacy-First Zero Cloud Leakage**: Audio data is processed strictly through official TDLib channels without unconsented third-party cloud streaming.
 - **Full Chat/History Export (FG-011)**: Native Telegram Desktop chat history export suite separate from diagnostic packages:
   - **Comprehensive Export Formats**: Dual output modes supporting human-readable HTML (`messages.html` with responsive styles and bubble layouts) and developer-friendly JSON (`result.json` strictly matching Telegram Desktop export schema).
   - **Granular Filter Controls**: Date range filtering (From/To date boundaries), service messages toggle (join events, pin notifications, photo updates), and category-level media selection (Photos, Videos, Voice messages, Audio, Documents, and Stickers) with configurable maximum file-size caps.

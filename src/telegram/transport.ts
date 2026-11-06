@@ -267,6 +267,8 @@ export interface TelegramTransport {
   toggleSavedMessagesTopicPinned?(topicId: number, isPinned: boolean): Promise<void>;
   setSavedMessagesTagLabel?(reaction: string, isCustomEmoji: boolean, label: string): Promise<void>;
   searchSavedMessages?(input: { query?: string; tag?: string; topicId?: number; limit?: number }): Promise<Message[]>;
+  recognizeSpeech?(chatId: string, messageId: string): Promise<import("./types").SpeechRecognitionResult>;
+  rateSpeechRecognition?(chatId: string, messageId: string, isGood: boolean): Promise<void>;
   forwardMessages(input: ForwardMessagesInput): Promise<ForwardMessagesResult>;
   sendMediaCopy(input: SendMediaCopyInput): Promise<void>;
   setChatDraft(input: SetChatDraftInput): Promise<void>;
