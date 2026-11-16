@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTelegramStore } from "./telegramStore";
 import { MockTelegramTransport } from "../telegram/mockTransport";
+import { deriveChatManagementCapabilities } from "../telegram/chatManagement";
 import type { TelegramEventListener } from "../telegram/transport";
-import type { Message } from "../telegram/types";
+import type { Message, Chat } from "../telegram/types";
 
 class ScheduledTestTransport extends MockTelegramTransport {
   publish!: TelegramEventListener;
@@ -200,5 +201,51 @@ describe("telegramStore scheduled messages (FG-005)", () => {
 
     const updatedList = store.getState().scheduledMessages.get("chat-600");
     expect(updatedList?.length).toBe(0);
+  });
+
+  it("handles TDLib 400 error gracefully without setting operationError", async () => {
+    const transport = new ScheduledTestTransport();
+    vi.spyOn(transport, "getChatScheduledMessages").mockRejectedValue(
+      new Error("Not enough rights to get scheduled messages (400)")
+    );
+    const store = createTelegramStore(transport);
+    await store.getState().initialize();
+
+    await store.getState().loadScheduledMessages("channel-no-rights");
+
+    expect(store.getState().operationError).toBeUndefined();
+    expect(store.getState().scheduledMessages.get("channel-no-rights")).toEqual([]);
+  });
+
+  it("skips fetching scheduled messages for channels without posting permission", async () => {
+    const transport = new ScheduledTestTransport();
+    const fetchSpy = vi.spyOn(transport, "getChatScheduledMessages");
+    const store = createTelegramStore(transport);
+    await store.getState().initialize();
+
+    // Set up a channel chat where user cannot post
+    const chats = new Map(store.getState().chats);
+    const mockChannel: Chat = {
+      id: "channel-read-only",
+      title: "Read Only Channel",
+      kind: "channel",
+      folderIds: [],
+      avatar: { color: "blue", label: "RO" },
+      preview: "",
+      updatedAt: new Date().toISOString(),
+      unreadCount: 0,
+      unreadMentionCount: 0,
+      pinned: false,
+      muted: false,
+      management: deriveChatManagementCapabilities("channel", "member"),
+    };
+    chats.set("channel-read-only", mockChannel);
+    store.setState({ chats });
+
+    await store.getState().loadScheduledMessages("channel-read-only");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(store.getState().operationError).toBeUndefined();
+    expect(store.getState().scheduledMessages.get("channel-read-only")).toEqual([]);
   });
 });

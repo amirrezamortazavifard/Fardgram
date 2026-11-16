@@ -4815,10 +4815,8 @@ export const createTelegramStore = (
         if (!get().chats.has(chatId)) return [];
         try {
           const pinned = await transport.getPinnedMessages(chatId);
-          if (get().operationError) set({ operationError: undefined });
           return pinned;
-        } catch (error) {
-          set({ operationError: errorMessage(error, translate("无法读取置顶消息")) });
+        } catch {
           return [];
         }
       },
@@ -5821,12 +5819,32 @@ export const createTelegramStore = (
 
       loadScheduledMessages: async (chatId: string) => {
         try {
+          const chat = get().chats.get(chatId);
+          if (chat) {
+            if (chat.kind === "channel" && !canPostToChannel(chat)) {
+              const next = new Map(get().scheduledMessages);
+              next.set(chatId, []);
+              set({ scheduledMessages: next });
+              return;
+            }
+            if (chat.canSendMessages === false) {
+              const next = new Map(get().scheduledMessages);
+              next.set(chatId, []);
+              set({ scheduledMessages: next });
+              return;
+            }
+          }
           const list = await transport.getChatScheduledMessages(chatId);
           const next = new Map(get().scheduledMessages);
           next.set(chatId, list);
-          set({ scheduledMessages: next, operationError: undefined });
-        } catch (error) {
-          set({ operationError: errorMessage(error, translate("无法加载定时消息")) });
+          set({ scheduledMessages: next });
+        } catch {
+          // Following official Telegram Desktop behavior:
+          // Background fetch of scheduled messages never triggers an operation error toast
+          // when permissions are restricted or messages are not found.
+          const next = new Map(get().scheduledMessages);
+          next.set(chatId, []);
+          set({ scheduledMessages: next });
         }
       },
 

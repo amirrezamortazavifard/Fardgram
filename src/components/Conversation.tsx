@@ -693,9 +693,11 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
 
   useEffect(() => {
     if (chat?.id && authorizationReady) {
+      if (chat.kind === "channel" && !canPostToChannel(chat)) return;
+      if (chat.canSendMessages === false) return;
       void loadScheduledMessages(chat.id);
     }
-  }, [chat?.id, authorizationReady, loadScheduledMessages]);
+  }, [chat?.id, chat?.kind, chat?.canSendMessages, chat?.management, authorizationReady, loadScheduledMessages]);
   const autoplayAnimations = usePreferencesStore((state) => autoplayAllowed(
     state.autoplayAnimations,
     state,
