@@ -23,14 +23,18 @@ const freezeSnapshotMedia = (source: HTMLElement, clone: HTMLElement) => {
   const frames = [...sourceVideos].map((media, index) => {
     const bounds = media.getBoundingClientRect();
     const style = getComputedStyle(media);
-    return { media, cloneMedia: clones[index], bounds, width: style.width, height: style.height,
+    return {
+      media, cloneMedia: clones[index], bounds, width: style.width, height: style.height,
       objectFit: style.objectFit, opacity: style.opacity, visibility: style.visibility,
       borderRadius: style.borderRadius, display: style.display,
-      layout: { position: style.position, top: style.top, right: style.right,
+      layout: {
+        position: style.position, top: style.top, right: style.right,
         bottom: style.bottom, left: style.left, margin: style.margin,
         maxWidth: style.maxWidth, maxHeight: style.maxHeight, minWidth: style.minWidth,
         minHeight: style.minHeight, verticalAlign: style.verticalAlign,
-        alignSelf: style.alignSelf, gridArea: style.gridArea, transform: style.transform } };
+        alignSelf: style.alignSelf, gridArea: style.gridArea, transform: style.transform
+      }
+    };
   });
   for (const frame of frames) {
     const { media, cloneMedia, bounds } = frame;
@@ -50,9 +54,11 @@ const freezeSnapshotMedia = (source: HTMLElement, clone: HTMLElement) => {
       canvas.className = cloneMedia.className;
       canvas.dataset.snapshotMedia = "video";
       canvas.style.cssText = cloneMedia.style.cssText;
-      Object.assign(canvas.style, frame.layout, { width: frame.width, height: frame.height,
+      Object.assign(canvas.style, frame.layout, {
+        width: frame.width, height: frame.height,
         display: frame.display, opacity: frame.opacity, borderRadius: frame.borderRadius,
-        transition: "none", animation: "none" });
+        transition: "none", animation: "none"
+      });
       try {
         const context = canvas.getContext("2d");
         if (context) {

@@ -444,84 +444,84 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
     onHistoryWindow,
     historyWindowIsContext = false,
     hasNewerMessages = false,
-  sponsoredMessages = [],
-  sponsoredMessagesBetween = 0,
-  chatMessages,
-  forwardTargets,
-  forumTopics,
-  users,
-  historyLoading,
-  historyRefreshing,
-  hasOlderMessages,
-  connectionStatus,
-  queuedMessageCount,
-  failedQueuedMessageCount,
-  queuedAttachmentCount,
-  failedAttachmentCount,
-  typingUserIds,
-  chatListId,
-  chatManagementPending,
-  onSendMessage,
-  onEditMessage,
-  onDeleteMessage,
-  onDraftChange,
-  onTypingChange,
-  onForwardMessages,
-  onLoadForumTopics,
-  onLoadMessageProperties,
-  onLoadRawMessage,
-  onSetMessageReaction,
-  onGetMessageReactionSenders,
-  onSetPollAnswer,
-  onBotCallback,
-  onLoadPinnedMessages,
-  onPinMessage,
-  onUnpinMessage,
-  onSetChatMessageAutoDeleteTime,
-  onDownloadFile,
-  onCancelFileDownload,
-  onRecoverFile,
-  onOpenFile,
-  onSaveFileToDownloads,
-  onSaveFileAs,
-  onOpenDownloadDirectory,
-  onStreamFile,
-  onSuspendFileStream,
-  onRetryMessage,
-  onSendFiles,
-  onCancelFileUpload,
-  onLoadOlder,
-  onOpenProfile,
-  onViewportReady,
-  presentationBlocked = false,
-  onOpenMessage,
-  onOpenMessageSearch,
-  onOpenChat,
-  onOpenSenderProfile,
-  onOpenMention,
-  onSearchHashtag,
-  onOpenStickerSet,
-  onClickSponsoredMessage,
-  onStartPrivateChat,
-  onSetChatPinned,
-  onSetChatMuted,
-  onSetChatArchived,
-  discussionPostId,
-  onOpenDiscussion,
-  onCloseDiscussion,
-  onBack,
-  onGetBotCommands,
-  onGetInlineResults,
-  onSendInlineResult,
-  onSendBotStart,
-  botStartPending,
-  botStartSending,
-  onConfirmBotStart,
-  onGetReportOptions,
-  onReportChat,
-  mobileViewport = false,
-  mobileChatOpen = false,
-} = props;
+    sponsoredMessages = [],
+    sponsoredMessagesBetween = 0,
+    chatMessages,
+    forwardTargets,
+    forumTopics,
+    users,
+    historyLoading,
+    historyRefreshing,
+    hasOlderMessages,
+    connectionStatus,
+    queuedMessageCount,
+    failedQueuedMessageCount,
+    queuedAttachmentCount,
+    failedAttachmentCount,
+    typingUserIds,
+    chatListId,
+    chatManagementPending,
+    onSendMessage,
+    onEditMessage,
+    onDeleteMessage,
+    onDraftChange,
+    onTypingChange,
+    onForwardMessages,
+    onLoadForumTopics,
+    onLoadMessageProperties,
+    onLoadRawMessage,
+    onSetMessageReaction,
+    onGetMessageReactionSenders,
+    onSetPollAnswer,
+    onBotCallback,
+    onLoadPinnedMessages,
+    onPinMessage,
+    onUnpinMessage,
+    onSetChatMessageAutoDeleteTime,
+    onDownloadFile,
+    onCancelFileDownload,
+    onRecoverFile,
+    onOpenFile,
+    onSaveFileToDownloads,
+    onSaveFileAs,
+    onOpenDownloadDirectory,
+    onStreamFile,
+    onSuspendFileStream,
+    onRetryMessage,
+    onSendFiles,
+    onCancelFileUpload,
+    onLoadOlder,
+    onOpenProfile,
+    onViewportReady,
+    presentationBlocked = false,
+    onOpenMessage,
+    onOpenMessageSearch,
+    onOpenChat,
+    onOpenSenderProfile,
+    onOpenMention,
+    onSearchHashtag,
+    onOpenStickerSet,
+    onClickSponsoredMessage,
+    onStartPrivateChat,
+    onSetChatPinned,
+    onSetChatMuted,
+    onSetChatArchived,
+    discussionPostId,
+    onOpenDiscussion,
+    onCloseDiscussion,
+    onBack,
+    onGetBotCommands,
+    onGetInlineResults,
+    onSendInlineResult,
+    onSendBotStart,
+    botStartPending,
+    botStartSending,
+    onConfirmBotStart,
+    onGetReportOptions,
+    onReportChat,
+    mobileViewport = false,
+    mobileChatOpen = false,
+  } = props;
   const conversationIdentity = chat
     ? topic ? `${chat.id}:topic:${topic.id}` : chat.id
     : undefined;
@@ -531,8 +531,8 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
   const localBlockedUsersById = useMemo(() => new Map(
     chat?.kind === "group"
       ? localBlockedUsers
-          .filter((user) => user.accountId === activeAccountId)
-          .map((user) => [user.userId, user] as const)
+        .filter((user) => user.accountId === activeAccountId)
+        .map((user) => [user.userId, user] as const)
       : [],
   ), [activeAccountId, chat?.kind, localBlockedUsers]);
   const localBlockedUserIds = useMemo(
@@ -806,10 +806,10 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
   const displayMessages = useMemo(
     () => chat?.kind === "saved"
       ? messages.map((message) => message.outgoing && message.delivery !== "sent" ? message : {
-          ...message,
-          outgoing: true,
-          delivery: message.delivery === "sent" ? "read" : message.delivery,
-        })
+        ...message,
+        outgoing: true,
+        delivery: message.delivery === "sent" ? "read" : message.delivery,
+      })
       : messages,
     [chat?.kind, messages],
   );
@@ -823,9 +823,9 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
           : message)
         : chat?.kind === "channel"
           ? displayMessages
-              .filter((message) => message.isChannelPost === true ||
-                Boolean(message.mediaAlbumId) ||
-                message.content.kind === "service" || message.content.kind === "unsupported")
+            .filter((message) => message.isChannelPost === true ||
+              Boolean(message.mediaAlbumId) ||
+              message.content.kind === "service" || message.content.kind === "unsupported")
           : displayMessages;
       return source.filter((message) => isVisibleConversationMessage(message) &&
         !isLocalHiddenMessage(message, localHiddenUserIds));
@@ -951,7 +951,7 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
       colorTheme,
     }, onDownloadFile, onSaveFileToDownloads, restoreFocus, cacheFile, { stream: onStreamFile, suspend: onSuspendFileStream, recover: onRecoverFile });
     if (activeContent.mediaType === "photo" && activeContent.fileId !== undefined && activeContent.canDownload !== false &&
-        !activeContent.isDownloading && !activeContent.isDownloaded) {
+      !activeContent.isDownloading && !activeContent.isDownloaded) {
       void onDownloadFile(activeContent.fileId, activeContent.fileName).catch(() => undefined);
     }
   }, [cacheFile, colorTheme, onDownloadFile, onSaveFileToDownloads, onStreamFile, onSuspendFileStream, onRecoverFile, openMessageContent, viewerPhotos]);
@@ -1067,7 +1067,7 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
   }, [activeAccountId, conversationIdentity, pinnedViewOpen, scrollRequest?.requestId]);
   useEffect(() => {
     if (chat && chat.unreadMentionCount > 0 && authorizationReady &&
-        connectionStatus === "online" && !pinnedViewOpen) {
+      connectionStatus === "online" && !pinnedViewOpen) {
       void refreshUnreadMentions(chat.id);
     }
   }, [activeAccountId, chat?.id, chat?.unreadMentionCount, authorizationReady,
@@ -1112,14 +1112,14 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
     const blockedReplyUser = localBlockedUsersById.get(repliedSenderId ?? "");
     return blockedReplyUser
       ? {
-          ...preview,
-          author: blockedReplyUser.alias,
-          concealed: true,
-        }
+        ...preview,
+        author: blockedReplyUser.alias,
+        concealed: true,
+      }
       : {
-          ...preview,
-          isAdministrator: Boolean(repliedSenderId && memberLabels.has(repliedSenderId)),
-        };
+        ...preview,
+        isAdministrator: Boolean(repliedSenderId && memberLabels.has(repliedSenderId)),
+      };
   }, [chat, currentUserId, forwardTargetsById, localBlockedUsersById, localHiddenUserIds, memberLabels, messagesById, sourceMessagesById, users]);
   const audioPlaybackNeighborsByMessage = useMemo(() => audioMessageNeighbors(renderedMessages), [renderedMessages]);
   const audioTrackQueue = useMemo<AudioTrackDescriptor[]>(() => renderedMessages.flatMap((message) => {
@@ -1334,11 +1334,13 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
       ...Array.from(list?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])
         .flatMap(row => row.dataset.messageId ? [row.dataset.messageId] : []),
     ];
-    return { following: memory?.followLatest !== false && !historyWindowIsContext,
+    return {
+      following: memory?.followLatest !== false && !historyWindowIsContext,
       anchorId: list ? visibleAnchor(list)?.messageId : undefined, topicId: topic?.id, protectedIds,
       // Discussion panels own a separate thread cursor; their cache is protected
       // until the panel closes rather than altering that cursor from this list.
-      busy: positioning || pinnedViewOpen || Boolean(discussionPost) };
+      busy: positioning || pinnedViewOpen || Boolean(discussionPost)
+    };
   };
   useEffect(() => {
     if (!chat?.id || discussionPostId) return;
@@ -1347,7 +1349,7 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
   const messageTargetHighlightRef = useRef<HTMLDivElement>(null);
   useChannelMessageViews(messageListElement, `${activeAccountId}:${conversationIdentity}`, chat?.id,
     renderedMessages, chat?.kind === "channel" && authorizationReady && connectionStatus === "online" &&
-      !positioning && !mobileViewHidden && !pinnedViewOpen && !discussionPost, viewChannelMessages);
+    !positioning && !mobileViewHidden && !pinnedViewOpen && !discussionPost, viewChannelMessages);
   const messageListContext = useMemo(() => ({ onLayoutCommitted: onListLayoutCommitted }), [onListLayoutCommitted]);
   useLayoutEffect(() => {
     const highlight = messageTargetHighlightRef.current;
@@ -1621,15 +1623,15 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
   // available and let forwarding/replying use their local fallbacks.
   const actionMessageForMenu = actionMessage?.isLocallyDeleted
     ? {
-        ...actionMessage,
-        permissions: {
-          canReply: true,
-          canEdit: false,
-          canDeleteOnlyForSelf: true,
-          canDeleteForAllUsers: false,
-          canForward: true,
-        },
-      }
+      ...actionMessage,
+      permissions: {
+        canReply: true,
+        canEdit: false,
+        canDeleteOnlyForSelf: true,
+        canDeleteForAllUsers: false,
+        canForward: true,
+      },
+    }
     : actionMessage;
   const actionAlbumMessageIds = actionMessage
     ? mediaAlbumMessagesFor(renderedMessages, actionMessage).map((message) => message.id)
@@ -2133,21 +2135,8 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
       ? observeConversationNoticeAlignment(element) : undefined;
   }, [setMessageListRef]);
 
-  if (!chat) {
-    return (
-      <section
-        className="conversation empty-conversation"
-        aria-hidden={mobileViewHidden ? true : undefined}
-        inert={mobileViewHidden ? true : undefined}
-      >
-        <div className="conversation-empty-mark">N</div>
-        <h2 className="conversation-notice">{translate("选择一个对话")}</h2>
-      </section>
-    );
-  }
-
-  const isChannelConversation = chat.kind === "channel";
-  const canPostChannel = canPostToChannel(chat);
+  const isChannelConversation = Boolean(chat && chat.kind === "channel");
+  const canPostChannel = Boolean(chat && canPostToChannel(chat));
   const reloadChannelDiscussion = async (post: Message) => {
     openChannelDiscussion(post);
   };
@@ -2201,7 +2190,7 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
     : replyingTo
       ? translate("回复")
       : undefined;
-  const composerContextSubject = replyingTo
+  const composerContextSubject = replyingTo && chat
     ? senderNameForMessage(replyingTo, users, chat, forwardTargetsById)
     : undefined;
   const composerContextSubjectIsAdministrator = Boolean(
@@ -2213,7 +2202,7 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
   const typingNames = visibleTypingUserIds.map((userId) =>
     localBlockedUsersById.get(userId)?.alias ?? users.get(userId)?.displayName ?? translate("成员")
   );
-  const typingStatus = visibleTypingUserIds.length === 0 || chat.kind === "saved" || chat.kind === "channel"
+  const typingStatus = !chat || visibleTypingUserIds.length === 0 || chat.kind === "saved" || chat.kind === "channel"
     ? undefined
     : chat.kind === "direct"
       ? translate("正在输入...")
@@ -2222,14 +2211,14 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
         : visibleTypingUserIds.length === 2
           ? translate("{{value0}} 正在输入...", { value0: typingNames.join("、") })
           : translate("{{value0}} 等 {{value1}} 人正在输入...", { value0: typingNames.slice(0, 2).join("、"), value1: visibleTypingUserIds.length });
-  const headerStatus = conversationHeaderStatus({
+  const headerStatus = chat ? conversationHeaderStatus({
     chat,
     peer: chat.peerId ? users.get(chat.peerId) : undefined,
     typingStatus: topic?.isClosed ? translate("话题已关闭") : typingStatus,
     memberCount: groupManagement?.chatId === chat.id
       ? groupManagement.memberCount ?? chat.memberCount
       : chat.memberCount,
-  });
+  }) : undefined;
 
   const openActionMenu = useCallback(async (
     message: Message,
@@ -2247,15 +2236,15 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
     const selection = globalThis.getSelection();
     const selectedSurface = sourceText && returnFocus
       ? [...returnFocus.querySelectorAll<HTMLElement>(".message-rich-text")]
-          .find((surface) => {
-            const anchor = selection?.anchorNode;
-            const focus = selection?.focusNode;
-            return Boolean(
-              anchor && focus &&
-              (anchor === surface || surface.contains(anchor)) &&
-              (focus === surface || surface.contains(focus)),
-            );
-          })
+        .find((surface) => {
+          const anchor = selection?.anchorNode;
+          const focus = selection?.focusNode;
+          return Boolean(
+            anchor && focus &&
+            (anchor === surface || surface.contains(anchor)) &&
+            (focus === surface || surface.contains(focus)),
+          );
+        })
       : undefined;
     const sourceEntities = message.content.kind === "text"
       ? message.content.entities
@@ -2349,6 +2338,7 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
   const cancelReply = () => {
     setReplyingTo(undefined);
     setReplyQuote(undefined);
+    if (!chat) return;
     const currentDraft = telegramStore.getState().drafts.get(topic ? `${chat.id}:topic:${topic.id}` : chat.id);
     if (currentDraft?.replyToMessageId) {
       onDraftChange(chat.id, currentDraft.text, undefined, undefined);
@@ -2356,6 +2346,7 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
   };
 
   const startReply = (message: Message, selectedReplyQuote?: MessageReplyQuote) => {
+    if (!chat) return;
     if (editingMessage) {
       setEditingMessage(undefined);
     }
@@ -2483,6 +2474,19 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
 
   const toggleMessageSelection = forwarding.toggleSelection;
   const confirmForward = forwarding.confirm;
+
+  if (!chat) {
+    return (
+      <section
+        className="conversation empty-conversation"
+        aria-hidden={mobileViewHidden ? true : undefined}
+        inert={mobileViewHidden ? true : undefined}
+      >
+        <div className="conversation-empty-mark">N</div>
+        <h2 className="conversation-notice">{translate("选择一个对话")}</h2>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -2726,11 +2730,11 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
           </div> : null}
         </MotionPresence>
         {showPositioning ? <div
-            className={`message-positioning-placeholder ${renderedMessages.length > 0 ? "is-warm" : ""}`}
-            role="status"
-          >
-            <span className="conversation-notice conversation-notice-status"><LoaderCircle className="spin" size={18} />{translate("正在加载消息")}</span>
-          </div> : null}
+          className={`message-positioning-placeholder ${renderedMessages.length > 0 ? "is-warm" : ""}`}
+          role="status"
+        >
+          <span className="conversation-notice conversation-notice-status"><LoaderCircle className="spin" size={18} />{translate("正在加载消息")}</span>
+        </div> : null}
         <MotionPresence present={showHistoryLoading} variant="status">
           {showHistoryLoading ? <div className="history-loading conversation-notice" aria-label={translate("正在加载更早消息")}>
             <LoaderCircle className="spin" size={16} />
@@ -2763,150 +2767,150 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
           items={visibleMessageBlocks}
           capture={captureViewportBeforeUpdate}
         >
-        <Virtuoso
-          key="conversation-virtuoso"
-          className={`message-list ${awayFromLatest ? "is-detached" : ""} ${hideUnpositionedEntry ? "is-entry-positioning" : ""} ${messageListScrolling ? "is-scrolling" : ""} ${!pinnedViewOpen && (visibleHistoryLoading || historyScrollbarSettling) ? "is-history-adjusting" : ""}`}
-          ref={virtuosoRef}
-          scrollerRef={setAlignedMessageListRef}
-          isScrolling={setMessageListScrolling}
-          role="log"
-          aria-label={pinnedViewOpen ? translate("置顶消息列表") : translate("消息列表")}
-          aria-busy={
-            positioning ||
-            (pinnedViewOpen && pinnedMessagesLoading) ||
-            (!pinnedViewOpen && historyLoading)
-          }
-          tabIndex={0}
-          alignToBottom={initialAlignToBottom}
-          firstItemIndex={virtuosoFirstItemIndex}
-          components={pinnedViewOpen ? pinnedMessageListComponents : messageListComponents}
-          context={messageListContext}
-          computeItemKey={(_, block) => block?.id ?? String(_)}
-          data={visibleMessageBlocks}
-          initialItemCount={Math.min(visibleMessageBlocks.length, 6)}
-          defaultItemHeight={52}
-          itemSize={measureMessageItem}
-          rangeChanged={onInitialRangeChanged}
-          atBottomThreshold={0}
-          atBottomStateChange={onInitialAtBottomStateChange}
-          initialTopMostItemIndex={initialTopMostItemIndex}
-          restoreStateFrom={undefined}
-          totalListHeightChanged={onTotalListHeightChanged}
-          increaseViewportBy={MESSAGE_VIEWPORT_PREFETCH}
-          minOverscanItemCount={{ top: 2, bottom: 2 }}
-          {...messageListHandlers}
-          itemContent={(_, groupModel) => {
-            if (!groupModel) return null;
-            if (groupModel.sponsoredMessage) {
-              const sponsored = groupModel.sponsoredMessage;
-              return (
-                <SponsoredMessageCard
-                  message={sponsored}
-                  onClick={() => {
-                    void onClickSponsoredMessage?.(chat?.id ?? sponsored.chatId, sponsored.id, false);
-                  }}
-                />
-              );
+          <Virtuoso
+            key="conversation-virtuoso"
+            className={`message-list ${awayFromLatest ? "is-detached" : ""} ${hideUnpositionedEntry ? "is-entry-positioning" : ""} ${messageListScrolling ? "is-scrolling" : ""} ${!pinnedViewOpen && (visibleHistoryLoading || historyScrollbarSettling) ? "is-history-adjusting" : ""}`}
+            ref={virtuosoRef}
+            scrollerRef={setAlignedMessageListRef}
+            isScrolling={setMessageListScrolling}
+            role="log"
+            aria-label={pinnedViewOpen ? translate("置顶消息列表") : translate("消息列表")}
+            aria-busy={
+              positioning ||
+              (pinnedViewOpen && pinnedMessagesLoading) ||
+              (!pinnedViewOpen && historyLoading)
             }
-            const { firstMessage, messages: messageGroup, positions, startsNewDay } = groupModel;
-            const reserveSenderAvatar = !isChannelConversation && firstMessage.content.kind !== "service" &&
-              firstMessage.content.kind !== "unsupported" &&
-              !firstMessage.outgoing && chat.kind !== "direct";
-            const showSenderAvatar = reserveSenderAvatar && !groupModel.continuesAfter;
-            const sender = users.get(firstMessage.senderId);
-            const senderChat = senderChatId(firstMessage.senderId);
-            const senderChatDetails = senderChat ? forwardTargetsById.get(senderChat) : undefined;
-            const realSenderName = sender?.displayName ??
-              senderChatDetails?.title ??
-              (chat.kind === "direct" ? chat.title : translate("Telegram 用户"));
-            const realSenderAvatar = sender?.avatar ??
-              senderChatDetails?.avatar ??
-              (chat.kind === "direct" ? chat.avatar : undefined);
-            const localBlockedUser = localBlockedUsersById.get(firstMessage.senderId);
-            const localBlockGroup = localBlockGroupByMessageId.get(firstMessage.id);
-            const localBlockGroupRevealed = Boolean(
-              localBlockGroup && revealedLocalBlockGroups.has(localBlockGroup.id)
-            );
-            const senderName = localBlockedUser && !localBlockGroupRevealed
-              ? localBlockedUser.alias
-              : realSenderName;
-            const senderAvatar = localBlockedUser && !localBlockGroupRevealed
-              ? localBlockedUser.aliasAvatar
-              : realSenderAvatar;
-            return (
-              <Fragment key={groupModel.id}>
-              {startsNewDay && (
-                <div className="message-day conversation-notice" data-removal-surface={`day:${localDateKey(firstMessage.sentAt)}`}>{formatMessageDay(firstMessage.sentAt)}</div>
-              )}
-              <div
-                className={`message-group ${firstMessage.outgoing ? "is-outgoing" : "is-incoming"} ${groupModel.continuesBefore ? "continues-before" : ""} ${groupModel.continuesAfter ? "continues-after" : ""} ${groupModel.id === visibleMessageBlocks.at(-1)?.id ? "is-last-visible" : ""}`}
-                data-virtual-block-id={groupModel.id}
-              >
-                {reserveSenderAvatar && (
-                  <span className="message-group-avatar">
-                    {showSenderAvatar && (
-                      <button
-                        data-removal-surface={`avatar:${groupModel.id}`}
-                        data-removing={messageGroup.every(message => message.isRemoving) || undefined}
-                        inert={messageGroup.every(message => message.isRemoving) || undefined}
-                        className={`message-sender-avatar ${localBlockedUser && !localBlockGroupRevealed
-                          ? "is-local-block-alias"
-                          : ""}`}
-                        type="button"
-                        aria-label={localBlockedUser && !localBlockGroupRevealed
-                          ? translate("显示 {{value0}} 的连续消息和真实身份", { value0: localBlockedUser.alias })
-                          : translate("查看 {{value0}} 资料", { value0: senderName })}
-                        title={localBlockedUser && !localBlockGroupRevealed
-                          ? translate("临时显示这个消息组")
-                          : translate("查看资料")}
-                        onClick={() => {
-                          if (localBlockedUser && localBlockGroup && !localBlockGroupRevealed) {
-                            revealLocalBlockedGroup(localBlockGroup.id);
-                            return;
-                          }
-                          onOpenSenderProfile(firstMessage.senderId);
-                        }}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          if (localBlockedUser && !localBlockGroupRevealed) return;
-                          setSenderMenu({
-                            senderId: firstMessage.senderId,
-                            senderName,
-                            x: event.clientX,
-                            y: event.clientY,
-                          });
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
-                          event.preventDefault();
-                          if (localBlockedUser && !localBlockGroupRevealed) return;
-                          const bounds = event.currentTarget.getBoundingClientRect();
-                          setSenderMenu({
-                            senderId: firstMessage.senderId,
-                            senderName,
-                            x: bounds.left + bounds.width / 2,
-                            y: bounds.top + bounds.height / 2,
-                          });
-                        }}
-                      >
-                        <Avatar
-                          avatar={senderAvatar ?? {
-                            label: Array.from(senderName.trim())[0] ?? "?",
-                            color: "#73828c",
-                          }}
-                          size="small"
-                        />
-                      </button>
+            tabIndex={0}
+            alignToBottom={initialAlignToBottom}
+            firstItemIndex={virtuosoFirstItemIndex}
+            components={pinnedViewOpen ? pinnedMessageListComponents : messageListComponents}
+            context={messageListContext}
+            computeItemKey={(_, block) => block?.id ?? String(_)}
+            data={visibleMessageBlocks}
+            initialItemCount={Math.min(visibleMessageBlocks.length, 6)}
+            defaultItemHeight={52}
+            itemSize={measureMessageItem}
+            rangeChanged={onInitialRangeChanged}
+            atBottomThreshold={0}
+            atBottomStateChange={onInitialAtBottomStateChange}
+            initialTopMostItemIndex={initialTopMostItemIndex}
+            restoreStateFrom={undefined}
+            totalListHeightChanged={onTotalListHeightChanged}
+            increaseViewportBy={MESSAGE_VIEWPORT_PREFETCH}
+            minOverscanItemCount={{ top: 2, bottom: 2 }}
+            {...messageListHandlers}
+            itemContent={(_, groupModel) => {
+              if (!groupModel) return null;
+              if (groupModel.sponsoredMessage) {
+                const sponsored = groupModel.sponsoredMessage;
+                return (
+                  <SponsoredMessageCard
+                    message={sponsored}
+                    onClick={() => {
+                      void onClickSponsoredMessage?.(chat?.id ?? sponsored.chatId, sponsored.id, false);
+                    }}
+                  />
+                );
+              }
+              const { firstMessage, messages: messageGroup, positions, startsNewDay } = groupModel;
+              const reserveSenderAvatar = !isChannelConversation && firstMessage.content.kind !== "service" &&
+                firstMessage.content.kind !== "unsupported" &&
+                !firstMessage.outgoing && chat.kind !== "direct";
+              const showSenderAvatar = reserveSenderAvatar && !groupModel.continuesAfter;
+              const sender = users.get(firstMessage.senderId);
+              const senderChat = senderChatId(firstMessage.senderId);
+              const senderChatDetails = senderChat ? forwardTargetsById.get(senderChat) : undefined;
+              const realSenderName = sender?.displayName ??
+                senderChatDetails?.title ??
+                (chat.kind === "direct" ? chat.title : translate("Telegram 用户"));
+              const realSenderAvatar = sender?.avatar ??
+                senderChatDetails?.avatar ??
+                (chat.kind === "direct" ? chat.avatar : undefined);
+              const localBlockedUser = localBlockedUsersById.get(firstMessage.senderId);
+              const localBlockGroup = localBlockGroupByMessageId.get(firstMessage.id);
+              const localBlockGroupRevealed = Boolean(
+                localBlockGroup && revealedLocalBlockGroups.has(localBlockGroup.id)
+              );
+              const senderName = localBlockedUser && !localBlockGroupRevealed
+                ? localBlockedUser.alias
+                : realSenderName;
+              const senderAvatar = localBlockedUser && !localBlockGroupRevealed
+                ? localBlockedUser.aliasAvatar
+                : realSenderAvatar;
+              return (
+                <Fragment key={groupModel.id}>
+                  {startsNewDay && (
+                    <div className="message-day conversation-notice" data-removal-surface={`day:${localDateKey(firstMessage.sentAt)}`}>{formatMessageDay(firstMessage.sentAt)}</div>
+                  )}
+                  <div
+                    className={`message-group ${firstMessage.outgoing ? "is-outgoing" : "is-incoming"} ${groupModel.continuesBefore ? "continues-before" : ""} ${groupModel.continuesAfter ? "continues-after" : ""} ${groupModel.id === visibleMessageBlocks.at(-1)?.id ? "is-last-visible" : ""}`}
+                    data-virtual-block-id={groupModel.id}
+                  >
+                    {reserveSenderAvatar && (
+                      <span className="message-group-avatar">
+                        {showSenderAvatar && (
+                          <button
+                            data-removal-surface={`avatar:${groupModel.id}`}
+                            data-removing={messageGroup.every(message => message.isRemoving) || undefined}
+                            inert={messageGroup.every(message => message.isRemoving) || undefined}
+                            className={`message-sender-avatar ${localBlockedUser && !localBlockGroupRevealed
+                              ? "is-local-block-alias"
+                              : ""}`}
+                            type="button"
+                            aria-label={localBlockedUser && !localBlockGroupRevealed
+                              ? translate("显示 {{value0}} 的连续消息和真实身份", { value0: localBlockedUser.alias })
+                              : translate("查看 {{value0}} 资料", { value0: senderName })}
+                            title={localBlockedUser && !localBlockGroupRevealed
+                              ? translate("临时显示这个消息组")
+                              : translate("查看资料")}
+                            onClick={() => {
+                              if (localBlockedUser && localBlockGroup && !localBlockGroupRevealed) {
+                                revealLocalBlockedGroup(localBlockGroup.id);
+                                return;
+                              }
+                              onOpenSenderProfile(firstMessage.senderId);
+                            }}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              if (localBlockedUser && !localBlockGroupRevealed) return;
+                              setSenderMenu({
+                                senderId: firstMessage.senderId,
+                                senderName,
+                                x: event.clientX,
+                                y: event.clientY,
+                              });
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+                              event.preventDefault();
+                              if (localBlockedUser && !localBlockGroupRevealed) return;
+                              const bounds = event.currentTarget.getBoundingClientRect();
+                              setSenderMenu({
+                                senderId: firstMessage.senderId,
+                                senderName,
+                                x: bounds.left + bounds.width / 2,
+                                y: bounds.top + bounds.height / 2,
+                              });
+                            }}
+                          >
+                            <Avatar
+                              avatar={senderAvatar ?? {
+                                label: Array.from(senderName.trim())[0] ?? "?",
+                                color: "#73828c",
+                              }}
+                              size="small"
+                            />
+                          </button>
+                        )}
+                      </span>
                     )}
-                  </span>
-                )}
-                <div className="message-group-stack">
-                  {(selectionMode
-                    ? messageGroup.map((message) => ({ kind: "message" as const, message }))
-                    : groupModel.segments
-                  ).map((segment) => {
-                    const renderDiscussionAction = (message: Message) => !selectionMode && !pinnedViewOpen && channelDiscussionAvailable(message) ? (
+                    <div className="message-group-stack">
+                      {(selectionMode
+                        ? messageGroup.map((message) => ({ kind: "message" as const, message }))
+                        : groupModel.segments
+                      ).map((segment) => {
+                        const renderDiscussionAction = (message: Message) => !selectionMode && !pinnedViewOpen && channelDiscussionAvailable(message) ? (
                           <button
                             className="channel-post-discussion"
                             type="button"
@@ -2925,281 +2929,281 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
                             <ChevronRight size={15} strokeWidth={2} aria-hidden="true" />
                           </button>
                         ) : undefined;
-                    const renderBubble = (message: Message, albumItem = false, sharedAlbumMetadata = false) => {
-                      const entrance = messageEntranceFor(message);
-                      const gateEntranceAtBottom = message.id === appendMountMessageId || Boolean(
-                        entrance && message.id === renderedMessages.at(-1)?.id,
-                      );
-                      const forwardSource = forwardSourceFor(message, users, forwardTargetsById);
-                      const forwardNavigation = forwardSource?.navigation;
-                      const blockedUser = localBlockedUsersById.get(message.senderId);
-                      const blockedGroup = localBlockGroupByMessageId.get(message.id);
-                      const blockedGroupRevealed = Boolean(
-                        blockedGroup && revealedLocalBlockGroups.has(blockedGroup.id)
-                      );
-                      const locallyConcealed = Boolean(
-                        blockedUser &&
-                        !blockedGroupRevealed &&
-                        !revealedLocalBlockMessages.has(message.id)
-                      );
-                      const displayedForwardLabel = locallyConcealed && forwardSource?.label
-                        ? translate("转发自 受限来源")
-                        : forwardSource?.label;
-                      const displayedSenderName = blockedUser && !blockedGroupRevealed
-                        ? blockedUser.alias
-                        : senderName;
-                      const senderIsAdministrator = (!blockedUser || blockedGroupRevealed) &&
-                        memberLabels.has(message.senderId);
-                      const messageIndex = renderedMessageIndexes.get(message.id) ?? -1;
-                      const previousMessage = renderedMessages[messageIndex - 1];
-                      const selected = selectedMessageIds.has(message.id);
-                      const selectionPending = selectionLoadingIds.has(message.id);
-                      const selectionHighlighted = selected || selectionPending;
-                      const joinsSelectionBefore = selectionHighlighted && Boolean(
-                        previousMessage &&
-                        localDateKey(previousMessage.sentAt) === localDateKey(message.sentAt) &&
-                        (selectedMessageIds.has(previousMessage.id) || selectionLoadingIds.has(previousMessage.id)),
-                      );
-                      const isChannelPost = isChannelConversation && message.isChannelPost === true;
-                      const bubble = <RichMessageBubble
-                        key={message.renderKey ?? message.id}
-                        message={message}
-                        entrance={entrance}
-                        senderName={isChannelConversation ? chat.title : displayedSenderName}
-                        senderLabel={message.senderTag || memberLabels.get(message.senderId)}
-                        senderLabelConcealed={Boolean(blockedUser && !blockedGroupRevealed)}
-                        senderLayoutName={blockedUser ? senderNameForMessage(message, users, chat, forwardTargetsById) : undefined}
-                        senderIsAdministrator={senderIsAdministrator}
-                        senderProfileAvailable={
-                          !message.outgoing &&
-                          message.senderId !== "unknown" &&
-                          (!blockedUser || blockedGroupRevealed)
-                        }
-                        channelAuthor={channelAuthorFor(message)}
-                        showChannelMetadata={displaysChannelMetadata(message)}
-                        channelPost={isChannelPost}
-                        channelDiscussionAction={albumItem ? undefined : renderDiscussionAction(message)}
-                        serviceMembers={message.content.kind === "service" ? servicePersonIds(message.content).map((userId) => {
-                          const blockedMember = localBlockedUsersById.get(userId);
-                          return {
-                            id: userId,
-                            name: blockedMember?.alias ?? users.get(userId)?.displayName ??
-                              (userId.startsWith("chat:") ? forwardTargetsById.get(userId.slice(5))?.title : undefined) ?? translate("Telegram 用户"),
-                            profileAvailable: !blockedMember && (users.has(userId) || (userId.startsWith("chat:") && forwardTargetsById.has(userId.slice(5)))),
-                          };
-                        }) : undefined}
-                        serviceTargetSummary={serviceTargetSummary(message, messagesById, localBlockedUsersById)}
-                        groupPosition={positions.get(message.id) ?? "single"}
-                        replyPreview={replyPreviewForMessage(message)}
-                        forwardLabel={displayedForwardLabel}
-                        onOpenForwardSource={!selectionMode && !locallyConcealed && forwardNavigation ? () => {
-                          if (forwardNavigation.kind === "message") {
-                            openMessageInHistory(forwardNavigation.chatId, forwardNavigation.messageId);
-                          } else if (forwardNavigation.kind === "chat") {
-                            onOpenChat(forwardNavigation.chatId);
-                          } else {
-                            onOpenSenderProfile(forwardNavigation.userId);
-                          }
-                        } : undefined}
-                        selectionMode={selectionMode}
-                        selected={selected}
-                        highlighted={highlightedMessageId === message.id}
-                        selectionPending={selectionPending}
-                        joinsSelectionBefore={joinsSelectionBefore}
-                        selectionLimitReached={selectedMessageIds.size >= 100}
-                        onToggleSelection={toggleMessageSelection}
-                        onOpenActions={openActionMenu}
-                        onLoadRawMessage={onLoadRawMessage}
-                        onDownload={onDownloadFile}
-                        onCancelDownload={onCancelFileDownload}
-                        onRecoverFile={onRecoverFile}
-                        onOpenFile={onOpenFile}
-                        onSaveFileAs={onSaveFileAs}
-                        onOpenDownloadDirectory={onOpenDownloadDirectory}
-                        onStream={onStreamFile}
-                        onSuspendStream={onSuspendFileStream}
-                        onRetry={onRetryMessage}
-                        onCancelUpload={onCancelFileUpload}
-                        onReaction={onSetMessageReaction}
-                        onLoadReactionSenders={onGetMessageReactionSenders}
-                        onPollAnswer={onSetPollAnswer}
-                        onBotCallback={onBotCallback}
-                        onOpenWebApp={handleOpenWebApp}
-                        onCollapseQuote={collapseExpandedQuote}
-                        onExpandQuote={expandCollapsedQuote}
-                        onMount={gateEntranceAtBottom
-                          ? pinFollowingMessageMount
-                          : undefined}
-                        deferUntilPinned={gateEntranceAtBottom}
-                        previousAudioPlaybackId={audioPlaybackNeighborsByMessage.get(message.id)?.previousId}
-                        nextAudioPlaybackId={audioPlaybackNeighborsByMessage.get(message.id)?.nextId}
-                        onOpenReply={openMessageInHistory}
-                        onOpenSenderProfile={onOpenSenderProfile}
-                        users={users}
-                        senderChats={forwardTargetsById}
-                        onOpenMention={onOpenMention}
-                        onSearchHashtag={onSearchHashtag}
-                        onOpenMedia={selectionMode ? undefined : openMediaViewer}
-                        onOpenStickerSet={selectionMode ? undefined : onOpenStickerSet}
-                        cornerAction={!selectionMode && pinnedViewOpen ? (
-                          <MessageSourceLocateButton
+                        const renderBubble = (message: Message, albumItem = false, sharedAlbumMetadata = false) => {
+                          const entrance = messageEntranceFor(message);
+                          const gateEntranceAtBottom = message.id === appendMountMessageId || Boolean(
+                            entrance && message.id === renderedMessages.at(-1)?.id,
+                          );
+                          const forwardSource = forwardSourceFor(message, users, forwardTargetsById);
+                          const forwardNavigation = forwardSource?.navigation;
+                          const blockedUser = localBlockedUsersById.get(message.senderId);
+                          const blockedGroup = localBlockGroupByMessageId.get(message.id);
+                          const blockedGroupRevealed = Boolean(
+                            blockedGroup && revealedLocalBlockGroups.has(blockedGroup.id)
+                          );
+                          const locallyConcealed = Boolean(
+                            blockedUser &&
+                            !blockedGroupRevealed &&
+                            !revealedLocalBlockMessages.has(message.id)
+                          );
+                          const displayedForwardLabel = locallyConcealed && forwardSource?.label
+                            ? translate("转发自 受限来源")
+                            : forwardSource?.label;
+                          const displayedSenderName = blockedUser && !blockedGroupRevealed
+                            ? blockedUser.alias
+                            : senderName;
+                          const senderIsAdministrator = (!blockedUser || blockedGroupRevealed) &&
+                            memberLabels.has(message.senderId);
+                          const messageIndex = renderedMessageIndexes.get(message.id) ?? -1;
+                          const previousMessage = renderedMessages[messageIndex - 1];
+                          const selected = selectedMessageIds.has(message.id);
+                          const selectionPending = selectionLoadingIds.has(message.id);
+                          const selectionHighlighted = selected || selectionPending;
+                          const joinsSelectionBefore = selectionHighlighted && Boolean(
+                            previousMessage &&
+                            localDateKey(previousMessage.sentAt) === localDateKey(message.sentAt) &&
+                            (selectedMessageIds.has(previousMessage.id) || selectionLoadingIds.has(previousMessage.id)),
+                          );
+                          const isChannelPost = isChannelConversation && message.isChannelPost === true;
+                          const bubble = <RichMessageBubble
+                            key={message.renderKey ?? message.id}
                             message={message}
-                            onLocate={openMessageInHistory}
-                          />
-                        ) : undefined}
-                        albumItem={albumItem}
-                        sharedAlbumMetadata={sharedAlbumMetadata}
-                        autoplayAnimations={autoplayAnimations}
-                        autoDownloadPolicy={autoDownloadPolicy}
-                        locallyConcealed={locallyConcealed}
-                        localBlockGroupId={blockedGroup?.id}
-                        blockedReactionSenderIds={localBlockedReactionUserIds}
-                        onRevealLocallyBlocked={blockedUser
-                          ? () => revealLocalBlockedMessage(message.id)
-                          : undefined}
-                      />;
-                      return bubble;
-                    };
-                    if (segment.kind === "message") return renderBubble(segment.message);
-
-                    const albumReply = segment.messages.map(replyPreviewForMessage).find(Boolean);
-                    const albumRows = layoutMediaAlbum(segment.messages);
-                    const captionMessage = mediaAlbumCaptionMessage(segment.messages);
-                    const albumMetadataMessage = mediaAlbumMetadataMessage(segment.messages)!;
-                    // Keep each reaction tied to its source message, independently of the metadata owner.
-                    const albumReactions = segment.messages.flatMap(message => {
-                      const reactions = visibleMessageReactions(message, localBlockedReactionUserIds);
-                      return reactions.length > 0 ? [{ message, reactions }] : [];
-                    });
-                    const hasAlbumReactionFooter = albumReactions.length > 0;
-                    const albumDiscussionPost = channelDiscussionAvailable(albumMetadataMessage) ? albumMetadataMessage : undefined;
-                    const captionBlock = captionMessage && localBlockGroupByMessageId.get(captionMessage.id);
-                    const captionConcealed = captionMessage && localBlockedUsersById.has(captionMessage.senderId) &&
-                      !(captionBlock && revealedLocalBlockGroups.has(captionBlock.id)) &&
-                      !revealedLocalBlockMessages.has(captionMessage.id);
-                    const albumCaption = captionMessage ? (
-                      <MessageTextFlow
-                        className={`media-album-caption ${captionConcealed ? "is-local-block-concealed" : ""}`}
-                        aria-hidden={captionConcealed || undefined}
-                        layoutSource={captionMessage.content}
-                        layoutVersion={`${albumMetadataMessage.sentAt}:${albumMetadataMessage.editedAt}:${albumMetadataMessage.delivery}:${hasAlbumReactionFooter}`}
-                        data-caption-message-id={captionMessage.id}
-                        tabIndex={captionConcealed ? -1 : 0}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          void openActionMenu(captionMessage, event.clientX, event.clientY, event.currentTarget);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
-                          event.preventDefault();
-                          const bounds = event.currentTarget.getBoundingClientRect();
-                          void openActionMenu(captionMessage, bounds.left, bounds.top, event.currentTarget, undefined, true);
-                        }}
-                      >
-                        <MessageRichText
-                          text={captionMessage.content.caption!}
-                          entities={captionMessage.content.captionEntities}
-                          onOpenMention={onOpenMention}
-                          onSearchHashtag={onSearchHashtag}
-                          onCollapseQuote={(collapse, pointerY, anchor) =>
-                            collapseExpandedQuote(captionMessage.id, collapse, pointerY, anchor)}
-                          onExpandQuote={expandCollapsedQuote}
-                        />
-                        {!isChannelConversation && !hasAlbumReactionFooter && (
-                          <MessageMetadata message={albumMetadataMessage}
-                            deliveryMessages={segment.messages} onRetry={onRetryMessage} />
-                        )}
-                      </MessageTextFlow>
-                    ) : null;
-                    return (
-                      <div
-                        className={`media-album ${isChannelConversation ? "is-channel-album" : ""} ${!isChannelConversation && firstMessage.outgoing ? "is-outgoing" : "is-incoming"}`}
-                        data-media-album-id={segment.albumId}
-                        key={`album:${segment.albumId}`}
-                        role="group"
-                        aria-label={translate("{{value0}} 项媒体相册", { value0: segment.messages.length })}
-                      >
-                        {albumReply && (
-                          <button
-                            className={`message-reply-preview media-album-reply ${albumReply.isCurrentUser ? "is-current-user" : ""} ${albumReply.concealed ? "is-local-block-concealed" : ""}`}
-                            type="button"
-                            disabled={!albumReply.messageId}
-                            onClick={() => {
-                              if (albumReply.chatId && albumReply.messageId) {
-                                openMessageInHistory(albumReply.chatId, albumReply.messageId);
+                            entrance={entrance}
+                            senderName={isChannelConversation ? chat.title : displayedSenderName}
+                            senderLabel={message.senderTag || memberLabels.get(message.senderId)}
+                            senderLabelConcealed={Boolean(blockedUser && !blockedGroupRevealed)}
+                            senderLayoutName={blockedUser ? senderNameForMessage(message, users, chat, forwardTargetsById) : undefined}
+                            senderIsAdministrator={senderIsAdministrator}
+                            senderProfileAvailable={
+                              !message.outgoing &&
+                              message.senderId !== "unknown" &&
+                              (!blockedUser || blockedGroupRevealed)
+                            }
+                            channelAuthor={channelAuthorFor(message)}
+                            showChannelMetadata={displaysChannelMetadata(message)}
+                            channelPost={isChannelPost}
+                            channelDiscussionAction={albumItem ? undefined : renderDiscussionAction(message)}
+                            serviceMembers={message.content.kind === "service" ? servicePersonIds(message.content).map((userId) => {
+                              const blockedMember = localBlockedUsersById.get(userId);
+                              return {
+                                id: userId,
+                                name: blockedMember?.alias ?? users.get(userId)?.displayName ??
+                                  (userId.startsWith("chat:") ? forwardTargetsById.get(userId.slice(5))?.title : undefined) ?? translate("Telegram 用户"),
+                                profileAvailable: !blockedMember && (users.has(userId) || (userId.startsWith("chat:") && forwardTargetsById.has(userId.slice(5)))),
+                              };
+                            }) : undefined}
+                            serviceTargetSummary={serviceTargetSummary(message, messagesById, localBlockedUsersById)}
+                            groupPosition={positions.get(message.id) ?? "single"}
+                            replyPreview={replyPreviewForMessage(message)}
+                            forwardLabel={displayedForwardLabel}
+                            onOpenForwardSource={!selectionMode && !locallyConcealed && forwardNavigation ? () => {
+                              if (forwardNavigation.kind === "message") {
+                                openMessageInHistory(forwardNavigation.chatId, forwardNavigation.messageId);
+                              } else if (forwardNavigation.kind === "chat") {
+                                onOpenChat(forwardNavigation.chatId);
+                              } else {
+                                onOpenSenderProfile(forwardNavigation.userId);
                               }
+                            } : undefined}
+                            selectionMode={selectionMode}
+                            selected={selected}
+                            highlighted={highlightedMessageId === message.id}
+                            selectionPending={selectionPending}
+                            joinsSelectionBefore={joinsSelectionBefore}
+                            selectionLimitReached={selectedMessageIds.size >= 100}
+                            onToggleSelection={toggleMessageSelection}
+                            onOpenActions={openActionMenu}
+                            onLoadRawMessage={onLoadRawMessage}
+                            onDownload={onDownloadFile}
+                            onCancelDownload={onCancelFileDownload}
+                            onRecoverFile={onRecoverFile}
+                            onOpenFile={onOpenFile}
+                            onSaveFileAs={onSaveFileAs}
+                            onOpenDownloadDirectory={onOpenDownloadDirectory}
+                            onStream={onStreamFile}
+                            onSuspendStream={onSuspendFileStream}
+                            onRetry={onRetryMessage}
+                            onCancelUpload={onCancelFileUpload}
+                            onReaction={onSetMessageReaction}
+                            onLoadReactionSenders={onGetMessageReactionSenders}
+                            onPollAnswer={onSetPollAnswer}
+                            onBotCallback={onBotCallback}
+                            onOpenWebApp={handleOpenWebApp}
+                            onCollapseQuote={collapseExpandedQuote}
+                            onExpandQuote={expandCollapsedQuote}
+                            onMount={gateEntranceAtBottom
+                              ? pinFollowingMessageMount
+                              : undefined}
+                            deferUntilPinned={gateEntranceAtBottom}
+                            previousAudioPlaybackId={audioPlaybackNeighborsByMessage.get(message.id)?.previousId}
+                            nextAudioPlaybackId={audioPlaybackNeighborsByMessage.get(message.id)?.nextId}
+                            onOpenReply={openMessageInHistory}
+                            onOpenSenderProfile={onOpenSenderProfile}
+                            users={users}
+                            senderChats={forwardTargetsById}
+                            onOpenMention={onOpenMention}
+                            onSearchHashtag={onSearchHashtag}
+                            onOpenMedia={selectionMode ? undefined : openMediaViewer}
+                            onOpenStickerSet={selectionMode ? undefined : onOpenStickerSet}
+                            cornerAction={!selectionMode && pinnedViewOpen ? (
+                              <MessageSourceLocateButton
+                                message={message}
+                                onLocate={openMessageInHistory}
+                              />
+                            ) : undefined}
+                            albumItem={albumItem}
+                            sharedAlbumMetadata={sharedAlbumMetadata}
+                            autoplayAnimations={autoplayAnimations}
+                            autoDownloadPolicy={autoDownloadPolicy}
+                            locallyConcealed={locallyConcealed}
+                            localBlockGroupId={blockedGroup?.id}
+                            blockedReactionSenderIds={localBlockedReactionUserIds}
+                            onRevealLocallyBlocked={blockedUser
+                              ? () => revealLocalBlockedMessage(message.id)
+                              : undefined}
+                          />;
+                          return bubble;
+                        };
+                        if (segment.kind === "message") return renderBubble(segment.message);
+
+                        const albumReply = segment.messages.map(replyPreviewForMessage).find(Boolean);
+                        const albumRows = layoutMediaAlbum(segment.messages);
+                        const captionMessage = mediaAlbumCaptionMessage(segment.messages);
+                        const albumMetadataMessage = mediaAlbumMetadataMessage(segment.messages)!;
+                        // Keep each reaction tied to its source message, independently of the metadata owner.
+                        const albumReactions = segment.messages.flatMap(message => {
+                          const reactions = visibleMessageReactions(message, localBlockedReactionUserIds);
+                          return reactions.length > 0 ? [{ message, reactions }] : [];
+                        });
+                        const hasAlbumReactionFooter = albumReactions.length > 0;
+                        const albumDiscussionPost = channelDiscussionAvailable(albumMetadataMessage) ? albumMetadataMessage : undefined;
+                        const captionBlock = captionMessage && localBlockGroupByMessageId.get(captionMessage.id);
+                        const captionConcealed = captionMessage && localBlockedUsersById.has(captionMessage.senderId) &&
+                          !(captionBlock && revealedLocalBlockGroups.has(captionBlock.id)) &&
+                          !revealedLocalBlockMessages.has(captionMessage.id);
+                        const albumCaption = captionMessage ? (
+                          <MessageTextFlow
+                            className={`media-album-caption ${captionConcealed ? "is-local-block-concealed" : ""}`}
+                            aria-hidden={captionConcealed || undefined}
+                            layoutSource={captionMessage.content}
+                            layoutVersion={`${albumMetadataMessage.sentAt}:${albumMetadataMessage.editedAt}:${albumMetadataMessage.delivery}:${hasAlbumReactionFooter}`}
+                            data-caption-message-id={captionMessage.id}
+                            tabIndex={captionConcealed ? -1 : 0}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              void openActionMenu(captionMessage, event.clientX, event.clientY, event.currentTarget);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+                              event.preventDefault();
+                              const bounds = event.currentTarget.getBoundingClientRect();
+                              void openActionMenu(captionMessage, bounds.left, bounds.top, event.currentTarget, undefined, true);
                             }}
                           >
-                            <strong>{albumReply.author}</strong>
-                            <small>{albumReply.text}</small>
-                          </button>
-                        )}
-                        {captionMessage?.content.showCaptionAboveMedia ? albumCaption : null}
-                        <div
-                          className="media-album-grid"
-                          data-count={segment.messages.length}
-                          data-row-count={albumRows.length}
-                        >
-                          {albumRows.map((row, rowIndex) => (
+                            <MessageRichText
+                              text={captionMessage.content.caption!}
+                              entities={captionMessage.content.captionEntities}
+                              onOpenMention={onOpenMention}
+                              onSearchHashtag={onSearchHashtag}
+                              onCollapseQuote={(collapse, pointerY, anchor) =>
+                                collapseExpandedQuote(captionMessage.id, collapse, pointerY, anchor)}
+                              onExpandQuote={expandCollapsedQuote}
+                            />
+                            {!isChannelConversation && !hasAlbumReactionFooter && (
+                              <MessageMetadata message={albumMetadataMessage}
+                                deliveryMessages={segment.messages} onRetry={onRetryMessage} />
+                            )}
+                          </MessageTextFlow>
+                        ) : null;
+                        return (
+                          <div
+                            className={`media-album ${isChannelConversation ? "is-channel-album" : ""} ${!isChannelConversation && firstMessage.outgoing ? "is-outgoing" : "is-incoming"}`}
+                            data-media-album-id={segment.albumId}
+                            key={`album:${segment.albumId}`}
+                            role="group"
+                            aria-label={translate("{{value0}} 项媒体相册", { value0: segment.messages.length })}
+                          >
+                            {albumReply && (
+                              <button
+                                className={`message-reply-preview media-album-reply ${albumReply.isCurrentUser ? "is-current-user" : ""} ${albumReply.concealed ? "is-local-block-concealed" : ""}`}
+                                type="button"
+                                disabled={!albumReply.messageId}
+                                onClick={() => {
+                                  if (albumReply.chatId && albumReply.messageId) {
+                                    openMessageInHistory(albumReply.chatId, albumReply.messageId);
+                                  }
+                                }}
+                              >
+                                <strong>{albumReply.author}</strong>
+                                <small>{albumReply.text}</small>
+                              </button>
+                            )}
+                            {captionMessage?.content.showCaptionAboveMedia ? albumCaption : null}
                             <div
-                              className="media-album-row"
-                              data-row-index={rowIndex}
-                              key={`row:${row.items[0]?.message.id ?? rowIndex}`}
-                              style={{
-                                "--media-album-row-ratio": row.aspectRatio,
-                              } as CSSProperties}
+                              className="media-album-grid"
+                              data-count={segment.messages.length}
+                              data-row-count={albumRows.length}
                             >
-                              {row.items.map((item) => (
+                              {albumRows.map((row, rowIndex) => (
                                 <div
-                                  className="media-album-tile"
-                                  key={item.message.renderKey ?? item.message.id}
+                                  className="media-album-row"
+                                  data-row-index={rowIndex}
+                                  key={`row:${row.items[0]?.message.id ?? rowIndex}`}
                                   style={{
-                                    "--media-album-tile-weight": item.weight,
+                                    "--media-album-row-ratio": row.aspectRatio,
                                   } as CSSProperties}
                                 >
-                                  {renderBubble(item.message, true, Boolean(albumCaption) || hasAlbumReactionFooter)}
+                                  {row.items.map((item) => (
+                                    <div
+                                      className="media-album-tile"
+                                      key={item.message.renderKey ?? item.message.id}
+                                      style={{
+                                        "--media-album-tile-weight": item.weight,
+                                      } as CSSProperties}
+                                    >
+                                      {renderBubble(item.message, true, Boolean(albumCaption) || hasAlbumReactionFooter)}
+                                    </div>
+                                  ))}
                                 </div>
                               ))}
                             </div>
-                          ))}
-                        </div>
-                        {!captionMessage?.content.showCaptionAboveMedia ? albumCaption : null}
-                        {(isChannelConversation || hasAlbumReactionFooter) && (
-                          <div className={`media-album-footer ${hasAlbumReactionFooter ? "message-reaction-footer" : ""}`} data-message-meta-id={albumMetadataMessage.id}>
-                            {hasAlbumReactionFooter && (
-                              <div className="media-album-reactions">
-                                {albumReactions.map(({ message, reactions }) => (
-                                  <MessageReactions
-                                    key={message.renderKey ?? message.id}
-                                    messageId={message.id}
-                                    chatId={message.chatId}
-                                    reactions={reactions}
-                                    canGetAddedReactions={message.interaction?.canGetAddedReactions}
-                                    users={users}
-                                    chats={forwardTargetsById}
-                                    onReaction={onSetMessageReaction}
-                                    onLoadSenders={onGetMessageReactionSenders}
-                                    onOpenSenderProfile={onOpenSenderProfile}
-                                    hiddenSenderIds={localBlockedReactionUserIds}
-                                  />
-                                ))}
+                            {!captionMessage?.content.showCaptionAboveMedia ? albumCaption : null}
+                            {(isChannelConversation || hasAlbumReactionFooter) && (
+                              <div className={`media-album-footer ${hasAlbumReactionFooter ? "message-reaction-footer" : ""}`} data-message-meta-id={albumMetadataMessage.id}>
+                                {hasAlbumReactionFooter && (
+                                  <div className="media-album-reactions">
+                                    {albumReactions.map(({ message, reactions }) => (
+                                      <MessageReactions
+                                        key={message.renderKey ?? message.id}
+                                        messageId={message.id}
+                                        chatId={message.chatId}
+                                        reactions={reactions}
+                                        canGetAddedReactions={message.interaction?.canGetAddedReactions}
+                                        users={users}
+                                        chats={forwardTargetsById}
+                                        onReaction={onSetMessageReaction}
+                                        onLoadSenders={onGetMessageReactionSenders}
+                                        onOpenSenderProfile={onOpenSenderProfile}
+                                        hiddenSenderIds={localBlockedReactionUserIds}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                                <MessageMetadata message={albumMetadataMessage} channelPost={isChannelConversation} showChannelMetadata={isChannelConversation}
+                                  deliveryMessages={segment.messages}
+                                  channelAuthor={channelAuthorFor(albumMetadataMessage)} onRetry={onRetryMessage} />
                               </div>
                             )}
-                            <MessageMetadata message={albumMetadataMessage} channelPost={isChannelConversation} showChannelMetadata={isChannelConversation}
-                              deliveryMessages={segment.messages}
-                              channelAuthor={channelAuthorFor(albumMetadataMessage)} onRetry={onRetryMessage} />
+                            {isChannelConversation && albumDiscussionPost ? renderDiscussionAction(albumDiscussionPost) : null}
                           </div>
-                        )}
-                        {isChannelConversation && albumDiscussionPost ? renderDiscussionAction(albumDiscussionPost) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              </Fragment>
-            );
-          }}
-        />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </Fragment>
+              );
+            }}
+          />
         </ConversationViewportBoundary>
         {!pinnedViewOpen && currentScrollKey && attentionCount > 0 && (
           <button
@@ -3217,90 +3221,90 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
           </button>
         )}
         {!pinnedViewOpen && currentScrollKey && (jumpHistoryCount > 0 || awayFromLatest || historyWindowIsContext) && (
-            <button
-              className="conversation-jump-button jump-to-latest"
-              type="button"
-              aria-label={jumpHistoryCount > 0
-                ? translate("返回跳转前位置，可回退 {{value0}} 次", { value0: jumpHistoryCount })
-                : newMessageNotice?.key === currentScrollKey && newMessageNotice.count > 0
-                  ? translate("跳到最新消息，{{value0}} 条新消息", { value0: newMessageNotice.count })
-                  : translate("跳到最新消息")}
-              title={jumpHistoryCount > 0 ? translate("返回跳转前位置") : translate("跳到最新消息")}
-              onClick={() => {
-                if (jumpHistoryCount === 0 || !returnFromJump()) {
-                  jumpToLatest("smooth", true);
-                }
-                focusComposer();
-              }}
-            >
-              <ArrowDown size={19} strokeWidth={2.1} />
-              {newMessageNotice?.key === currentScrollKey && newMessageNotice.count > 0 && (
-                <span>{formatUnreadCount(newMessageNotice.count)}</span>
-              )}
-            </button>
-          )}
+          <button
+            className="conversation-jump-button jump-to-latest"
+            type="button"
+            aria-label={jumpHistoryCount > 0
+              ? translate("返回跳转前位置，可回退 {{value0}} 次", { value0: jumpHistoryCount })
+              : newMessageNotice?.key === currentScrollKey && newMessageNotice.count > 0
+                ? translate("跳到最新消息，{{value0}} 条新消息", { value0: newMessageNotice.count })
+                : translate("跳到最新消息")}
+            title={jumpHistoryCount > 0 ? translate("返回跳转前位置") : translate("跳到最新消息")}
+            onClick={() => {
+              if (jumpHistoryCount === 0 || !returnFromJump()) {
+                jumpToLatest("smooth", true);
+              }
+              focusComposer();
+            }}
+          >
+            <ArrowDown size={19} strokeWidth={2.1} />
+            {newMessageNotice?.key === currentScrollKey && newMessageNotice.count > 0 && (
+              <span>{formatUnreadCount(newMessageNotice.count)}</span>
+            )}
+          </button>
+        )}
       </div>
 
       {discussionPost && renderedDiscussionPost && isChannelConversation && (
         <DiscussionErrorBoundary key={`${activeAccountId}:${discussionThreadKey}`} onClose={onCloseDiscussion}>
-        <ChannelDiscussionPanel
-          post={renderedDiscussionPost}
-          channel={chat}
-          comments={channelDiscussionComments}
-          users={users}
-          knownNonBotUsernames={knownNonBotUsernames}
-          forwardTargets={forwardTargets}
-          forumTopics={forumTopics}
-          currentUserId={currentUserId ?? "self"}
-          connectionStatus={connectionStatus}
-          loading={discussionState?.loading ?? false}
-          loadError={discussionState?.error}
-          onRetry={() => openChannelDiscussion(discussionPost, discussionState?.retryMore)}
-          hasMore={discussionState?.hasMore ?? false}
-          onLoadMore={() => openChannelDiscussion(discussionPost, true)}
-          onClose={onCloseDiscussion}
-          onSend={sendDiscussionComment}
-          onSendFiles={sendDiscussionFiles}
-          onEditMessage={onEditMessage}
-          onDeleteMessage={onDeleteMessage}
-          onForwardMessages={onForwardMessages}
-          onLoadMessageProperties={onLoadMessageProperties}
-          onLoadForumTopics={onLoadForumTopics}
-          onTypingChange={onTypingChange}
-          onOpenMessage={onOpenMessage}
-          onOpenChat={onOpenChat}
-          onOpenSenderProfile={onOpenSenderProfile}
-          onOpenMention={onOpenMention}
-          onSearchHashtag={onSearchHashtag}
-          onOpenMessageSearch={onOpenMessageSearch}
-          onStartPrivateChat={onStartPrivateChat}
-          onGetReportOptions={onGetReportOptions}
-          onReportChat={onReportChat}
-          onPinMessage={onPinMessage}
-          onUnpinMessage={onUnpinMessage}
-          messagePreviewOptions={{
-            autoplayAnimations,
-            autoDownloadPolicy,
-            onLoadRawMessage,
-            onDownload: onDownloadFile,
-            onCancelDownload: onCancelFileDownload,
-            onRecoverFile,
-            onOpenFile,
-            onSaveFileAs,
-            onOpenDownloadDirectory,
-            onStream: onStreamFile,
-            onSuspendStream: onSuspendFileStream,
-            onRetry: onRetryMessage,
-            onCancelUpload: onCancelFileUpload,
-            onReaction: onSetMessageReaction,
-            onLoadReactionSenders: onGetMessageReactionSenders,
-            onPollAnswer: onSetPollAnswer,
-            onBotCallback,
-            onOpenMedia: openMediaViewer,
-            onOpenStickerSet,
-            blockedReactionSenderIds: localBlockedReactionUserIds,
-          }}
-        />
+          <ChannelDiscussionPanel
+            post={renderedDiscussionPost}
+            channel={chat}
+            comments={channelDiscussionComments}
+            users={users}
+            knownNonBotUsernames={knownNonBotUsernames}
+            forwardTargets={forwardTargets}
+            forumTopics={forumTopics}
+            currentUserId={currentUserId ?? "self"}
+            connectionStatus={connectionStatus}
+            loading={discussionState?.loading ?? false}
+            loadError={discussionState?.error}
+            onRetry={() => openChannelDiscussion(discussionPost, discussionState?.retryMore)}
+            hasMore={discussionState?.hasMore ?? false}
+            onLoadMore={() => openChannelDiscussion(discussionPost, true)}
+            onClose={onCloseDiscussion}
+            onSend={sendDiscussionComment}
+            onSendFiles={sendDiscussionFiles}
+            onEditMessage={onEditMessage}
+            onDeleteMessage={onDeleteMessage}
+            onForwardMessages={onForwardMessages}
+            onLoadMessageProperties={onLoadMessageProperties}
+            onLoadForumTopics={onLoadForumTopics}
+            onTypingChange={onTypingChange}
+            onOpenMessage={onOpenMessage}
+            onOpenChat={onOpenChat}
+            onOpenSenderProfile={onOpenSenderProfile}
+            onOpenMention={onOpenMention}
+            onSearchHashtag={onSearchHashtag}
+            onOpenMessageSearch={onOpenMessageSearch}
+            onStartPrivateChat={onStartPrivateChat}
+            onGetReportOptions={onGetReportOptions}
+            onReportChat={onReportChat}
+            onPinMessage={onPinMessage}
+            onUnpinMessage={onUnpinMessage}
+            messagePreviewOptions={{
+              autoplayAnimations,
+              autoDownloadPolicy,
+              onLoadRawMessage,
+              onDownload: onDownloadFile,
+              onCancelDownload: onCancelFileDownload,
+              onRecoverFile,
+              onOpenFile,
+              onSaveFileAs,
+              onOpenDownloadDirectory,
+              onStream: onStreamFile,
+              onSuspendStream: onSuspendFileStream,
+              onRetry: onRetryMessage,
+              onCancelUpload: onCancelFileUpload,
+              onReaction: onSetMessageReaction,
+              onLoadReactionSenders: onGetMessageReactionSenders,
+              onPollAnswer: onSetPollAnswer,
+              onBotCallback,
+              onOpenMedia: openMediaViewer,
+              onOpenStickerSet,
+              blockedReactionSenderIds: localBlockedReactionUserIds,
+            }}
+          />
         </DiscussionErrorBoundary>
       )}
 
@@ -3340,9 +3344,9 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
           onPlayInWindow={actionMessageForMenu.content.kind === "media" &&
             ["video", "videoNote"].includes(actionMessageForMenu.content.mediaType)
             ? () => {
-                closeActionMenu(false);
-                openMediaViewer(actionMessageForMenu.id, actionMessageForMenu.chatId, true);
-              }
+              closeActionMenu(false);
+              openMediaViewer(actionMessageForMenu.id, actionMessageForMenu.chatId, true);
+            }
             : undefined}
           onDownload={(actionMessageForMenu.content.kind === "media" || actionMessageForMenu.content.kind === "file") &&
             actionMessageForMenu.content.fileId !== undefined &&
@@ -3350,24 +3354,24 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
             actionMessageForMenu.content.isDownloading !== true
             ? () => {
               const content = actionMessageForMenu.content;
-                if ((content.kind !== "media" && content.kind !== "file") || content.fileId === undefined) return;
-                closeActionMenu(false);
-                void onDownloadFile(
-                  content.fileId,
-                  content.fileName,
-                );
-              }
+              if ((content.kind !== "media" && content.kind !== "file") || content.fileId === undefined) return;
+              closeActionMenu(false);
+              void onDownloadFile(
+                content.fileId,
+                content.fileName,
+              );
+            }
             : undefined}
           onCopy={() => void copyMessage(actionMessageForMenu)}
           onCopyLink={() => void copyMessageLink(actionMessageForMenu)}
           onReaction={onSetMessageReaction
             ? (emoji) => {
-                const isChosen = actionMessageForMenu.interaction?.reactions.find(
-                  (r) => r.type.kind === "emoji" && r.type.emoji === emoji,
-                )?.chosen;
-                void onSetMessageReaction(actionMessageForMenu.id, emoji, !isChosen, actionMessageForMenu.chatId);
-                closeActionMenu(false);
-              }
+              const isChosen = actionMessageForMenu.interaction?.reactions.find(
+                (r) => r.type.kind === "emoji" && r.type.emoji === emoji,
+              )?.chosen;
+              void onSetMessageReaction(actionMessageForMenu.id, emoji, !isChosen, actionMessageForMenu.chatId);
+              closeActionMenu(false);
+            }
             : undefined}
           onInspectOsint={() => {
             closeActionMenu(false);
@@ -3391,16 +3395,16 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
           senderName={senderMenu.senderName}
           onMention={!senderMenu.senderId.startsWith("chat:") && senderMenu.senderId !== "unknown"
             ? () => {
-                const sender = users.get(senderMenu.senderId);
-                if (!sender) return;
-                composerTextInsertionIdRef.current += 1;
-                setComposerTextInsertion({
-                  id: `${sender.id}:${composerTextInsertionIdRef.current}`,
-                  text: mentionTextForUser(sender),
-                  draftKey: conversationIdentity ?? chat.id,
-                  userId: sender.id,
-                });
-              }
+              const sender = users.get(senderMenu.senderId);
+              if (!sender) return;
+              composerTextInsertionIdRef.current += 1;
+              setComposerTextInsertion({
+                id: `${sender.id}:${composerTextInsertionIdRef.current}`,
+                text: mentionTextForUser(sender),
+                draftKey: conversationIdentity ?? chat.id,
+                userId: sender.id,
+              });
+            }
             : undefined}
           onPrivateChat={!senderMenu.senderId.startsWith("chat:") && senderMenu.senderId !== "unknown"
             ? () => onStartPrivateChat(senderMenu.senderId)
@@ -3459,51 +3463,51 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
           </button>
         </div>
       ) : (!isChannelConversation || canPostChannel) ? (
-      <ConversationComposer
-        chatId={chat.id}
-        draftKey={topic ? `${chat.id}:topic:${topic.id}` : chat.id}
-        editingMessage={editingMessage}
-        replyingTo={replyingTo}
-        replyQuote={replyQuote}
-        contextTitle={composerContextTitle}
-        contextSubject={composerContextSubject}
-        contextSubjectIsAdministrator={composerContextSubjectIsAdministrator}
-        defaultBotUsername={chat.kind === "direct" && chat.peerId && users.get(chat.peerId)?.isBot
-          ? users.get(chat.peerId)?.username
-          : undefined}
-        users={users}
-        textInsertion={composerTextInsertion}
-        knownNonBotUsernames={knownNonBotUsernames}
-        mentionsEnabled={chat.kind === "group"}
-        recentMentionUserIds={recentMentionUserIds}
-        onTextInsertionApplied={consumeComposerTextInsertion}
-        onGeometryChange={reconcileBottomViewport}
-        inputRef={composerInputRef}
-        onEditLatestVisible={editLatestVisible}
-        focus={composerFocus}
-        inert={Boolean(discussionPost)}
-        connectionStatus={connectionStatus}
-        queuedMessageCount={queuedMessageCount}
-        failedQueuedMessageCount={failedQueuedMessageCount}
-        queuedAttachmentCount={queuedAttachmentCount}
-        failedAttachmentCount={failedAttachmentCount}
-        onSendMessage={sendMessageAndFollowLatest}
-        onEditMessage={onEditMessage}
-        onDraftChange={onDraftChange}
-        onTypingChange={onTypingChange}
-        onSendFiles={sendFilesAndFollowLatest}
-        onCancelEditing={cancelEditing}
-        onCancelReply={cancelReply}
-        onGetBotCommands={onGetBotCommands}
-        onGetInlineResults={onGetInlineResults}
-        onSendInlineResult={onSendInlineResult}
-        onSendBotStart={onSendBotStart}
-        enableSilentSending={canPostChannel}
-        onOpenAgent={onOpenAgent}
-        allowSendWhenOnline={allowSendWhenOnline}
-        scheduledMessageCount={scheduledMessages.get(chat.id)?.length ?? 0}
-        onOpenScheduledMessages={() => setShowScheduledModal(true)}
-      />
+        <ConversationComposer
+          chatId={chat.id}
+          draftKey={topic ? `${chat.id}:topic:${topic.id}` : chat.id}
+          editingMessage={editingMessage}
+          replyingTo={replyingTo}
+          replyQuote={replyQuote}
+          contextTitle={composerContextTitle}
+          contextSubject={composerContextSubject}
+          contextSubjectIsAdministrator={composerContextSubjectIsAdministrator}
+          defaultBotUsername={chat.kind === "direct" && chat.peerId && users.get(chat.peerId)?.isBot
+            ? users.get(chat.peerId)?.username
+            : undefined}
+          users={users}
+          textInsertion={composerTextInsertion}
+          knownNonBotUsernames={knownNonBotUsernames}
+          mentionsEnabled={chat.kind === "group"}
+          recentMentionUserIds={recentMentionUserIds}
+          onTextInsertionApplied={consumeComposerTextInsertion}
+          onGeometryChange={reconcileBottomViewport}
+          inputRef={composerInputRef}
+          onEditLatestVisible={editLatestVisible}
+          focus={composerFocus}
+          inert={Boolean(discussionPost)}
+          connectionStatus={connectionStatus}
+          queuedMessageCount={queuedMessageCount}
+          failedQueuedMessageCount={failedQueuedMessageCount}
+          queuedAttachmentCount={queuedAttachmentCount}
+          failedAttachmentCount={failedAttachmentCount}
+          onSendMessage={sendMessageAndFollowLatest}
+          onEditMessage={onEditMessage}
+          onDraftChange={onDraftChange}
+          onTypingChange={onTypingChange}
+          onSendFiles={sendFilesAndFollowLatest}
+          onCancelEditing={cancelEditing}
+          onCancelReply={cancelReply}
+          onGetBotCommands={onGetBotCommands}
+          onGetInlineResults={onGetInlineResults}
+          onSendInlineResult={onSendInlineResult}
+          onSendBotStart={onSendBotStart}
+          enableSilentSending={canPostChannel}
+          onOpenAgent={onOpenAgent}
+          allowSendWhenOnline={allowSendWhenOnline}
+          scheduledMessageCount={scheduledMessages.get(chat.id)?.length ?? 0}
+          onOpenScheduledMessages={() => setShowScheduledModal(true)}
+        />
       ) : null}
 
       {showScheduledModal && (

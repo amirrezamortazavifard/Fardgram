@@ -24,37 +24,47 @@ export interface ComposerInputElement extends HTMLDivElement {
 const tags: Record<string, string> = { bold: "strong", italic: "em", underline: "u", strikethrough: "s", code: "code", pre: "code" };
 const extensions = [
   EditorNode.create({ name: "doc", topNode: true, content: "paragraph" }),
-  EditorNode.create({ name: "paragraph", content: "inline*", group: "block", whitespace: "pre",
-    parseHTML: () => [{ tag: "p" }], renderHTML: () => ["p", 0] }),
+  EditorNode.create({
+    name: "paragraph", content: "inline*", group: "block", whitespace: "pre",
+    parseHTML: () => [{ tag: "p" }], renderHTML: () => ["p", 0]
+  }),
   EditorNode.create({ name: "text", group: "inline" }),
-  EditorNode.create({ name: "hardBreak", inline: true, group: "inline", selectable: false,
-    parseHTML: () => [{ tag: "br" }], renderHTML: () => ["br"] }),
+  EditorNode.create({
+    name: "hardBreak", inline: true, group: "inline", selectable: false,
+    parseHTML: () => [{ tag: "br" }], renderHTML: () => ["br"]
+  }),
   ...composerEntityKinds.map(kind => Mark.create({
     name: kind, inclusive: false,
     addAttributes: () => ({ entity: { default: {}, rendered: false } }),
     parseHTML: () => [{ tag: `[data-composer-entity="${kind}"]` }],
     renderHTML: () => [tags[kind] ?? "span", { "data-composer-entity": kind }, 0],
   })),
-  Extension.create({ name: "composerMentionPresentation", addProseMirrorPlugins: () => [
-    new Plugin({ props: {
-      decorations: state => {
-        const doc = state.doc;
-        const fastText = doc.childCount === 1 && doc.firstChild?.isTextblock && doc.firstChild.childCount === 1 && doc.firstChild.firstChild?.isText
-          ? doc.firstChild.firstChild.text
-          : undefined;
-        if (fastText ? !fastText.includes("@") : !doc.textContent.includes("@")) return DecorationSet.empty;
-        const { text, entities } = composerFormattedText(state.doc.toJSON());
-        // Hide only the presentation prefix; keep Telegram and editor offsets intact.
-        return DecorationSet.create(state.doc, entities
-          .filter(entity => (entity.kind === "mention" || entity.kind === "mentionName") &&
-            entity.length > 1 && text[entity.offset] === "@")
-          .map(entity => Decoration.inline(entity.offset + 1, entity.offset + 2, { class: "composer-mention-prefix" })));
-      },
-    } }),
-  ] }),
-  Extension.create({ name: "composerHistory", addProseMirrorPlugins: () => [
-    history(), keymap({ "Mod-z": undo, "Mod-y": redo, "Mod-Shift-z": redo }),
-  ] }),
+  Extension.create({
+    name: "composerMentionPresentation", addProseMirrorPlugins: () => [
+      new Plugin({
+        props: {
+          decorations: state => {
+            const doc = state.doc;
+            const fastText = doc.childCount === 1 && doc.firstChild?.isTextblock && doc.firstChild.childCount === 1 && doc.firstChild.firstChild?.isText
+              ? doc.firstChild.firstChild.text
+              : undefined;
+            if (fastText ? !fastText.includes("@") : !doc.textContent.includes("@")) return DecorationSet.empty;
+            const { text, entities } = composerFormattedText(state.doc.toJSON());
+            // Hide only the presentation prefix; keep Telegram and editor offsets intact.
+            return DecorationSet.create(state.doc, entities
+              .filter(entity => (entity.kind === "mention" || entity.kind === "mentionName") &&
+                entity.length > 1 && text[entity.offset] === "@")
+              .map(entity => Decoration.inline(entity.offset + 1, entity.offset + 2, { class: "composer-mention-prefix" })));
+          },
+        }
+      }),
+    ]
+  }),
+  Extension.create({
+    name: "composerHistory", addProseMirrorPlugins: () => [
+      history(), keymap({ "Mod-z": undo, "Mod-y": redo, "Mod-Shift-z": redo }),
+    ]
+  }),
 ];
 
 const EMPTY_ENTITIES: MessageTextEntity[] = [];

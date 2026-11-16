@@ -2171,7 +2171,7 @@ export function App() {
             }}
           >
             <Conversation
-              key="active-conversation"
+              key={activeAccountId}
               chat={activeChat}
               presentationBlocked={false}
               topic={activeTopic}

@@ -17,8 +17,10 @@ export const captureConversationSwitchSnapshot = (
   const shellBounds = source.getBoundingClientRect();
   const header = source.parentElement?.querySelector<HTMLElement>(".conversation-header");
   const headerBounds = header?.getBoundingClientRect();
-  const bounds = { left: shellBounds.left, top: headerBounds?.top ?? shellBounds.top,
-    width: shellBounds.width, height: shellBounds.bottom - (headerBounds?.top ?? shellBounds.top) };
+  const bounds = {
+    left: shellBounds.left, top: headerBounds?.top ?? shellBounds.top,
+    width: shellBounds.width, height: shellBounds.bottom - (headerBounds?.top ?? shellBounds.top)
+  };
   if (bounds.width < 1 || bounds.height < 1) return undefined;
 
   const element = document.createElement("div");
@@ -68,8 +70,10 @@ export const captureConversationSwitchSnapshot = (
   if (header && headerBounds) {
     const headerClone = header.cloneNode(true) as HTMLElement;
     headerClone.removeAttribute("id");
-    Object.assign(headerClone.style, { position: "absolute", top: "0", left: "0",
-      width: `${headerBounds.width}px`, height: `${headerBounds.height}px` });
+    Object.assign(headerClone.style, {
+      position: "absolute", top: "0", left: "0",
+      width: `${headerBounds.width}px`, height: `${headerBounds.height}px`
+    });
     context.append(headerClone);
   }
   context.append(clone);

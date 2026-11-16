@@ -407,24 +407,24 @@ export const ConversationComposer = memo(function ConversationComposer({
   const photoPreviewMessages = useMemo<PhotoMessage[]>(() => pendingAttachments.flatMap((pending) =>
     pending.previewUrl && ["photo", "animation"].includes(pending.attachment.kind)
       ? [{
-          id: pending.id,
-          chatId: `attachment-draft:${draftKey}`,
-          senderId: "self",
-          outgoing: true,
-          sentAt: new Date(pending.attachment.file.lastModified || 0).toISOString(),
-          delivery: "read",
-          content: {
-            kind: "media",
-            mediaType: "photo",
-            fileName: pending.attachment.file.name,
-            mimeType: pending.attachment.file.type || undefined,
-            size: pending.attachment.file.size,
-            sizeLabel: attachmentSizeLabel(pending.attachment.file.size),
-            width: pending.attachment.width,
-            height: pending.attachment.height,
-            previewDataUrl: pending.previewUrl,
-          },
-        }]
+        id: pending.id,
+        chatId: `attachment-draft:${draftKey}`,
+        senderId: "self",
+        outgoing: true,
+        sentAt: new Date(pending.attachment.file.lastModified || 0).toISOString(),
+        delivery: "read",
+        content: {
+          kind: "media",
+          mediaType: "photo",
+          fileName: pending.attachment.file.name,
+          mimeType: pending.attachment.file.type || undefined,
+          size: pending.attachment.file.size,
+          sizeLabel: attachmentSizeLabel(pending.attachment.file.size),
+          width: pending.attachment.width,
+          height: pending.attachment.height,
+          previewDataUrl: pending.previewUrl,
+        },
+      }]
       : [],
   ), [draftKey, pendingAttachments]);
 

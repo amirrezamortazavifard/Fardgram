@@ -189,25 +189,25 @@ export interface MessageConversationScrollRequest {
 
 export type ConversationScrollRequest =
   | {
-      kind: "entry";
-      chatId: string;
-      serverMessageId?: string;
-      requestId: number;
-      performanceTraceId?: number;
-    }
+    kind: "entry";
+    chatId: string;
+    serverMessageId?: string;
+    requestId: number;
+    performanceTraceId?: number;
+  }
   | {
-      kind: "latest";
-      chatId: string;
-      requestId: number;
-      performanceTraceId?: number;
-      preserveVisualBottom?: boolean;
-    }
+    kind: "latest";
+    chatId: string;
+    requestId: number;
+    performanceTraceId?: number;
+    preserveVisualBottom?: boolean;
+  }
   | (MessageConversationScrollRequest & { kind: "message" });
 
 export type ConversationScrollRequestInput = ConversationScrollRequest extends infer Request
   ? Request extends ConversationScrollRequest
-    ? Omit<Request, "requestId">
-    : never
+  ? Omit<Request, "requestId">
+  : never
   : never;
 
 interface ConversationScrollOptions {
@@ -609,14 +609,14 @@ export const useConversationScroll = ({
     ? conversationVirtuosoSnapshots.get(currentScrollKey)
     : undefined;
   const restoreStateFrom = !searchActive && !pendingLatestRequest && !requestedTargetId &&
-      storedMemory && storedSnapshot &&
-      storedSnapshot.firstMessageId === firstVisibleMessageId &&
-      storedSnapshot.lastMessageId === lastVisibleMessageId &&
-      storedSnapshot.virtualItemCount === virtualItemCount &&
-      Math.abs((storedSnapshot.viewportWidth ?? 0) - (messageListRef.current?.clientWidth ?? viewportGeometry.width)) <= 4 &&
-      storedSnapshot.geometryKey === measuredGeometryKey &&
-      matchesMeasuredMessages(storedSnapshot.messages, visibleMessages) &&
-      matchesVirtualMessageLayout(storedSnapshot.messageItemIndexes, messageItemIndexes)
+    storedMemory && storedSnapshot &&
+    storedSnapshot.firstMessageId === firstVisibleMessageId &&
+    storedSnapshot.lastMessageId === lastVisibleMessageId &&
+    storedSnapshot.virtualItemCount === virtualItemCount &&
+    Math.abs((storedSnapshot.viewportWidth ?? 0) - (messageListRef.current?.clientWidth ?? viewportGeometry.width)) <= 4 &&
+    storedSnapshot.geometryKey === measuredGeometryKey &&
+    matchesMeasuredMessages(storedSnapshot.messages, visibleMessages) &&
+    matchesVirtualMessageLayout(storedSnapshot.messageItemIndexes, messageItemIndexes)
     ? storedSnapshot.state
     : undefined;
 
@@ -985,8 +985,8 @@ export const useConversationScroll = ({
     setPositionedIdentity(identity);
     markConversationSwitch(
       matchingMessageRequest?.performanceTraceId ??
-        matchingLatestRequest?.performanceTraceId ??
-        matchingEntryRequest?.performanceTraceId,
+      matchingLatestRequest?.performanceTraceId ??
+      matchingEntryRequest?.performanceTraceId,
       "positioned",
       {
         messageCount: visibleMessagesRef.current.length,
@@ -1667,8 +1667,8 @@ export const useConversationScroll = ({
         const effectiveChanges = messageChanges.length > 0 ? messageChanges : changes;
         const correction = effectiveChanges
           .reduce((total, change) => {
-          const row = change.element.getBoundingClientRect();
-          return row.bottom <= targetTop + 0.5 ? total + change.delta : total;
+            const row = change.element.getBoundingClientRect();
+            return row.bottom <= targetTop + 0.5 ? total + change.delta : total;
           }, 0);
         if (Math.abs(correction) > 0.5) writeConversationScrollTop(element, element.scrollTop + correction, scrollWriter.rowResize);
       }
@@ -1827,13 +1827,17 @@ export const useConversationScroll = ({
           element.style.setProperty("--conversation-entry-start-space", `${entry.memory?.leadingSpace ?? 0}px`);
           const pendingNewCount = (entry.memory?.pendingNewCount ?? 0) +
             appendedMessageCount(visibleMessagesRef.current, entry.memory?.lastKnownMessageId);
-          conversationScrollMemory.set(currentScrollKey, { ...entry.memory!, followLatest: false,
-            lastKnownMessageId: lastVisibleMessageIdRef.current, pendingNewCount });
+          conversationScrollMemory.set(currentScrollKey, {
+            ...entry.memory!, followLatest: false,
+            lastKnownMessageId: lastVisibleMessageIdRef.current, pendingNewCount
+          });
           updateFollowingState(currentScrollKey, false);
           updateNewMessageNotice(currentScrollKey, pendingNewCount);
           const anchor = resolveConversationReadingAnchor(entry.memory, visibleMessagesRef.current, true);
-          initialLocationRef.current = { ...initialLocationRef.current, mode: "anchor",
-            targetMessageId: anchor?.messageId, targetOffset: anchor?.offset };
+          initialLocationRef.current = {
+            ...initialLocationRef.current, mode: "anchor",
+            targetMessageId: anchor?.messageId, targetOffset: anchor?.offset
+          };
           if (anchor) settleAnchorPosition(element, anchor.messageId, anchor.offset,
             identity, expectedVirtuosoKey, generation, finishPositioning);
           else finishPositioning();
@@ -1946,10 +1950,10 @@ export const useConversationScroll = ({
     const memory = conversationScrollMemory.get(currentScrollKey);
     writeMemory(currentScrollKey, element, false, memory?.pendingNewCount ?? 0, true);
     const anchor = [...element.querySelectorAll<HTMLElement>("[data-message-id]")]
-        .find((row) => {
-          const rowBounds = row.getBoundingClientRect();
-          return rowBounds.bottom > bounds.top + 1 && rowBounds.top < bounds.bottom - 1;
-        });
+      .find((row) => {
+        const rowBounds = row.getBoundingClientRect();
+        return rowBounds.bottom > bounds.top + 1 && rowBounds.top < bounds.bottom - 1;
+      });
     if (!anchor?.dataset.messageId) return;
     publishJumpHistory(
       currentScrollKey,
@@ -2632,8 +2636,8 @@ export const useConversationScroll = ({
     if (!currentScrollKey) return;
     markConversationSwitch(
       matchingMessageRequest?.performanceTraceId ??
-        matchingLatestRequest?.performanceTraceId ??
-        matchingEntryRequest?.performanceTraceId,
+      matchingLatestRequest?.performanceTraceId ??
+      matchingEntryRequest?.performanceTraceId,
       "dataReady",
       { messageCount: visibleMessages.length, blockCount: virtualItemCount },
     );
@@ -2953,8 +2957,8 @@ export const useConversationScroll = ({
   const onInitialRangeChanged = useCallback(() => {
     markConversationSwitch(
       matchingMessageRequest?.performanceTraceId ??
-        matchingLatestRequest?.performanceTraceId ??
-        matchingEntryRequest?.performanceTraceId,
+      matchingLatestRequest?.performanceTraceId ??
+      matchingEntryRequest?.performanceTraceId,
       "virtuosoRange",
       { messageCount: visibleMessagesRef.current.length, blockCount: virtualItemCountRef.current },
     );
