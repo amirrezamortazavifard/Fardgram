@@ -430,6 +430,19 @@ interface ConversationProps {
   onOpenAgent?: () => void;
 }
 
+export function EmptyConversation({ mobileViewHidden }: { mobileViewHidden?: boolean }) {
+  return (
+    <section
+      className="conversation empty-conversation"
+      aria-hidden={mobileViewHidden ? true : undefined}
+      inert={mobileViewHidden ? true : undefined}
+    >
+      <div className="conversation-empty-mark">N</div>
+      <h2 className="conversation-notice">{translate("选择一个对话")}</h2>
+    </section>
+  );
+}
+
 export const Conversation = memo(function Conversation(props: ConversationProps) {
   const {
     chat,
@@ -697,7 +710,7 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
       if (chat.canSendMessages === false) return;
       void loadScheduledMessages(chat.id);
     }
-  }, [chat?.id, chat?.kind, chat?.canSendMessages, chat?.management, authorizationReady, loadScheduledMessages]);
+  }, [chat?.id, authorizationReady, loadScheduledMessages]);
   const autoplayAnimations = usePreferencesStore((state) => autoplayAllowed(
     state.autoplayAnimations,
     state,
@@ -2478,16 +2491,7 @@ export const Conversation = memo(function Conversation(props: ConversationProps)
   const confirmForward = forwarding.confirm;
 
   if (!chat) {
-    return (
-      <section
-        className="conversation empty-conversation"
-        aria-hidden={mobileViewHidden ? true : undefined}
-        inert={mobileViewHidden ? true : undefined}
-      >
-        <div className="conversation-empty-mark">N</div>
-        <h2 className="conversation-notice">{translate("选择一个对话")}</h2>
-      </section>
-    );
+    return <EmptyConversation mobileViewHidden={mobileViewHidden} />;
   }
 
   return (

@@ -20,7 +20,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { ChatSidebar } from "../components/ChatSidebar";
-import { Conversation } from "../components/Conversation";
+import { Conversation, EmptyConversation } from "../components/Conversation";
 import { ConversationSurface } from "../components/ConversationSurface";
 import { rememberActiveComposerFocus } from "../hooks/useComposerFocus";
 import { ForumTopicsView } from "../components/ForumTopicsView";
@@ -2170,10 +2170,11 @@ export function App() {
               });
             }}
           >
-            <Conversation
-              key={activeAccountId}
-              chat={activeChat}
-              presentationBlocked={false}
+            {activeChat ? (
+              <Conversation
+                key={activeAccountId}
+                chat={activeChat}
+                presentationBlocked={false}
               topic={activeTopic}
           topics={activeTopics}
           onSelectTopic={openForumTopic}
@@ -2289,6 +2290,9 @@ export function App() {
           onCloseDiscussion={closeChannelDiscussion}
           onBack={closeMobileChat}
             />
+          ) : (
+            <EmptyConversation mobileViewHidden={mobileViewport && !mobileChatOpen} />
+          )}
           </Profiler></ConversationSurface>
         )}
       </main>

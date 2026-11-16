@@ -5822,12 +5822,14 @@ export const createTelegramStore = (
           const chat = get().chats.get(chatId);
           if (chat) {
             if (chat.kind === "channel" && !canPostToChannel(chat)) {
+              if (get().scheduledMessages.get(chatId)?.length === 0) return;
               const next = new Map(get().scheduledMessages);
               next.set(chatId, []);
               set({ scheduledMessages: next });
               return;
             }
             if (chat.canSendMessages === false) {
+              if (get().scheduledMessages.get(chatId)?.length === 0) return;
               const next = new Map(get().scheduledMessages);
               next.set(chatId, []);
               set({ scheduledMessages: next });
@@ -5835,6 +5837,11 @@ export const createTelegramStore = (
             }
           }
           const list = await transport.getChatScheduledMessages(chatId);
+          const currentList = get().scheduledMessages.get(chatId);
+          if (currentList && currentList.length === list.length &&
+              currentList.every((msg, i) => msg.id === list[i].id)) {
+            return;
+          }
           const next = new Map(get().scheduledMessages);
           next.set(chatId, list);
           set({ scheduledMessages: next });
@@ -5842,6 +5849,7 @@ export const createTelegramStore = (
           // Following official Telegram Desktop behavior:
           // Background fetch of scheduled messages never triggers an operation error toast
           // when permissions are restricted or messages are not found.
+          if (get().scheduledMessages.get(chatId)?.length === 0) return;
           const next = new Map(get().scheduledMessages);
           next.set(chatId, []);
           set({ scheduledMessages: next });
