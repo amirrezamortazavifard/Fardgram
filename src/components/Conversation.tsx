@@ -42,6 +42,7 @@ import {
 import {
   Fragment,
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -221,7 +222,7 @@ const measureMessageItem: SizeFunction = (element, field) => {
 
 const VirtualMessageListContent = forwardRef<HTMLDivElement, ListProps & { context?: MessageListContext }>(
   ({ context, ...props }, ref) => {
-    useLayoutEffect(() => { flushMessageTextMeasurements(); context?.onLayoutCommitted(); });
+    useLayoutEffect(() => { context?.onLayoutCommitted(); });
     return <MessageTextLayoutContext value={context?.onLayoutCommitted}>
       <div {...props} className="message-list-content" ref={ref} />
     </MessageTextLayoutContext>;
@@ -429,19 +430,20 @@ interface ConversationProps {
   onOpenAgent?: () => void;
 }
 
-export function Conversation({
-  chat,
-  topic,
-  topics,
-  onSelectTopic,
-  onOpenAgent,
-  scrollScope,
-  scrollRequest,
-  messages,
-  onLatestWindow,
-  onHistoryWindow,
-  historyWindowIsContext = false,
-  hasNewerMessages = false,
+export const Conversation = memo(function Conversation(props: ConversationProps) {
+  const {
+    chat,
+    topic,
+    topics,
+    onSelectTopic,
+    onOpenAgent,
+    scrollScope,
+    scrollRequest,
+    messages,
+    onLatestWindow,
+    onHistoryWindow,
+    historyWindowIsContext = false,
+    hasNewerMessages = false,
   sponsoredMessages = [],
   sponsoredMessagesBetween = 0,
   chatMessages,
@@ -519,7 +521,7 @@ export function Conversation({
   onReportChat,
   mobileViewport = false,
   mobileChatOpen = false,
-}: ConversationProps) {
+} = props;
   const conversationIdentity = chat
     ? topic ? `${chat.id}:topic:${topic.id}` : chat.id
     : undefined;
@@ -858,8 +860,8 @@ export function Conversation({
   }, []);
 
   useEffect(() => {
-    setRevealedLocalBlockMessages(new Set());
-    setRevealedLocalBlockGroups(new Set());
+    setRevealedLocalBlockMessages((current) => current.size === 0 ? current : new Set());
+    setRevealedLocalBlockGroups((current) => current.size === 0 ? current : new Set());
     seenRevealedMessagesRef.current.clear();
     seenRevealedGroupsRef.current.clear();
   }, [conversationIdentity, localBlockedUserIds, pinnedViewOpen]);
@@ -1466,9 +1468,12 @@ export function Conversation({
       mutationObserver.disconnect();
     };
   }, [messageListElement, revealedLocalBlockGroups, revealedLocalBlockMessages]);
+  const dateIndicatorVisibleRef = useRef(false);
+  dateIndicatorVisibleRef.current = dateIndicatorVisible;
   useEffect(() => {
     if (!messageListElement) return;
     const hideAtBottom = () => {
+      if (!dateIndicatorVisibleRef.current) return;
       const distance = messageListElement.scrollHeight -
         messageListElement.clientHeight - messageListElement.scrollTop;
       if (distance <= 1) hideDateIndicator();
@@ -2019,16 +2024,16 @@ export function Conversation({
   }, [actionMenu]);
 
   useEffect(() => {
-    setActionMenu(undefined);
-    setActionForwardTargets([]);
-    setComposerTextInsertion(undefined);
-    setReplyingTo(undefined);
-    setReplyQuote(undefined);
+    setActionMenu((prev) => prev ? undefined : prev);
+    setActionForwardTargets((prev) => prev.length === 0 ? prev : []);
+    setComposerTextInsertion((prev) => prev ? undefined : prev);
+    setReplyingTo((prev) => prev ? undefined : prev);
+    setReplyQuote((prev) => prev ? undefined : prev);
     selectedReplyQuoteSnapshotRef.current = undefined;
-    setEditingMessage(undefined);
-    setDeleteTarget(undefined);
-    setDeletePending(false);
-    setDiscussionPost(undefined);
+    setEditingMessage((prev) => prev ? undefined : prev);
+    setDeleteTarget((prev) => prev ? undefined : prev);
+    setDeletePending((prev) => prev ? false : prev);
+    setDiscussionPost((prev) => prev ? undefined : prev);
   }, [conversationIdentity]);
 
   useEffect(() => {
@@ -2759,7 +2764,7 @@ export function Conversation({
           capture={captureViewportBeforeUpdate}
         >
         <Virtuoso
-          key={virtuosoKey}
+          key="conversation-virtuoso"
           className={`message-list ${awayFromLatest ? "is-detached" : ""} ${hideUnpositionedEntry ? "is-entry-positioning" : ""} ${messageListScrolling ? "is-scrolling" : ""} ${!pinnedViewOpen && (visibleHistoryLoading || historyScrollbarSettling) ? "is-history-adjusting" : ""}`}
           ref={virtuosoRef}
           scrollerRef={setAlignedMessageListRef}
@@ -2776,20 +2781,22 @@ export function Conversation({
           firstItemIndex={virtuosoFirstItemIndex}
           components={pinnedViewOpen ? pinnedMessageListComponents : messageListComponents}
           context={messageListContext}
-          computeItemKey={(_, block) => block.id}
+          computeItemKey={(_, block) => block?.id ?? String(_)}
           data={visibleMessageBlocks}
+          initialItemCount={Math.min(visibleMessageBlocks.length, 6)}
           defaultItemHeight={52}
           itemSize={measureMessageItem}
           rangeChanged={onInitialRangeChanged}
           atBottomThreshold={0}
           atBottomStateChange={onInitialAtBottomStateChange}
-          initialTopMostItemIndex={restoreStateFrom ? undefined : initialTopMostItemIndex}
-          restoreStateFrom={restoreStateFrom}
+          initialTopMostItemIndex={initialTopMostItemIndex}
+          restoreStateFrom={undefined}
           totalListHeightChanged={onTotalListHeightChanged}
           increaseViewportBy={MESSAGE_VIEWPORT_PREFETCH}
           minOverscanItemCount={{ top: 2, bottom: 2 }}
           {...messageListHandlers}
           itemContent={(_, groupModel) => {
+            if (!groupModel) return null;
             if (groupModel.sponsoredMessage) {
               const sponsored = groupModel.sponsoredMessage;
               return (
@@ -3453,7 +3460,6 @@ export function Conversation({
         </div>
       ) : (!isChannelConversation || canPostChannel) ? (
       <ConversationComposer
-        key={topic ? `${chat.id}:${topic.id}` : chat.id}
         chatId={chat.id}
         draftKey={topic ? `${chat.id}:topic:${topic.id}` : chat.id}
         editingMessage={editingMessage}
@@ -3595,4 +3601,50 @@ export function Conversation({
       )}
     </section>
   );
+}, areConversationPropsEqual);
+
+function areConversationPropsEqual(prev: ConversationProps, next: ConversationProps): boolean {
+  if (prev.chat !== next.chat) {
+    if (prev.chat?.id !== next.chat?.id) return false;
+    if (prev.chat?.unreadCount !== next.chat?.unreadCount) return false;
+    if (prev.chat?.title !== next.chat?.title) return false;
+    if (prev.chat?.pinned !== next.chat?.pinned) return false;
+    if (prev.chat?.muted !== next.chat?.muted) return false;
+    if (prev.chat?.kind !== next.chat?.kind) return false;
+  }
+  if (prev.messages !== next.messages) return false;
+  if (prev.chatMessages !== next.chatMessages) return false;
+  if (prev.scrollRequest !== next.scrollRequest) return false;
+  if (prev.scrollScope !== next.scrollScope) return false;
+  if (prev.presentationBlocked !== next.presentationBlocked) return false;
+  if (prev.topic !== next.topic) return false;
+  if (prev.historyLoading !== next.historyLoading) return false;
+  if (prev.historyRefreshing !== next.historyRefreshing) return false;
+  if (prev.hasOlderMessages !== next.hasOlderMessages) return false;
+  if (prev.hasNewerMessages !== next.hasNewerMessages) return false;
+  if (prev.historyWindowIsContext !== next.historyWindowIsContext) return false;
+  if (prev.connectionStatus !== next.connectionStatus) return false;
+  if (prev.queuedMessageCount !== next.queuedMessageCount) return false;
+  if (prev.failedQueuedMessageCount !== next.failedQueuedMessageCount) return false;
+  if (prev.queuedAttachmentCount !== next.queuedAttachmentCount) return false;
+  if (prev.failedAttachmentCount !== next.failedAttachmentCount) return false;
+  if (prev.chatListId !== next.chatListId) return false;
+  if (prev.chatManagementPending !== next.chatManagementPending) return false;
+  if (prev.sponsoredMessages !== next.sponsoredMessages) return false;
+  if (prev.sponsoredMessagesBetween !== next.sponsoredMessagesBetween) return false;
+  if (prev.mobileViewport !== next.mobileViewport) return false;
+  if (prev.mobileChatOpen !== next.mobileChatOpen) return false;
+
+  if (prev.typingUserIds !== next.typingUserIds) {
+    if (prev.typingUserIds.length !== next.typingUserIds.length) return false;
+    for (let i = 0; i < prev.typingUserIds.length; i++) {
+      if (prev.typingUserIds[i] !== next.typingUserIds[i]) return false;
+    }
+  }
+
+  if (prev.topics !== next.topics) {
+    if (prev.topics.length !== next.topics.length) return false;
+  }
+
+  return true;
 }

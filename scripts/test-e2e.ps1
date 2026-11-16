@@ -56,7 +56,7 @@ try {
     New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
     $serverProcess = Start-Process `
         -FilePath $nodePath `
-        -ArgumentList @($viteCli, "--host", "127.0.0.1", "--port", "1422") `
+        -ArgumentList @("`"$viteCli`"", "--host", "127.0.0.1", "--port", "1422") `
         -WorkingDirectory $repositoryRoot `
         -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logDirectory "e2e-vite.log") `

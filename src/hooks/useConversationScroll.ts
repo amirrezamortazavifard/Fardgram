@@ -94,14 +94,14 @@ const BOTTOM_PROXIMITY_PX = 32;
 const BOTTOM_WHEEL_GUARD_PX = 1;
 const historyTriggerDistance = (element: HTMLElement) => Math.max(64, element.clientHeight);
 const BOTTOM_RECONCILE_MAX_FRAMES = 8;
-const BOTTOM_RECONCILE_STABLE_FRAMES = 2;
-const BOTTOM_RECONCILE_MAX_VERIFICATION_PASSES = 2;
+const BOTTOM_RECONCILE_STABLE_FRAMES = 1;
+const BOTTOM_RECONCILE_MAX_VERIFICATION_PASSES = 1;
 const BOTTOM_MOTION_RECONCILE_MAX_FRAMES = 36;
 const BOTTOM_MOTION_RECONCILE_STABLE_FRAMES = BOTTOM_MOTION_RECONCILE_MAX_FRAMES + 1;
-const ANCHOR_RECONCILE_STABLE_FRAMES = 6;
+const ANCHOR_RECONCILE_STABLE_FRAMES = 2;
 const CONTENT_ANCHOR_RECONCILE_MAX_FRAMES = 18;
-const CONTENT_ANCHOR_RECONCILE_STABLE_FRAMES = 6;
-const NAVIGATION_RECONCILE_STABLE_FRAMES = 6;
+const CONTENT_ANCHOR_RECONCILE_STABLE_FRAMES = 2;
+const NAVIGATION_RECONCILE_STABLE_FRAMES = 2;
 const HISTORY_SNAPSHOT_MAX_MS = 750;
 const ENTRY_ANCHOR_LOAD_TIMEOUT_MS = 10_000;
 
@@ -516,6 +516,12 @@ export const useConversationScroll = ({
     }
   }, [currentScrollKey, firstVisibleMessageId, lastVisibleMessageId, messageItemIndexes, virtualBlockIds, virtualItemCount, virtuosoFirstItemIndex, virtuosoKey]);
 
+  useLayoutEffect(() => {
+    if (messageListRef.current) {
+      messageListRef.current.dataset.conversationVirtuosoKey = virtuosoKey;
+    }
+  }, [virtuosoKey]);
+
   if (initialLocationRef.current?.identity !== initialLocationIdentity ||
     (initialLocationRef.current.mode === "pending" &&
       (targetReady || unavailableEntryAnchor === entryMemoryIdentity))) {
@@ -607,7 +613,7 @@ export const useConversationScroll = ({
       storedSnapshot.firstMessageId === firstVisibleMessageId &&
       storedSnapshot.lastMessageId === lastVisibleMessageId &&
       storedSnapshot.virtualItemCount === virtualItemCount &&
-      storedSnapshot.viewportWidth === (messageListRef.current?.clientWidth ?? viewportGeometry.width) &&
+      Math.abs((storedSnapshot.viewportWidth ?? 0) - (messageListRef.current?.clientWidth ?? viewportGeometry.width)) <= 4 &&
       storedSnapshot.geometryKey === measuredGeometryKey &&
       matchesMeasuredMessages(storedSnapshot.messages, visibleMessages) &&
       matchesVirtualMessageLayout(storedSnapshot.messageItemIndexes, messageItemIndexes)
@@ -787,7 +793,7 @@ export const useConversationScroll = ({
         shouldPinImmediately = pendingRequest.mountCommitted && mode !== "settle";
       }
       if (onSettled) pendingRequest.onSettled.add(onSettled);
-      if (shouldPinImmediately) pinToBottom();
+      if (shouldPinImmediately && bottomFrameRef.current === undefined) pinToBottom();
     } else {
       if (bottomFrameRef.current !== undefined) {
         cancelAnimationFrame(bottomFrameRef.current);
@@ -2785,20 +2791,26 @@ export const useConversationScroll = ({
       // observer/RAF. Finish authorized bottom following before freezing that
       // transient displacement as a detached departure checkpoint. The normal
       // coordinator still yields to reading, navigation and active user input.
-      if (distanceFromBottom(element) > BOTTOM_WHEEL_GUARD_PX) reconcileBottomViewport();
-      const current = conversationScrollMemory.get(key);
       const bottomDistance = distanceFromBottom(element);
+      if (bottomDistance > BOTTOM_WHEEL_GUARD_PX) reconcileBottomViewport();
+      const current = conversationScrollMemory.get(key);
       const followLatest = current?.followLatest ??
         bottomDistance <= BOTTOM_PROXIMITY_PX;
-      const anchor = visibleAnchor(element);
       const layout = conversationLayouts.get(key);
       const listBounds = element.getBoundingClientRect();
-      const leadingSpace = conversationLeadingSpace(element);
-      const nearbyAnchors = [...element.querySelectorAll<HTMLElement>("[data-message-id]")].flatMap(row => {
+      const leadingSpace = (followLatest && bottomDistance <= BOTTOM_WHEEL_GUARD_PX)
+        ? 0
+        : conversationLeadingSpace(element);
+      const nearbyAnchors: { messageId: string; offset: number }[] = [];
+      let anchor: { messageId?: string; offset?: number } | undefined;
+      for (const row of element.querySelectorAll<HTMLElement>("[data-message-id]")) {
         const bounds = row.getBoundingClientRect();
-        return row.dataset.messageId && bounds.bottom > listBounds.top + 1 && bounds.top < listBounds.bottom - 1
-          ? [{ messageId: row.dataset.messageId, offset: bounds.top - listBounds.top }] : [];
-      });
+        if (bounds.bottom > listBounds.top + 1 && bounds.top < listBounds.bottom - 1 && row.dataset.messageId) {
+          const item = { messageId: row.dataset.messageId, offset: bounds.top - listBounds.top };
+          if (!anchor) anchor = item;
+          nearbyAnchors.push(item);
+        }
+      }
       const memory: ConversationScrollMemory = {
         scrollTop: element.scrollTop,
         followLatest,
@@ -3216,9 +3228,9 @@ export const useConversationScroll = ({
       );
       if (
         followsLatest &&
-        distanceFromBottom(element) > BOTTOM_WHEEL_GUARD_PX &&
         (!pendingRequest || (pendingRequest.identity === control.identity &&
-          pendingRequest.generation === control.generation && pendingRequest.mode !== "settle"))
+          pendingRequest.generation === control.generation && pendingRequest.mode !== "settle")) &&
+        distanceFromBottom(element) > BOTTOM_WHEEL_GUARD_PX
       ) {
         // Native/virtualizer corrections can arrive after a tracking pass has
         // settled. Reuse the bounded coordinator without claiming user input

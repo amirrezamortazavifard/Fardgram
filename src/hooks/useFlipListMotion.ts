@@ -37,17 +37,27 @@ export const useFlipListMotion = ({
   const previousPositionRef = useRef(new Map<string, { left: number; top: number }>());
   const animationsRef = useRef(new Map<string, Animation>());
   const previousResetKeyRef = useRef(resetKey);
+  const previousKeyOrderRef = useRef<string>("");
 
   useLayoutEffect(() => {
     if (!enabled) {
       previousPositionRef.current.clear();
+      previousKeyOrderRef.current = "";
       return;
     }
     const container = containerRef.current;
     if (!container) return;
     const items = [...container.querySelectorAll<HTMLElement>(itemSelector)];
-    const previousPosition = previousPositionRef.current;
+    const currentKeyOrder = items.map((item) => item.dataset.motionKey ?? "").join(",");
     const resetMotion = previousResetKeyRef.current !== resetKey;
+    const orderChanged = previousKeyOrderRef.current !== currentKeyOrder;
+    previousKeyOrderRef.current = currentKeyOrder;
+
+    if (!resetMotion && !orderChanged && previousPositionRef.current.size > 0) {
+      return;
+    }
+
+    const previousPosition = previousPositionRef.current;
     const nextPosition = new Map<string, { left: number; top: number }>();
     const containerBounds = container.getBoundingClientRect();
     items.forEach((item) => {

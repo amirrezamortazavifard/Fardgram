@@ -180,7 +180,18 @@ export class ConversationHistory {
   }
 
   private publish(scope: Scope, patch: Partial<ConversationHistoryState> = {}, page?: ChatHistoryPage) {
-    this.host.publish(scope.chatId, scope.topicId, this.stateFor(scope, patch), page);
+    const nextState = this.stateFor(scope, patch);
+    const previous = this.host.state(scope.chatId, scope.topicId);
+    if (!page && previous &&
+        previous.initialized === nextState.initialized &&
+        previous.loading === nextState.loading &&
+        previous.background === nextState.background &&
+        previous.recovery === nextState.recovery &&
+        previous.hasMore === nextState.hasMore &&
+        previous.view === nextState.view) {
+      return;
+    }
+    this.host.publish(scope.chatId, scope.topicId, nextState, page);
   }
 
   private stateFor(scope: Scope, patch: Partial<ConversationHistoryState> = {}): ConversationHistoryState {

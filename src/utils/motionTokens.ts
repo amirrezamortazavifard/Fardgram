@@ -37,7 +37,7 @@ export const asyncFeedbackTiming = {
 export const motionLifecycleTiming = {
   exitFallbackBuffer: 40,
   popoverHoverClose: 80,
-  snapshotRelease: 90,
+  snapshotRelease: 35,
   historyScrollbarSettle: 120,
   messageRemoval: 220,
   popoverHoverOpen: 260,

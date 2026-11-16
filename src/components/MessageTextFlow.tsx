@@ -175,11 +175,6 @@ export function MessageTextFlow({ children, className = "", style, largeEmoji = 
     schedule();
     const scheduleResize = () => {
       schedule();
-      // observeLayout already batches callbacks in one animation frame. Drain
-      // after that batch, before paint, instead of delaying corrections a frame.
-      if (resizeFlushQueued) return;
-      resizeFlushQueued = true;
-      queueMicrotask(() => { resizeFlushQueued = false; flushMessageTextMeasurements(); });
     };
     const stops = [flow, flow.closest(".message-bubble-shell, .media-album"), flow.closest(".message-group")]
       .flatMap(element => element ? [observeLayout(element, scheduleResize)] : []);

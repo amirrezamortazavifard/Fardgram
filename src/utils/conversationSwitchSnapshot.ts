@@ -37,7 +37,7 @@ export const captureConversationSwitchSnapshot = (
     overflow: "hidden",
     pointerEvents: "auto",
     contain: "strict",
-    background: getComputedStyle(source).getPropertyValue("--chat-canvas"),
+    background: "var(--chat-canvas)",
   });
   element.addEventListener("pointerdown", (event) => event.preventDefault());
   element.addEventListener("wheel", (event) => event.preventDefault(), { passive: false });
@@ -45,9 +45,6 @@ export const captureConversationSwitchSnapshot = (
   const clone = cloneConversationSnapshot(source);
   clone.removeAttribute("id");
   clone.querySelector<HTMLElement>(".message-list-content")?.style.removeProperty("visibility");
-  clone.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
-  clone.querySelectorAll("button, a, input, textarea, select, [contenteditable='true']")
-    .forEach((node) => node.setAttribute("tabindex", "-1"));
   Object.assign(clone.style, {
     width: "100%",
     height: `${shellBounds.height}px`,
@@ -70,7 +67,7 @@ export const captureConversationSwitchSnapshot = (
   });
   if (header && headerBounds) {
     const headerClone = header.cloneNode(true) as HTMLElement;
-    headerClone.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
+    headerClone.removeAttribute("id");
     Object.assign(headerClone.style, { position: "absolute", top: "0", left: "0",
       width: `${headerBounds.width}px`, height: `${headerBounds.height}px` });
     context.append(headerClone);
@@ -83,15 +80,7 @@ export const captureConversationSwitchSnapshot = (
   if (cloneList) {
     cloneList.classList.remove("is-jump-transitioning");
     prepareConversationSnapshotClone(sourceList, cloneList);
-    const visibleRows = [...cloneList.querySelectorAll<HTMLElement>("[data-message-id]")]
-      .filter((row) => {
-        const rowBounds = row.getBoundingClientRect();
-        const listBounds = cloneList.getBoundingClientRect();
-        const style = getComputedStyle(row);
-        return rowBounds.bottom > listBounds.top && rowBounds.top < listBounds.bottom &&
-          style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0";
-      });
-    element.dataset.snapshotVisibleMessageCount = String(visibleRows.length);
+    element.dataset.snapshotVisibleMessageCount = String(messageCount);
   }
   return {
     element,

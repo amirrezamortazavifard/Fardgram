@@ -63,7 +63,7 @@ test("incoming messages do not wait for a bottom pin while reading away from lat
   await page.locator('.chat-list[data-active=true] [data-chat-id="chat-mia"]').click();
   await expect(page.locator(".conversation-title strong")).toHaveText("Mia Chen");
   await expect(page.locator(".message-list")).toHaveAttribute("aria-busy", "false");
-  await expect(page.getByRole("button", { name: /^跳到最新消息/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(跳到最新消息|Skip to latest news)/ })).toBeVisible();
 
   const messageId = "m-detached-incoming";
   const report = await page.evaluate(async ({ entrancePath, storePath, targetId }) => {
@@ -168,6 +168,7 @@ test("composer coalesces resizing and persists drafts without blocking input", {
 });
 
 test("warm conversation switches reuse messages and reveal content promptly", { tag: "@performance" }, async ({ page }) => {
+  page.on("console", (msg) => console.log(msg.text()));
   await page.goto("/");
   const product = page.locator('.chat-list[data-active=true] [data-chat-id="chat-product"]');
   const mia = page.locator('.chat-list[data-active=true] [data-chat-id="chat-mia"]');
@@ -176,8 +177,9 @@ test("warm conversation switches reuse messages and reveal content promptly", { 
   await expect(page.locator(".conversation-title strong")).toHaveText("Mia Chen");
   await expect(page.locator(".message-list")).toHaveAttribute("aria-busy", "false");
   await product.click();
-  await expect(page.locator(".conversation-title strong")).toHaveText("产品讨论");
+  await expect(page.locator(".conversation-title strong")).toHaveText(/^(产品讨论|Product Discussion)$/);
   await expect(page.locator(".message-list")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator("[data-conversation-switch-snapshot]")).toHaveCount(0);
 
   const messageCounts = async () => page.evaluate(async (modulePath) => {
     const storeModule = await import(modulePath) as {
@@ -192,11 +194,13 @@ test("warm conversation switches reuse messages and reveal content promptly", { 
     };
   }, "/src/store/telegramStore.ts");
   const beforeCounts = await messageCounts();
+  console.log("BEFORE_COUNTS:", beforeCounts);
 
   const timing = await page.evaluate(async () => {
     const row = document.querySelector<HTMLElement>('.chat-list[data-active=true] [data-chat-id="chat-mia"]')!;
     const startedAt = performance.now();
     row.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, detail: 1 }));
+    const dispatchMs = performance.now() - startedAt;
     let headerMs: number | undefined;
     let firstMessageMs: number | undefined;
     let contentMs: number | undefined;
@@ -248,6 +252,7 @@ test("warm conversation switches reuse messages and reveal content promptly", { 
       }
     }
     return {
+      dispatchMs,
       headerMs,
       firstMessageMs,
       contentMs,
@@ -258,6 +263,7 @@ test("warm conversation switches reuse messages and reveal content promptly", { 
     };
   });
 
+  console.log("TEST4_TIMING:", timing);
   expect(timing.headerMs).toBeDefined();
   expect(timing.headerMs!).toBeLessThan(100);
   expect(timing.firstMessageMs).toBeDefined();
@@ -312,7 +318,8 @@ test("warm conversation switching coalesces message-list geometry checks", { tag
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         maxReadsPerFrame = Math.max(maxReadsPerFrame, readsThisFrame);
         readsThisFrame = 0;
-        const settled = document.querySelector(".conversation-title strong")?.textContent === "产品讨论" &&
+        const title = document.querySelector(".conversation-title strong")?.textContent;
+        const settled = (title === "产品讨论" || title === "Product Discussion") &&
           document.querySelector(".message-list")?.getAttribute("aria-busy") === "false" &&
           !document.querySelector("[data-conversation-switch-snapshot]");
         stableFrames = settled ? stableFrames + 1 : 0;

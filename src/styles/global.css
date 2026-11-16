@@ -2419,7 +2419,7 @@ html.is-resizing-sidebar, html.is-resizing-sidebar * { cursor: col-resize !impor
 .conversation-jump-snapshot { background: var(--chat-canvas); }
 .conversation-jump-snapshot * { animation-play-state: paused !important; }
 .conversation-switch-snapshot {
-  opacity: 1; transition: opacity var(--motion-duration-context-menu) var(--motion-ease-exit);
+  opacity: 1; transition: opacity 25ms var(--motion-ease-exit);
 }
 .conversation-switch-snapshot.is-releasing { opacity: 0; }
 .reduce-motion .conversation-switch-snapshot { transition: none; }

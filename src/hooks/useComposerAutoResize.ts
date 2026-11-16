@@ -9,6 +9,9 @@ export const useComposerAutoResize = (
   onResize?: () => void,
 ) => {
   const previousHeight = useRef<number | undefined>(undefined);
+  const onResizeRef = useRef(onResize);
+  onResizeRef.current = onResize;
+
   useLayoutEffect(() => {
     const input = inputRef.current;
     if (!input || !enabled) return;
@@ -16,11 +19,11 @@ export const useComposerAutoResize = (
       const height = input.getBoundingClientRect().height;
       if (height === previousHeight.current) return;
       previousHeight.current = height;
-      onResize?.();
+      onResizeRef.current?.();
     };
     notify();
     const observer = new ResizeObserver(notify);
     observer.observe(input);
     return () => observer.disconnect();
-  }, [content, enabled, inputRef, onResize, scope]);
+  }, [enabled, inputRef, scope]);
 };

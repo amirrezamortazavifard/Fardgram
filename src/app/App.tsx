@@ -861,7 +861,6 @@ export function App() {
     return true;
   }, [issueConversationScrollRequest]);
   const conversationSnapshotRef = useRef<ConversationSwitchSnapshot | undefined>(undefined);
-  const [conversationSnapshotTarget, setConversationSnapshotTarget] = useState<string>();
   const conversationSnapshotReleaseCleanupRef = useRef<(() => void) | undefined>(undefined);
   const conversationSnapshotTargetRef = useRef<string | undefined>(undefined);
   const conversationSnapshotTimerRef =
@@ -876,7 +875,6 @@ export function App() {
     removeConversationSwitchSnapshot(conversationSnapshotRef.current);
     conversationSnapshotRef.current = undefined;
     conversationSnapshotTargetRef.current = undefined;
-    setConversationSnapshotTarget(undefined);
   }, []);
   const beginConversationSnapshot = useCallback((
     targetIdentity: string,
@@ -904,7 +902,6 @@ export function App() {
     if (!snapshot) return;
 
     conversationSnapshotTargetRef.current = targetIdentity;
-    setConversationSnapshotTarget(targetIdentity);
     snapshot.element.dataset.snapshotTarget = targetIdentity;
     if (conversationSnapshotTimerRef.current !== undefined) {
       globalThis.clearTimeout(conversationSnapshotTimerRef.current);
@@ -2174,12 +2171,10 @@ export function App() {
             }}
           >
             <Conversation
-              key={activeTopicId
-                ? `${activeAccountId}:${activeChatId}:topic:${activeTopicId}`
-                : `${activeAccountId}:${activeChatId ?? "empty-conversation"}`}
+              key="active-conversation"
               chat={activeChat}
-          presentationBlocked={Boolean(activeChatId && conversationSnapshotTarget === conversationIdentityFor(activeChatId, activeTopicId))}
-          topic={activeTopic}
+              presentationBlocked={false}
+              topic={activeTopic}
           topics={activeTopics}
           onSelectTopic={openForumTopic}
           scrollScope={activeTopicId ? `${activeAccountId}:topic:${activeTopicId}` : activeAccountId}

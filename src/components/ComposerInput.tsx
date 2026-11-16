@@ -38,6 +38,11 @@ const extensions = [
   Extension.create({ name: "composerMentionPresentation", addProseMirrorPlugins: () => [
     new Plugin({ props: {
       decorations: state => {
+        const doc = state.doc;
+        const fastText = doc.childCount === 1 && doc.firstChild?.isTextblock && doc.firstChild.childCount === 1 && doc.firstChild.firstChild?.isText
+          ? doc.firstChild.firstChild.text
+          : undefined;
+        if (fastText ? !fastText.includes("@") : !doc.textContent.includes("@")) return DecorationSet.empty;
         const { text, entities } = composerFormattedText(state.doc.toJSON());
         // Hide only the presentation prefix; keep Telegram and editor offsets intact.
         return DecorationSet.create(state.doc, entities
@@ -52,6 +57,7 @@ const extensions = [
   ] }),
 ];
 
+const EMPTY_ENTITIES: MessageTextEntity[] = [];
 const editorText = (editor: Editor) => editor.state.doc.textBetween(0, editor.state.doc.content.size, "", "\n");
 
 interface Props {
@@ -176,13 +182,37 @@ export function ComposerInput(props: Props) {
         },
       },
       onUpdate: ({ editor: updated }) => {
-        const formatted = composerFormattedText(updated.getJSON());
-        updated.view.dom.dataset.empty = String(!formatted.text);
+        let hasMarks = false;
+        let plainText: string | undefined;
+        const doc = updated.state.doc;
+        if (doc.childCount === 1 && doc.firstChild?.isTextblock) {
+          const block = doc.firstChild;
+          if (block.childCount === 1 && block.firstChild?.isText && block.firstChild.marks.length === 0) {
+            hasMarks = false;
+            plainText = block.firstChild.text ?? "";
+          }
+        }
+        if (plainText === undefined) {
+          doc.descendants((node) => {
+            if (node.marks.length > 0) {
+              hasMarks = true;
+              return false;
+            }
+            return true;
+          });
+        }
+        const formatted = hasMarks
+          ? composerFormattedText(updated.getJSON())
+          : { text: plainText ?? editorText(updated), entities: EMPTY_ENTITIES };
+        const emptyStr = String(!formatted.text);
+        if (updated.view.dom.dataset.empty !== emptyStr) {
+          updated.view.dom.dataset.empty = emptyStr;
+        }
         propsRef.current.onChange(formatted.text, formatted.entities);
       },
       onSelectionUpdate: ({ editor: updated }) => {
         const empty = updated.state.selection.empty;
-        setHasSelection(!empty);
+        setHasSelection((prev) => (prev === !empty ? prev : !empty));
       },
     });
     editorRef.current = editor;
@@ -207,23 +237,41 @@ export function ComposerInput(props: Props) {
     };
   }, [applyFormat, pasteText, props.inputRef]);
 
+  const previousAttributesRef = useRef<{ busy?: boolean; placeholder?: string; empty?: boolean; labelSet?: boolean }>({});
   useLayoutEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
     const input = editor.view.dom;
-    input.setAttribute("aria-label", translate("消息内容"));
-    input.setAttribute("aria-busy", String(props.busy));
-    input.setAttribute("data-placeholder", props.placeholder);
-    input.setAttribute("dir", "auto");
-    if (!editor.view.composing) {
+    const prev = previousAttributesRef.current;
+    if (!prev.labelSet) {
+      input.setAttribute("aria-label", translate("消息内容"));
+      input.setAttribute("dir", "auto");
+      prev.labelSet = true;
+    }
+    if (prev.busy !== props.busy) {
+      input.setAttribute("aria-busy", String(props.busy));
+      prev.busy = props.busy;
+    }
+    if (prev.placeholder !== props.placeholder) {
+      input.setAttribute("data-placeholder", props.placeholder);
+      prev.placeholder = props.placeholder;
+    }
+    const currentText = editorText(editor);
+    const isEmpty = !currentText;
+    if (prev.empty !== isEmpty) {
+      input.dataset.empty = String(isEmpty);
+      prev.empty = isEmpty;
+    }
+    const isFocused = editor.view.hasFocus();
+    const shouldSyncContent = (!isFocused || props.value === "") && !editor.view.composing && currentText !== props.value;
+    if (shouldSyncContent) {
       const content = composerDocument(props.value, props.entities);
       if (!editor.schema.nodeFromJSON(content).eq(editor.state.doc)) {
         editor.commands.setContent(content, { emitUpdate: false });
         editor.commands.setTextSelection(props.value.length + 1);
       }
     }
-    input.dataset.empty = String(!editorText(editor));
-  });
+  }, [props.busy, props.placeholder, props.value, props.entities]);
 
   const restoreFocus = useCallback(() => propsRef.current.focus.capture(true)(), []);
   const runMenuAction = useCallback(async (action: ComposerMenuAction) => {

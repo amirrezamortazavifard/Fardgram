@@ -41,6 +41,7 @@ import { VoiceVideoRecorder, type RecordingKind } from "./VoiceVideoRecorder";
 import { useAgentStore } from "../agent/agentStore";
 import {
   memo,
+  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -73,6 +74,9 @@ import { preferencesStore, usePreferencesStore } from "../store/preferencesStore
 import { shortcutActionForEvent } from "../shortcuts/shortcuts";
 import { equalFormattedText } from "../utils/formattedText";
 import { useTelegramStore } from "../store/telegramStore";
+
+const EMPTY_SUGGESTIONS: User[] = [];
+const EMPTY_BOT_SUGGESTIONS: BotCommandSuggestion[] = [];
 import { colorThemeForThemeId } from "../theme/theme";
 import type { AttachmentSendMode, BotCommandSuggestion, ConnectionStatus, InlineQueryResultPage, Message, MessageReplyQuote, MessageSchedulingState, MessageTextEntity, OutgoingAttachment, User } from "../telegram/types";
 import { TELEGRAM_ALBUM_MAX_ITEMS } from "../telegram/types";
@@ -364,6 +368,7 @@ export const ConversationComposer = memo(function ConversationComposer({
   const mentionEntitiesRef = useRef<MessageTextEntity[]>(chatDraft?.entities ?? []);
   const composingRef = useRef(false);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const draftUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pendingDraftRef = useRef<{
     text: string;
     entities?: MessageTextEntity[];
@@ -504,14 +509,14 @@ export const ConversationComposer = memo(function ConversationComposer({
       (!commandPrefix[2] || selectedBot.botUsername.toLocaleLowerCase() === commandPrefix[2].toLocaleLowerCase()),
     );
     if (!slash) {
-      setBotSuggestions([]);
-      setActiveBotSuggestionIndex(0);
+      setBotSuggestions((prev) => prev.length === 0 ? prev : EMPTY_BOT_SUGGESTIONS);
+      setActiveBotSuggestionIndex((prev) => prev === 0 ? prev : 0);
       if (!selectedBotMatchesDraft) selectedBotRef.current = undefined;
       return;
     }
     const username = slash[2] || defaultBotUsername;
-    setBotSuggestions([]);
-    setActiveBotSuggestionIndex(0);
+    setBotSuggestions((prev) => prev.length === 0 ? prev : EMPTY_BOT_SUGGESTIONS);
+    setActiveBotSuggestionIndex((prev) => prev === 0 ? prev : 0);
     if (!selectedBotMatchesDraft) selectedBotRef.current = undefined;
 
     const matchingQuickReplies: BotCommandSuggestion[] = (quickReplyShortcuts ?? [])
@@ -539,28 +544,28 @@ export const ConversationComposer = memo(function ConversationComposer({
     };
   }, [defaultBotUsername, draft, editingMessage, onGetBotCommands, quickReplyShortcuts]);
 
-  const recentMentionKey = JSON.stringify(recentMentionUserIds);
-  useLayoutEffect(() => {
-    const mentionQuery = !editingMessage && mentionsEnabled
+  const recentMentionKey = recentMentionUserIds.join(",");
+  useEffect(() => {
+    const mentionQuery = !editingMessage && mentionsEnabled && draft.includes("@")
       ? composerMentionQueryForDraft(draft, inputRef.current?.selectionStart ?? draft.length)
       : undefined;
-    setLocalMentionSuggestions(mentionQuery
+    setLocalMentionSuggestions((prev) => (!mentionQuery && prev.length === 0) ? prev : mentionQuery
       ? mentionSuggestionsFor(mentionAuthors, mentionQuery.query, recentMentionUserIds)
-      : []);
+      : EMPTY_SUGGESTIONS);
     // New authors can update local matches without restarting the server query.
   }, [activeAccountId, draft, editingMessage, inputRef, mentionAuthors, mentionsEnabled, recentMentionKey]);
 
-  useLayoutEffect(() => {
-    const mentionQuery = !editingMessage && mentionsEnabled
+  useEffect(() => {
+    const mentionQuery = !editingMessage && mentionsEnabled && draft.includes("@")
       ? composerMentionQueryForDraft(
         draft,
         inputRef.current?.selectionStart ?? draft.length,
       )
       : undefined;
-    setActiveMentionSuggestionIndex(0);
+    setActiveMentionSuggestionIndex((prev) => prev === 0 ? prev : 0);
     if (!mentionQuery) {
       mentionSearchCacheRef.current = { context: "", results: new Map() };
-      setMentionSuggestions([]);
+      setMentionSuggestions((prev) => prev.length === 0 ? prev : EMPTY_SUGGESTIONS);
       return;
     }
     const context = `${activeAccountId ?? ""}:${chatId}:${mentionQuery.start}`;
@@ -568,7 +573,7 @@ export const ConversationComposer = memo(function ConversationComposer({
     if (contextChanged) {
       mentionSearchCacheRef.current = { context, results: new Map() };
       // Never show a candidate from the previous chat or account while this query loads.
-      setMentionSuggestions([]);
+      setMentionSuggestions((prev) => prev.length === 0 ? prev : EMPTY_SUGGESTIONS);
     }
     const query = mentionQuery.query.trim();
     if (query && !contextChanged) {
@@ -587,7 +592,7 @@ export const ConversationComposer = memo(function ConversationComposer({
         mentionSearchCacheRef.current.results.set(query, suggestions);
         setMentionSuggestions(suggestions);
       }).catch(() => {
-        if (!cancelled) setMentionSuggestions([]);
+        if (!cancelled) setMentionSuggestions((prev) => prev.length === 0 ? prev : EMPTY_SUGGESTIONS);
       });
     }, 40);
     return () => {
@@ -601,8 +606,8 @@ export const ConversationComposer = memo(function ConversationComposer({
     if (inlineQueryTimerRef.current) globalThis.clearTimeout(inlineQueryTimerRef.current);
     const inline = !editingMessage ? composerInlineQueryForDraft(draft, knownNonBotUsernames) : undefined;
     if (!inline) {
-      setInlineResults(undefined);
-      setInlineLoading(false);
+      setInlineResults((prev) => prev === undefined ? prev : undefined);
+      setInlineLoading((prev) => prev === false ? prev : false);
       return;
     }
     setInlineLoading(true);
@@ -705,7 +710,6 @@ export const ConversationComposer = memo(function ConversationComposer({
     selectedReplyQuote?: MessageReplyQuote,
     entities: MessageTextEntity[] = mentionEntitiesRef.current,
   ) => {
-    if (draftTimerRef.current) globalThis.clearTimeout(draftTimerRef.current);
     pendingDraftRef.current = {
       text,
       replyToMessageId,
@@ -713,7 +717,9 @@ export const ConversationComposer = memo(function ConversationComposer({
       ...(entities.length ? { entities: [...entities] } : {}),
     };
     localDraftDirtyRef.current = true;
-    draftTimerRef.current = globalThis.setTimeout(flushDraft, LOCAL_DRAFT_DELAY_MS);
+    if (!draftTimerRef.current) {
+      draftTimerRef.current = globalThis.setTimeout(flushDraft, LOCAL_DRAFT_DELAY_MS);
+    }
   }, [flushDraft]);
 
   const applyBotSuggestion = useCallback((suggestion: BotCommandSuggestion) => {
@@ -752,8 +758,9 @@ export const ConversationComposer = memo(function ConversationComposer({
         if (typingActiveRef.current) void onTypingChange(chatId, true);
       }, TYPING_REFRESH_MS);
     }
-    if (typingIdleRef.current) globalThis.clearTimeout(typingIdleRef.current);
-    typingIdleRef.current = globalThis.setTimeout(stopTyping, TYPING_IDLE_MS);
+    if (!typingIdleRef.current) {
+      typingIdleRef.current = globalThis.setTimeout(stopTyping, TYPING_IDLE_MS);
+    }
   }, [blockTypingStatus, chatId, editingMessage, onTypingChange, stopTyping]);
 
   const commitInputSideEffects = useCallback((value: string) => {
@@ -927,6 +934,10 @@ export const ConversationComposer = memo(function ConversationComposer({
         replyToMessageId: replyToMessageIdRef.current,
         replyQuote: replyQuoteRef.current,
       };
+    }
+    if (draftUpdateTimerRef.current) {
+      globalThis.clearTimeout(draftUpdateTimerRef.current);
+      draftUpdateTimerRef.current = undefined;
     }
     flushDraft();
     stopTyping();
@@ -1867,13 +1878,35 @@ export const ConversationComposer = memo(function ConversationComposer({
           colorTheme={colorTheme}
           focus={focus}
           onChange={(value, entities) => {
-            closeEmojiPicker();
+            if (emojiPickerOpen) closeEmojiPicker();
             if (value === draftRef.current) refreshFormatting(revision => revision + 1);
             mentionEntitiesRef.current = entities;
+            const previousDraft = draftRef.current;
             draftRef.current = value;
-            setDraft(value);
-            if (composingRef.current) return;
-            commitInputSideEffects(value);
+            if (!composingRef.current) {
+              commitInputSideEffects(value);
+            }
+
+            const hadText = Boolean(previousDraft.trim());
+            const hasText = Boolean(value.trim());
+            const isCommandOrMention =
+              value.startsWith("/") ||
+              value.includes("@") ||
+              previousDraft.startsWith("/") ||
+              previousDraft.includes("@");
+
+            if (hadText !== hasText || isCommandOrMention) {
+              if (draftUpdateTimerRef.current) {
+                globalThis.clearTimeout(draftUpdateTimerRef.current);
+                draftUpdateTimerRef.current = undefined;
+              }
+              setDraft(value);
+            } else if (!draftUpdateTimerRef.current) {
+              draftUpdateTimerRef.current = globalThis.setTimeout(() => {
+                draftUpdateTimerRef.current = undefined;
+                setDraft(draftRef.current);
+              }, 120);
+            }
           }}
           onPasteFiles={(files) => {
             if (editingMessage) return false;

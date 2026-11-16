@@ -15,11 +15,12 @@ export const cloneConversationSnapshot = (source: HTMLElement) => {
 };
 
 const freezeSnapshotMedia = (source: HTMLElement, clone: HTMLElement) => {
-  const selector = "img, video, canvas";
+  const selector = "video";
+  const sourceVideos = source.querySelectorAll<HTMLVideoElement>(selector);
+  if (sourceVideos.length === 0) return;
   const viewport = source.getBoundingClientRect();
-  const clones = clone.querySelectorAll<SnapshotMedia>(selector);
-  // Read geometry together before replacing anything in the mounted clone.
-  const frames = [...source.querySelectorAll<SnapshotMedia>(selector)].map((media, index) => {
+  const clones = clone.querySelectorAll<HTMLVideoElement>(selector);
+  const frames = [...sourceVideos].map((media, index) => {
     const bounds = media.getBoundingClientRect();
     const style = getComputedStyle(media);
     return { media, cloneMedia: clones[index], bounds, width: style.width, height: style.height,
@@ -37,21 +38,17 @@ const freezeSnapshotMedia = (source: HTMLElement, clone: HTMLElement) => {
     const visible = bounds.width > 0 && bounds.height > 0 && bounds.bottom > viewport.top &&
       bounds.top < viewport.bottom && bounds.right > viewport.left && bounds.left < viewport.right &&
       frame.opacity !== "0" && frame.visibility !== "hidden";
-    const isImage = media instanceof HTMLImageElement;
-    const isVideo = media instanceof HTMLVideoElement;
-    const width = isImage ? media.naturalWidth : isVideo ? media.videoWidth : media.width;
-    const height = isImage ? media.naturalHeight : isVideo ? media.videoHeight : media.height;
-    const loaded = isImage ? media.complete : !isVideo || media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+    const width = media.videoWidth;
+    const height = media.videoHeight;
+    const loaded = media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
     if (visible && loaded && width > 0 && height > 0) {
       const canvas = document.createElement("canvas");
-      // A short-lived snapshot needs only display pixels. Cap both DPR and the
-      // surface area; source resolution must never dictate navigation cost.
       const scale = Math.min(devicePixelRatio || 1, 2,
         Math.sqrt(viewport.width * viewport.height * 4 / (bounds.width * bounds.height)));
       canvas.width = Math.max(1, Math.ceil(bounds.width * scale));
       canvas.height = Math.max(1, Math.ceil(bounds.height * scale));
       canvas.className = cloneMedia.className;
-      canvas.dataset.snapshotMedia = isImage ? "image" : isVideo ? "video" : "canvas";
+      canvas.dataset.snapshotMedia = "video";
       canvas.style.cssText = cloneMedia.style.cssText;
       Object.assign(canvas.style, frame.layout, { width: frame.width, height: frame.height,
         display: frame.display, opacity: frame.opacity, borderRadius: frame.borderRadius,
@@ -65,30 +62,19 @@ const freezeSnapshotMedia = (source: HTMLElement, clone: HTMLElement) => {
           const drawHeight = frame.objectFit === "fill" ? canvas.height : height * ratio;
           context.drawImage(media, (canvas.width - drawWidth) / 2,
             (canvas.height - drawHeight) / 2, drawWidth, drawHeight);
-          // Keep the bitmap itself. Encoding it and asking another image to
-          // decode it again would block the click and risk an empty first frame.
           cloneMedia.replaceWith(canvas);
           continue;
         }
       } catch {
-        // Keep a protected image or an existing video poster as a fallback.
+        // Fallback
       }
     }
-    if (cloneMedia instanceof HTMLVideoElement) {
-      cloneMedia.autoplay = false;
-      cloneMedia.muted = true;
-      cloneMedia.removeAttribute("autoplay");
-      cloneMedia.removeAttribute("src");
-      cloneMedia.querySelectorAll("source").forEach((element) => element.remove());
-      cloneMedia.load();
-    } else if (!visible) {
-      // Overscan geometry stays intact, but hidden media cannot allocate another decoder.
-      cloneMedia.style.width = frame.width;
-      cloneMedia.style.height = frame.height;
-      cloneMedia.style.visibility = "hidden";
-      cloneMedia.removeAttribute("src");
-      cloneMedia.removeAttribute("srcset");
-    }
+    cloneMedia.autoplay = false;
+    cloneMedia.muted = true;
+    cloneMedia.removeAttribute("autoplay");
+    cloneMedia.removeAttribute("src");
+    cloneMedia.querySelectorAll("source").forEach((element) => element.remove());
+    cloneMedia.load();
   }
 };
 /**
@@ -110,19 +96,21 @@ export const prepareConversationSnapshotClone = (
     // start at zero; short histories retain their live computed margin.
     if (sourceContent) {
       const sourceMarginTop = getComputedStyle(sourceContent).marginTop;
-      const sourceIsScrollable = source.scrollHeight > source.clientHeight + 1;
+      const sourceScrollHeight = source.scrollHeight;
+      const sourceIsScrollable = sourceScrollHeight > source.clientHeight + 1;
       content.style.marginTop = sourceIsScrollable
         ? "0px"
         : sourceMarginTop;
-    }
-    content.style.minHeight = `${Math.max(source.scrollHeight, content.getBoundingClientRect().height)}px`;
-    if (sourceContent && source.scrollHeight > source.clientHeight + 1) {
-      // Re-apply after reserving the height: auto margins can be resolved
-      // again during that layout pass in Chromium.
-      content.style.marginTop = "0px";
+      content.style.minHeight = `${Math.max(sourceScrollHeight, content.getBoundingClientRect().height)}px`;
+      if (sourceContent && sourceIsScrollable) {
+        // Re-apply after reserving the height: auto margins can be resolved
+        // again during that layout pass in Chromium.
+        content.style.marginTop = "0px";
+      }
+    } else {
+      content.style.minHeight = `${Math.max(source.scrollHeight, content.getBoundingClientRect().height)}px`;
     }
   }
-  document.body.getBoundingClientRect();
   clone.scrollTop = options?.scrollTop ?? source.scrollTop;
   clone.scrollLeft = source.scrollLeft;
 
